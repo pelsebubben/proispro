@@ -1,52 +1,81 @@
 {
+  "schema": "squad-agent-provenance/v1",
+  "schema_version": 1,
+  "revision": 1,
+  "generated_at": "2026-04-13T17:32:22.515Z",
   "agents": {
     "danny": {
-      "created_at": "2026-04-13T17:32:22.515Z",
+      "display_name": "Danny",
       "persistent_name": "Danny",
+      "role": "Lead",
       "universe": "Ocean's Eleven",
-      "status": "active"
+      "status": "active",
+      "created_at": "2026-04-13T17:32:22.515Z",
+      "updated_at": "2026-04-13T17:32:22.515Z"
     },
     "rusty": {
-      "created_at": "2026-04-13T17:32:22.515Z",
+      "display_name": "Rusty",
       "persistent_name": "Rusty",
+      "role": "Frontend Dev",
       "universe": "Ocean's Eleven",
-      "status": "active"
+      "status": "active",
+      "created_at": "2026-04-13T17:32:22.515Z",
+      "updated_at": "2026-04-13T17:32:22.515Z"
     },
     "basher": {
-      "created_at": "2026-04-13T17:32:22.515Z",
+      "display_name": "Basher",
       "persistent_name": "Basher",
+      "role": "Data Engineer",
       "universe": "Ocean's Eleven",
-      "status": "active"
+      "status": "active",
+      "created_at": "2026-04-13T17:32:22.515Z",
+      "updated_at": "2026-04-13T17:32:22.515Z"
     },
     "linus": {
-      "created_at": "2026-04-13T17:32:22.515Z",
+      "display_name": "Linus",
       "persistent_name": "Linus",
+      "role": "DevOps",
       "universe": "Ocean's Eleven",
-      "status": "active"
-    },
-    "scribe": {
+      "status": "active",
       "created_at": "2026-04-13T17:32:22.515Z",
-      "persistent_name": "Scribe",
-      "universe": "Ocean's Eleven",
-      "status": "active"
-    },
-    "ralph": {
-      "created_at": "2026-04-13T17:32:22.515Z",
-      "persistent_name": "Ralph",
-      "universe": "Ocean's Eleven",
-      "status": "active"
+      "updated_at": "2026-04-13T17:32:22.515Z"
     },
     "saul": {
-      "created_at": "2026-04-13T17:41:40.549Z",
+      "display_name": "Saul",
       "persistent_name": "Saul",
+      "role": "Color Expert",
       "universe": "Ocean's Eleven",
-      "status": "active"
+      "status": "active",
+      "created_at": "2026-04-13T17:32:22.515Z",
+      "updated_at": "2026-04-13T17:32:22.515Z"
     },
     "livingston": {
-      "created_at": "2026-04-16T21:38:00.000Z",
+      "display_name": "Livingston",
       "persistent_name": "Livingston",
+      "role": "UX Designer",
       "universe": "Ocean's Eleven",
-      "status": "active"
+      "status": "active",
+      "created_at": "2026-04-13T17:32:22.515Z",
+      "updated_at": "2026-04-13T17:32:22.515Z"
+    },
+    "scribe": {
+      "display_name": "Scribe",
+      "persistent_name": "Scribe",
+      "role": "Session Logger",
+      "universe": "Ocean's Eleven",
+      "status": "active",
+      "created_at": "2026-04-13T17:32:22.515Z",
+      "updated_at": "2026-04-13T17:32:22.515Z"
+    },
+    "ralph": {
+      "display_name": "Ralph",
+      "persistent_name": "Ralph",
+      "role": "Work Monitor",
+      "universe": "Ocean's Eleven",
+      "status": "active",
+      "created_at": "2026-04-13T17:32:22.515Z",
+      "updated_at": "2026-04-13T17:32:22.515Z"
     }
-  }
+  },
+  "transaction_id": "1c078290-bf30-43ef-9bb3-48cbcec31374"
 }

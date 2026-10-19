@@ -1,22 +1,26 @@
 {
-  "assignment_cast_snapshots": {
-    "repl-cast-2026-04-13T17:32:22.515Z": {
-      "created_at": "2026-04-13T17:32:22.515Z",
-      "agents": [
-        "danny",
-        "rusty",
-        "basher",
-        "linus",
-        "scribe",
-        "ralph"
-      ],
-      "universe": "Ocean's Eleven"
-    }
-  },
   "universe_usage_history": [
     {
       "universe": "Ocean's Eleven",
       "used_at": "2026-04-13T17:32:22.515Z"
     }
-  ]
+  ],
+  "assignment_cast_snapshots": {
+    "ocean-genesis": {
+      "created_at": "2026-04-13T17:32:22.515Z",
+      "universe": "Ocean's Eleven",
+      "agents": [
+        "danny",
+        "rusty",
+        "basher",
+        "linus",
+        "saul",
+        "livingston",
+        "scribe",
+        "ralph"
+      ]
+    }
+  },
+  "transaction_id": "1c078290-bf30-43ef-9bb3-48cbcec31374",
+  "registry_revision": 1
 }

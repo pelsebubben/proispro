@@ -46,8 +46,8 @@ How to decide who handles what.
 | Work Type | Primary | Secondary |
 |-----------|---------|----------|
 | Architecture, decisions, review | Danny | — |
-| HTML, CSS, JavaScript, Alpine.js | Rusty | Saul (color impl), Livingston (UX spec) |
-| Supabase database, RLS policies | Danny | Basher (secondary) |
+| HTML, CSS, JavaScript, Alpine.js | Rusty | Saul, Livingston |
+| Supabase database, RLS policies | Danny | Basher |
 | GitHub Pages, deployment | Linus | — |
-| Autonomous issue work | @copilot | Danny (triage/review) |
+| Autonomous issue work | @copilot | Danny |
 
