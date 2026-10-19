@@ -1,0 +1,112 @@
+# Azure deploy — build the API image, push to ACR, roll the ACA revision, and
+# deploy the SPA to Static Web Apps. Gated on pushes to main.
+#
+# AUTH: OIDC federated login (no stored cloud credentials). Configure a
+# federated credential on an Entra app / user-assigned identity for this repo,
+# then add these REPO SECRETS (Settings -> Secrets and variables -> Actions):
+#   AZURE_CLIENT_ID              - app/identity client id with the federated credential
+#   AZURE_TENANT_ID              - Entra tenant id
+#   AZURE_SUBSCRIPTION_ID        - target subscription id
+#   AZURE_RESOURCE_GROUP         - e.g. rg-proispro-dev
+#   ACR_NAME                     - ACR name (no domain), e.g. acrproispro<token>
+#   ACA_APP_NAME                 - the API container app name, e.g. ca-proispro-api-<token>
+#   SWA_DEPLOYMENT_TOKEN         - Static Web Apps deployment token (az staticwebapp secrets list)
+# The CI identity needs: AcrPush on the ACR + Contributor on the container app
+# (or the resource group) to update the ACA revision.
+#
+# DEPENDENCY: the API image build expects api/Dockerfile, delivered by Phase 2.
+# Until that exists, the `api` job is skipped automatically (see the `if:` guard)
+# so the SPA deploy still works. Remove the guard once api/Dockerfile lands.
+
+name: Azure Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: azure-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # required for azure/login OIDC
+
+jobs:
+  # --- API: build container image, push to ACR, update the ACA revision ---
+  api:
+    name: Build & deploy API (ACA)
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for api/Dockerfile
+        id: check
+        run: |
+          if [ -f api/Dockerfile ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::api/Dockerfile not found yet (Phase 2 dependency) — skipping API build/deploy."
+          fi
+
+      - name: Azure login (OIDC)
+        if: steps.check.outputs.exists == 'true'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Compute image tag
+        if: steps.check.outputs.exists == 'true'
+        id: meta
+        run: echo "image=${{ secrets.ACR_NAME }}.azurecr.io/proispro-api:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push image to ACR
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          az acr login --name "${{ secrets.ACR_NAME }}"
+          docker build -t "${{ steps.meta.outputs.image }}" -f api/Dockerfile api
+          docker push "${{ steps.meta.outputs.image }}"
+
+      - name: Deploy new revision to Container Apps
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          az containerapp update \
+            --name "${{ secrets.ACA_APP_NAME }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --image "${{ steps.meta.outputs.image }}"
+
+  # --- WEB: build the React SPA and deploy to Static Web Apps ---
+  web:
+    name: Build & deploy SPA (SWA)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build SPA
+        run: npm run build
+
+      - name: Deploy to Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.SWA_DEPLOYMENT_TOKEN }}
+          action: upload
+          app_location: 'dist'
+          skip_app_build: true
+          skip_api_build: true

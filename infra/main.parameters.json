@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME=dev}"
+    },
+    "location": {
+      "value": "${AZURE_LOCATION=westeurope}"
+    },
+    "baseName": {
+      "value": "proispro"
+    },
+    "containerImage": {
+      "value": "${API_IMAGE=mcr.microsoft.com/azuredocs/containerapps-helloworld:latest}"
+    },
+    "containerPort": {
+      "value": 3000
+    },
+    "minReplicas": {
+      "value": 0
+    },
+    "maxReplicas": {
+      "value": 3
+    },
+    "sqlMinCapacity": {
+      "value": "0.5"
+    },
+    "sqlMaxCapacity": {
+      "value": 1
+    },
+    "sqlAutoPauseDelayMinutes": {
+      "value": 60
+    },
+    "sqlAadAdminLogin": {
+      "value": "${SQL_AAD_ADMIN_LOGIN=REPLACE_WITH_ADMIN_UPN_OR_GROUP}"
+    },
+    "sqlAadAdminObjectId": {
+      "value": "${SQL_AAD_ADMIN_OBJECT_ID=00000000-0000-0000-0000-000000000000}"
+    }
+  }
+}

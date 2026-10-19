@@ -1,21 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
+import { getStorage } from '../lib/storage'
 import { useAuth } from '../contexts/AuthContext'
 import { ClientDisc } from '../utils/disc'
+import type { ForSaleListing } from '../lib/storage/types'
 
-export interface ForSaleListing {
-  id: string
-  disc_id: string
-  disc_name: string
-  disc_manufacturer: string
-  disc_type: string
-  disc_plastic: string
-  disc_color: string
-  disc_weight: string
-  disc_condition: string
-  status: 'available' | 'sold'
-  listed_at: string
-}
+export type { ForSaleListing }
 
 export function useForSale() {
   const { user } = useAuth()
@@ -25,33 +14,16 @@ export function useForSale() {
 
   const loadListings = useCallback(async () => {
     if (!user) return
-    const { data } = await supabase
-      .from('forsale_listings')
-      .select('*')
-      .order('listed_at', { ascending: false })
-    setListings(
-      (data || []).map(l => ({
-        id: l.id,
-        disc_id: l.disc_id || '',
-        disc_name: l.disc_name || '',
-        disc_manufacturer: l.disc_manufacturer || '',
-        disc_type: l.disc_type || '',
-        disc_plastic: l.disc_plastic || '',
-        disc_color: l.disc_color || '',
-        disc_weight: l.disc_weight || '',
-        disc_condition: l.disc_condition || 'good',
-        status: l.status === 'sold' ? 'sold' : 'available',
-        listed_at: l.listed_at,
-      }))
-    )
+    const data = await getStorage().forSale.list()
+    setListings(data)
   }, [user])
 
   const loadSaleToken = useCallback(async () => {
     if (!user) return
-    const { data } = await supabase.from('sale_tokens').select('*').eq('user_id', user.id).single()
+    const data = await getStorage().saleTokens.getForUser(user.id)
     if (data) {
-      setSaleToken(data.token || '')
-      setSaleIsPublic(data.is_public ?? false)
+      setSaleToken(data.token)
+      setSaleIsPublic(data.is_public)
     }
   }, [user])
 
@@ -64,37 +36,24 @@ export function useForSale() {
     if (!user) return ''
     if (saleToken) return saleToken
     const newToken = crypto.randomUUID()
-    await supabase.from('sale_tokens').upsert(
-      { user_id: user.id, token: newToken, is_public: false },
-      { onConflict: 'user_id' }
-    )
+    await getStorage().saleTokens.upsert(user.id, newToken, false)
     setSaleToken(newToken)
     return newToken
   }
 
   const addListing = async (disc: ClientDisc) => {
     if (!user) return
-    await supabase.from('forsale_listings').insert({
-      disc_id: disc.id,
-      disc_name: disc.name,
-      disc_manufacturer: disc.manufacturer,
-      disc_type: disc.type,
-      disc_plastic: disc.plastic,
-      disc_color: disc.color,
-      disc_weight: disc.weight,
-      disc_condition: disc.condition,
-      status: 'available',
-    })
+    await getStorage().forSale.create(disc)
     await loadListings()
   }
 
   const deleteListing = async (id: string) => {
-    await supabase.from('forsale_listings').delete().eq('id', id)
+    await getStorage().forSale.remove(id)
     await loadListings()
   }
 
   const updateStatus = async (id: string, status: 'available' | 'sold') => {
-    await supabase.from('forsale_listings').update({ status }).eq('id', id)
+    await getStorage().forSale.updateStatus(id, status)
     await loadListings()
   }
 
@@ -102,10 +61,7 @@ export function useForSale() {
     if (!user) return
     await ensureSaleToken()
     const newPublic = !saleIsPublic
-    await supabase
-      .from('sale_tokens')
-      .update({ is_public: newPublic })
-      .eq('user_id', user.id)
+    await getStorage().saleTokens.setPublic(user.id, newPublic)
     setSaleIsPublic(newPublic)
   }
 

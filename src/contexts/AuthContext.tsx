@@ -1,44 +1,49 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { User } from '@supabase/supabase-js'
-import { supabase } from '../lib/supabase'
+import { getAuthProvider, type AppUser } from '../lib/auth'
 
 interface AuthContextValue {
-  user: User | null
+  user: AppUser | null
   isLoading: boolean
-  signIn: (provider: 'google' | 'github') => Promise<void>
+  signIn: (provider?: 'google' | 'github') => Promise<void>
   signOut: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<AppUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user)
+    const auth = getAuthProvider()
+    let mounted = true
+
+    // Restore the initial session / read the principal.
+    auth.getUser().then((u) => {
+      if (!mounted) return
+      setUser(u)
       setIsLoading(false)
     })
 
-    // Subscribe to auth changes (handles OAuth redirect return)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
+    // Subscribe to auth changes (Supabase OAuth redirect return; no-op on Entra).
+    const unsubscribe = auth.onChange((u) => {
+      if (mounted) setUser(u)
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      mounted = false
+      unsubscribe()
+    }
   }, [])
 
-  const signIn = async (provider: 'google' | 'github') => {
-    await supabase.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo: window.location.origin },
-    })
+  const auth = getAuthProvider()
+
+  const signIn = async (provider?: 'google' | 'github') => {
+    await auth.signIn(provider)
   }
 
   const signOut = async () => {
-    await supabase.auth.signOut()
+    await auth.signOut()
     setUser(null)
   }
 

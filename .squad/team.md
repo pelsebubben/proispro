@@ -32,11 +32,13 @@
 
 | Domain | Fit | Notes |
 |--------|-----|-------|
-| Alpine.js components, HTML/CSS | 🟢 Good fit | Proceed autonomously |
-| Supabase schema, SQL migrations | 🟢 Good fit | Proceed autonomously |
+| React 18 + TypeScript components, vanilla CSS | 🟢 Good fit | Proceed autonomously |
+| Azure SQL schema / T-SQL (`api/db/schema.sql`) | 🟢 Good fit | Proceed autonomously |
+| Bicep / ACA / SWA infra (`infra/`) | 🟢 Good fit | Proceed autonomously |
 | GitHub Actions, CI/CD workflows | 🟢 Good fit | Proceed autonomously |
-| Complex RLS policy logic | 🟡 Needs review | Note in PR — Danny should review before merge |
-| Auth flows, security logic | 🟡 Needs review | Note in PR — Danny should review before merge |
+| Storage-adapter seam (`VITE_STORAGE` toggle) | 🟢 Good fit | Proceed autonomously |
+| Entra auth / `ownerId` scoping | 🟡 Needs review | Note in PR — Danny should review before merge |
+| Supabase→Azure SQL migration tooling | 🟡 Needs review | Note in PR — Danny should review before merge |
 | Color system decisions | 🔴 Not suitable | Route to Saul instead |
 
 ## Project Context
@@ -46,9 +48,15 @@
 
 ## Tech Stack
 
+> Target architecture per `docs/adr-azure-entra-rebuild.md`. The storage-adapter
+> seam lets both backends coexist during the transition; production still runs on
+> Supabase until the user completes the Azure cutover (see `docs/CUTOVER.md`).
+
 | Layer | Technology |
 |-------|------------|
-| **Frontend** | Alpine.js (CDN) + vanilla CSS with OKLCH color system |
-| **Backend** | Supabase PostgreSQL with Row-Level Security (RLS) |
-| **Auth** | Supabase Auth – GitHub OAuth provider |
-| **Hosting** | GitHub Pages (static, no build step) |
+| **Frontend** | React 18 + TypeScript + Vite (SPA), vanilla CSS with OKLCH color system |
+| **Hosting** | Azure Static Web Apps (migrating from GitHub Pages) |
+| **API** | Node + Fastify (TypeScript) on Azure Container Apps |
+| **Database** | Azure SQL (serverless) — *not* Supabase |
+| **Auth** | Microsoft Entra ID (via SWA EasyAuth) |
+| **Data access** | Storage-adapter seam — `VITE_STORAGE=supabase\|azure` — swappable during the transition |

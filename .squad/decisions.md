@@ -14,7 +14,9 @@ Ship vanilla HTML, CSS, and JavaScript directly to hosting with no bundler, buil
 ---
 
 ### Primary Storage: CosmosDB via Data API Builder
-**By:** Danny (Lead) | **Date:** 2026-04 | **Status:** Active (Migrated)
+**By:** Danny (Lead) | **Date:** 2026-04 | **Status:** **Superseded** (Azure/Entra rebuild, `docs/adr-azure-entra-rebuild.md`)
+
+> **⚠️ Superseded** by the **Azure-hosted, Entra-authenticated, multi-user rebuild** ADR (2026-10-19). Already de-facto superseded by the Supabase migration; the earlier "Active (Migrated)" label was stale. New DB target is **Azure SQL serverless** behind a thin Functions API.
 
 CosmosDB container `discs` is the source of truth. All CRUD operations route through DAB REST endpoints (`/api/Disc`).
 
@@ -55,7 +57,9 @@ localStorage serves as fallback cache. Primary source of truth is now CosmosDB v
 ---
 
 ### Hosting: Azure Static Web Apps + CDN
-**By:** Linus (DevOps) | **Date:** 2026-04-14 | **Status:** Active (Migrated)
+**By:** Linus (DevOps) | **Date:** 2026-04-14 | **Status:** **Superseded** (Azure/Entra rebuild, `docs/adr-azure-entra-rebuild.md`)
+
+> **⚠️ Superseded** by the **Azure-hosted, Entra-authenticated, multi-user rebuild** ADR (2026-10-19). Already de-facto superseded by Supabase + GitHub Pages; the "Active (Migrated)" label was stale. The rebuild returns to **SWA** but with a **hand-written Azure Functions API (not DAB)** + Entra EasyAuth.
 
 Host static frontend + DAB backend on Azure SWA (free tier).
 
@@ -96,7 +100,9 @@ Single array of disc objects in user inventory. Each disc: id + 10 standard fiel
 ---
 
 ### Disc Catalog Schema — CosmosDB NoSQL
-**By:** Basher (Data Wrangler) | **Date:** 2026-04-14 | **Status:** Active
+**By:** Basher (Data Wrangler) | **Date:** 2026-04-14 | **Status:** **Superseded** (Azure/Entra rebuild, `docs/adr-azure-entra-rebuild.md`)
+
+> **⚠️ Superseded** by the **Azure-hosted, Entra-authenticated, multi-user rebuild** ADR (2026-10-19). CosmosDB/DAB access is retired; the catalog moves to the new **Azure SQL serverless** schema behind the thin Functions API.
 
 Separate public disc catalog in Cosmos DB (read-only reference data). Partition key: `/manufacturer`.
 
@@ -148,7 +154,9 @@ If DAB fails, app continues with stale localStorage. Toast notifies user.
 ---
 
 ### Authentication: GitHub OAuth via Azure SWA
-**By:** Basher (Data Wrangler) | **Date:** 2026-04-15 | **Status:** Active
+**By:** Basher (Data Wrangler) | **Date:** 2026-04-15 | **Status:** **Superseded** (Azure/Entra rebuild, `docs/adr-azure-entra-rebuild.md`)
+
+> **⚠️ Superseded** by the **Azure-hosted, Entra-authenticated, multi-user rebuild** ADR (2026-10-19). Already superseded by Supabase GitHub OAuth; the rebuild standardizes on **Entra ID via SWA built-in auth (EasyAuth)** with server-derived `ownerId`.
 
 All access gated behind GitHub OAuth authentication via Azure Static Web Apps.
 
@@ -168,7 +176,9 @@ All access gated behind GitHub OAuth authentication via Azure Static Web Apps.
 ---
 
 ### Data API Builder Access Control
-**By:** Basher (Data Wrangler) | **Date:** 2026-04-15 | **Status:** Active
+**By:** Basher (Data Wrangler) | **Date:** 2026-04-15 | **Status:** **Superseded** (Azure/Entra rebuild, `docs/adr-azure-entra-rebuild.md`)
+
+> **⚠️ Superseded** by the **Azure-hosted, Entra-authenticated, multi-user rebuild** ADR (2026-10-19). DAB is retired as the API tier; access control moves to **per-owner scoping in the hand-written Functions API** (Entra principal → `ownerId`).
 
 DAB Disc entity requires `authenticated` role. CORS restricted to `https://proispro.com`.
 
@@ -181,7 +191,9 @@ DAB Disc entity requires `authenticated` role. CORS restricted to `https://prois
 ---
 
 ### DAB REST Endpoint Path in SWA
-**By:** Danny (Lead) | **Date:** 2026-04-15 | **Status:** Decided & Implemented
+**By:** Danny (Lead) | **Date:** 2026-04-15 | **Status:** **Superseded** (Azure/Entra rebuild, `docs/adr-azure-entra-rebuild.md`)
+
+> **⚠️ Superseded** by the **Azure-hosted, Entra-authenticated, multi-user rebuild** ADR (2026-10-19). DAB (`/data-api/rest/*`) is retired; the rebuild uses a hand-written **Azure Functions API at `/api/*`**. Kept for history / the DAB scar.
 
 In Azure Static Web Apps, DAB REST API is served at `/data-api/rest/{entity}`, NOT `/api/{entity}`. The `/api/` path is reserved for Azure Functions.
 
@@ -194,7 +206,9 @@ In Azure Static Web Apps, DAB REST API is served at `/data-api/rest/{entity}`, N
 ---
 
 ### No Backend Server — Serverless DAB
-**By:** Danny (Lead) | **Date:** 2026-04 | **Status:** Active (Updated)
+**By:** Danny (Lead) | **Date:** 2026-04 | **Status:** **Superseded** (Azure/Entra rebuild, `docs/adr-azure-entra-rebuild.md`)
+
+> **⚠️ Superseded** by the **Azure-hosted, Entra-authenticated, multi-user rebuild** ADR (2026-10-19). The "zero custom code via DAB" approach is explicitly reversed — the rebuild uses a **thin, hand-written Azure Functions API** precisely because managed DAB-in-SWA was deprecated.
 
 Data API Builder provides serverless REST layer. No custom Node.js functions or databases to manage.
 
@@ -205,7 +219,9 @@ Data API Builder provides serverless REST layer. No custom Node.js functions or 
 **Migration:** From no backend (GitHub Pages) to serverless DAB + CosmosDB.
 
 ### DAB Retirement & Migration to Supabase
-**By:** Danny (Lead) | **Date:** 2026-04-20 | **Status:** Completed & Live
+**By:** Danny (Lead) | **Date:** 2026-04-20 | **Status:** Completed & Live (Supabase target later **Superseded by the Azure/Entra rebuild**)
+
+> **⚠️ Supabase target superseded by the Azure/Entra rebuild** (ADR 2026-10-19, `docs/adr-azure-entra-rebuild.md`). **The DAB-deprecation lesson/scar below remains in force** — it is exactly why the rebuild's API tier is a hand-written **Azure Functions** layer, **not** managed DAB.
 
 Azure Static Web Apps Database Connections (DAB) was retired November 30, 2025. We debugged a deprecated feature for days before discovering this. **Complete migration:** Supabase PostgreSQL (backend) + Alpine.js (frontend) + GitHub Pages (hosting).
 
@@ -223,7 +239,9 @@ Azure Static Web Apps Database Connections (DAB) was retired November 30, 2025. 
 ---
 
 ### Hosting: GitHub Pages + Custom Domain (Supabase Backend)
-**By:** Linus (DevOps) | **Date:** 2026-04-20 | **Status:** Active
+**By:** Linus (DevOps) | **Date:** 2026-04-20 | **Status:** **Superseded by the Azure/Entra rebuild** (at cutover)
+
+> **⚠️ Superseded by the Azure/Entra rebuild** (ADR 2026-10-19, `docs/adr-azure-entra-rebuild.md`) — GitHub Pages + Supabase is replaced by **Azure SWA + Azure SQL serverless + Entra ID** at the DNS cutover window.
 
 Host static frontend on GitHub Pages at proispro.com. Backend is Supabase (not SWA).
 
@@ -304,6 +322,80 @@ All `:root` color tokens use OKLCH instead of hex/HSL. Hex originals retained as
 
 ### Disc Color Palette — 10 Vivid OKLCH Swatches
 **By:** Saul (Color Expert) | **Date:** 2026-04-14 | **Status:** Approved
+
+---
+
+### Rebuild on lightweight, Supabase-free, local-first architecture
+**By:** Danny (Lead / Architect) | **Date:** 2026-10-19 | **Status:** **Superseded by the Azure/Entra rebuild** (ADR 2026-10-19, `docs/adr-azure-entra-rebuild.md`)
+
+> **⚠️ Superseded** — the new **multi-user** requirement (sharing with friends → shared hosted DB) voids the single-user, no-auth, local-first (IndexedDB/Dexie) plan. Retained for history; see *Azure-hosted, Entra-authenticated, multi-user rebuild* above.
+
+**Decision:** Plan to rebuild `proispro` as a **local-first** app — persist to **IndexedDB via Dexie** behind a single **storage-adapter (repository) seam**, **drop auth entirely**, and use **JSON export/import** for backup + portability + one-time Supabase migration. Retire the orphaned `identify-disc` edge function and the dormant `disc-photos` Storage bucket. Keep React + hooks + `utils/disc.ts`. Full plan: `docs/adr-supabase-free-rebuild.md`.
+
+**Primary:** IndexedDB/Dexie, no backend. **Fallback (deferred):** Turso/libSQL or Cloudflare D1 + tiny Worker behind the *same* adapter interface, only if auto multi-device sync becomes a hard requirement.
+
+**Trade-offs named:**
+- Gain: zero backend/secrets/RLS/OAuth, offline-first, tiny attack+review surface, $0 infra, ends doc drift.
+- Lose: per-device data (mitigated by export + optional later sync); **public for-sale share URL (`sale.html?token`) is the one genuine feature regression** without a server.
+
+**IMPORTANT — documentation drift to correct (Phase 5):**
+- `team.md` Tech Stack says **Alpine.js** → reality is **React 18 + TS + Vite 6**.
+- `decisions.md` marks **CosmosDB via DAB** and **Azure Static Web Apps** as *Active* → reality is **Supabase + GitHub Pages** (`deploy.yml`). These entries are **stale/superseded** and must be corrected.
+
+**Also note:** the `identify-disc` edge function and Supabase Storage photo upload have **no callers in `src/`** today — retiring them is cleanup, not feature loss.
+
+**Rebuild sequence:** seam → swap → delete (Phase 0 adapter seam over current Supabase; 1 Dexie adapter; 2 export/migration; 3 remove `@supabase/supabase-js` + `supabase/`; 4 retire legacy Alpine files; 5 fix docs; 6 optional sync).
+
+---
+
+### Azure-hosted, Entra-authenticated, multi-user rebuild
+**By:** Danny (Lead / Architect) | **Date:** 2026-10-19 | **Status:** Active (Proposed — supersedes local-first ADR)
+
+> **⚠️ Compute/API tier REVISED — 2026-10-19 (Danny).** The **managed-Azure-Functions-in-SWA API** specified below is now replaced by a **conventional long-running HTTP server packaged as a container on Azure Container Apps (ACA)**, with the React SPA staying on SWA and ACA attached as a **linked backend** (Entra EasyAuth still forwards `x-ms-client-principal`). See *Compute/API Tier Revision — Functions-in-SWA → Container API on Azure Container Apps* below and `docs/adr-azure-entra-rebuild.md`. **Everything else in this decision still stands:** Entra ID auth, Azure SQL serverless, the storage-adapter seam, per-owner `ownerId` scoping, **NO Supabase**, **NO managed DAB**.
+
+**Requirement change:** proispro is now **multi-user** — Anders will share it with friends, so it needs a **real, shared, hosted database** (not per-device local storage). This **voids** the earlier single-user assumption and **withdraws** the local-first (IndexedDB/Dexie, no-auth) recommendation.
+
+**Decision (the architecture):**
+- **Preferred cloud: Azure** (Anders has a full Entra ID environment + tooling).
+- **Hosting: Azure Static Web Apps (SWA)** — static React SPA + built-in Entra auth + managed Azure Functions API, one deploy target.
+- **Database: Azure SQL Database, serverless (auto-pause)** — relational, boring SQL, near-$0 idle cost at hobby scale. Fallback: Cosmos DB serverless (free tier) behind the same API.
+- **API: thin hand-written managed Azure Functions** (REST, ~one handler set per entity). **Not** Data API Builder — the managed DAB-in-SWA feature was retired 2026-11-30 (prior team scar); DAB only as a self-hosted fallback.
+- **Auth: Entra ID via SWA built-in authentication (EasyAuth)** — no MSAL code. Server derives `ownerId` from the Entra principal (`x-ms-client-principal` / `oid`) and scopes every query — **replaces Supabase RLS**. Friends invited as **Entra B2B guest users**; no RBAC.
+- **Multi-tenancy:** per-owner rows (`ownerId` on every entity) + one `visibility:'shared'` for-sale surface (authenticated friends-only marketplace, replacing the old anonymous `sale.html?token` link).
+- **Keep the storage-adapter seam:** new `AzureAdapter` is the only client code that knows the transport; UI/hooks unchanged.
+- **IaC:** `azd` (Azure Developer CLI) + Bicep. **No Supabase, no microservices, no event sourcing** — one SPA + one thin API + one DB.
+
+**Trade-offs named:** hand-written CRUD (vs DAB's zero code) to own our fate and avoid a deprecated dependency; SQL cold-start after idle (vs always-on cost); a DNS cutover window (Pages → SWA); no anonymous public share link; no photo upload in v1.
+
+**Supersedes:** the local-first ADR (`danny-supabase-free-rebuild`, "Rebuild on lightweight, Supabase-free, local-first architecture") and all prior Cosmos/DAB/SWA-DB-Connections and Supabase + GitHub Pages architecture/hosting/auth entries (annotated **Superseded** in this file). The **DAB-deprecation lesson** (`docs/lessons-learned.md`) stays in force — it is why the API tier is Functions, not DAB.
+
+**Docs:** `team.md` stack is wrong (says Alpine.js) — update to React 18 + TS + Vite + Azure SWA + Azure SQL serverless + Functions + Entra ID, **multi-user**. Full plan: `docs/adr-azure-entra-rebuild.md` (revises/supersedes `docs/adr-supabase-free-rebuild.md`).
+
+**Phasing / owners:** Phase 0 seam (Rusty) → 1 provision Azure/IaC/Entra app reg (Linus) → 2 schema + thin API (Danny) → 3 AzureAdapter + Entra wiring (Rusty) + sign-in/sharing UX (Livingston) → 4 Supabase→Azure SQL migration tooling (Basher) + hosting cutover (Linus) → 5 delete Supabase + legacy Alpine → 6 fix docs (Danny + Scribe).
+
+---
+
+### Compute/API Tier Revision — Functions-in-SWA → Container API on Azure Container Apps
+
+**Status:** Active — 2026-10-19 — Danny (Lead / Architect). Requested by Anders (AK).
+**Refines (does not supersede):** the Active "Azure-hosted, Entra-authenticated, multi-user rebuild" decision and `docs/adr-azure-entra-rebuild.md`. Only the **compute/API tier** changes; everything else in that ADR stands.
+
+**Context / trigger.** Anders gave two signals that touch only compute: (1) *"create an infrastructure where I can scale a bit more"* → wants real horizontal headroom; (2) *"Functions is hard to work with"* → the Azure Functions programming model (triggers/bindings, stateless handlers, cold starts, awkward local dev) is a developer-experience pain point. Developer experience is now a first-class, heavily-weighted requirement.
+
+**Decision.**
+- **API tier:** move off **managed Azure Functions-in-SWA** onto a **conventional long-running HTTP server** (recommended: **Node + Fastify + TypeScript**; ASP.NET Minimal API is an accepted alternative) packaged as a **container on Azure Container Apps (ACA, Consumption)**. **PRIMARY.** **Fallback compute:** **Azure App Service (Web App for Containers)** — same image, always-warm PaaS, at the cost of an idle floor. **AKS rejected** (operational overhead unjustified for tens of users). Keep **Dapr OFF**.
+- **Frontend:** the **React SPA stays on Azure Static Web Apps** (static CDN). The ACA API is **attached to SWA as a linked backend**.
+- **Auth adjustment:** keep **Entra ID via SWA EasyAuth**; with the API in a separate tier, SWA's **linked backend proxies `/api/*` to ACA and forwards `x-ms-client-principal`** → the server still derives `ownerId` with **near-zero auth code**. Caveats: SWA **Standard** tier, one linked backend, supported region, and **ACA ingress must be locked to the proxy** (never trust the principal header on an independently-public endpoint). **Documented fallback:** **MSAL-in-SPA + a small validate-JWT middleware** (two origins + CORS + a second app registration) if linked-backend constraints bite.
+- **Scaling:** ACA **HTTP autoscale** on concurrent requests; `minReplicas 0..1`, `maxReplicas 3`. **Scale-to-zero (minReplicas:0) is the default** (~$0 idle, few-second cold start); flip to `minReplicas:1` only if first-load latency annoys. Honest ceiling: tens of users → 1–2 replicas suffice; this is a replica count, not an orchestration platform.
+- **IaC/CI:** `azd` + Bicep now provisions **SWA + ACA env + API container app + Azure Container Registry (ACR) + Azure SQL serverless + Entra app reg(s)**; **CI builds/pushes the image to ACR and deploys the ACA revision**. Adds a standard **Dockerfile**.
+
+**Unchanged (explicitly):** Entra ID auth, **Azure SQL Database serverless** (+ its fallback) with managed identity, the **storage-adapter seam** (`AzureAdapter` still just calls `/api/...` — only the server behind it changes), **per-owner `ownerId` scoping** replacing RLS, **friends as Entra B2B guests**, `azd`+Bicep IaC, phased seam→swap→delete migration, **NO Supabase**, **NO managed Data API Builder** (the DAB-deprecation scar still binds; DAB only as a self-hosted fallback in the same ACA env).
+
+**Consequences.** + Normal web-API dev experience (run the container locally, ordinary routing/middleware); real horizontal scale (replica count in Bicep); near-$0 idle (ACA scale-to-zero + SQL auto-pause); one container runtime. − We now own a container image + ACR + a CI build step; a separate API tier adds linked-backend constraints (or CORS + JWT under the fallback); ACA/SQL cold-start on scale-from-zero/idle.
+
+**Owner mapping.** Linus — ACA/App Service + ACR + Bicep + CI container pipeline + Entra app reg. Danny — API shape (Fastify/TS) + auth-validation design (linked-backend header / JWT fallback). Rusty — `AzureAdapter` + MSAL/sign-in wiring if SPA auth changes. Basher — Supabase→Azure SQL migration tooling. Livingston — sign-in / sharing UX.
+
+**Reference:** full analysis and decision tables in `docs/adr-azure-entra-rebuild.md` (see the "Revision — 2026-10-19 (compute/API tier only)" note at the top and §2).
 
 ---
 
@@ -701,7 +793,9 @@ Replaced free-text `<input type="text" id="discColor">` with visual swatch picke
 ---
 
 ### Frontend Rewrite: Alpine.js + Supabase Client
-**By:** Rusty (Frontend Dev) | **Date:** 2026-04-16 | **Status:** Implemented
+**By:** Rusty (Frontend Dev) | **Date:** 2026-04-16 | **Status:** **Superseded by the Azure/Entra rebuild**
+
+> **⚠️ Superseded by the Azure/Entra rebuild** (ADR 2026-10-19, `docs/adr-azure-entra-rebuild.md`) — the Alpine.js + Supabase client is replaced by **React 18 + TS + Vite** talking to the Azure Functions API via the `AzureAdapter` seam. (Note: `team.md` still mislabels the stack as Alpine.js — fix in the docs phase.)
 
 Complete rewrite of frontend from vanilla DOM + DAB GraphQL to Alpine.js + Supabase JS client (both via CDN). No build step.
 
@@ -736,7 +830,9 @@ Complete rewrite of frontend from vanilla DOM + DAB GraphQL to Alpine.js + Supab
 ---
 
 ### Azure Fully Decommissioned — Supabase is Sole Backend
-**By:** Linus (DevOps) | **Date:** 2026-04-20 | **Status:** Complete
+**By:** Linus (DevOps) | **Date:** 2026-04-20 | **Status:** **Superseded by the Azure/Entra rebuild**
+
+> **⚠️ Superseded by the Azure/Entra rebuild** (ADR 2026-10-19, `docs/adr-azure-entra-rebuild.md`) — Azure is being **re-adopted** (SWA + Azure SQL serverless + Functions + Entra ID) for the multi-user rebuild. This decommission record is historical; the new Azure footprint is intentionally minimal (one SPA + one thin API + one DB) and avoids the retired DAB feature.
 
 All Azure resources deleted from portal by AK. Repository cleaned of all Azure/CosmosDB/DAB configuration files and documentation.
 
@@ -1452,6 +1548,466 @@ Scaffolded the React migration foundation with the following structure:
 - ✅ `npm install` — 124 packages, 0 vulnerabilities
 - ✅ `npm run build` — Clean TypeScript + Vite build (1.02s)
 - ✅ Output: `dist/` with bundled assets (160KB JS gzipped to 52KB)
+
+---
+
+## Azure/Entra Rebuild — Implementation Log
+
+> These entries record the per-phase implementation decisions that **refine** the
+> Active "Azure-hosted, Entra-authenticated, multi-user rebuild" and "Compute/API
+> Tier Revision — Functions-in-SWA → Container API on Azure Container Apps"
+> decisions above (ADR `docs/adr-azure-entra-rebuild.md`). They add build-level
+> detail (seam, IaC, API, adapter/auth, migration, cutover); they do not supersede
+> the architecture decisions. Merged by Scribe 2026-02-10.
+
+### Decision: Storage-adapter seam (Phase 0 / P0)
+
+**Author:** Rusty (Frontend Dev)
+**Date:** 2026-10-19
+**Status:** Implemented — pure refactor, zero behavior change (build green)
+**Relates to:** `docs/adr-azure-entra-rebuild.md` §3.1 (the keystone seam)
+
+#### What changed
+
+Introduced a backend-agnostic persistence seam under `src/lib/storage/`. Hooks no
+longer import `../lib/supabase` — they talk only to `getStorage()`. The app still
+runs 100% on Supabase; only the *indirection* was added.
+
+##### New files
+- `src/lib/storage/types.ts` — `StorageAdapter`, generic `Collection<T>`
+  (`list/get/put/remove`) plus per-entity collection interfaces, the backup shape
+  (`StorageExport` + `exportAll()/importAll()`), and the centralised client entity
+  types (`ClientPin`, `HoleAssignment`, `ClientCollection`, `CollectionDisc`,
+  `WishlistItem`, `ForSaleListing`, `BagHistoryEntry`). `ClientDisc`/`ClientBag`
+  are imported from `utils/disc.ts` (not duplicated).
+- `src/lib/storage/supabaseAdapter.ts` — `supabaseAdapter`, a verbatim move of the
+  existing `supabase.from(...)` logic (ordering, `toDbDisc`/`fromDbDisc`,
+  optimistic-update contracts, and Supabase's resolve-with-`{error}` semantics all
+  preserved).
+- `src/lib/storage/index.ts` — `getStorage(): StorageAdapter`. Single accessor +
+  `VITE_STORAGE` env switch stub (defaults to `'supabase'`).
+- `src/vite-env.d.ts` — types `import.meta.env.VITE_STORAGE`.
+
+##### Changed files
+- `src/hooks/useDiscs.ts`, `useBags.ts`, `useCoursePins.ts`, `useCollections.ts`,
+  `useWishlist.ts`, `useForSale.ts` — now call `getStorage().<entity>.<method>()`.
+  **Public hook APIs (returned object shapes) are unchanged**, so pages/components
+  were not touched. Hooks that moved their inline client types into `types.ts`
+  re-export them (`export type { ... }`) so existing page imports keep working.
+
+`AuthContext.tsx` was intentionally **not** touched (auth seam is P3). Hooks still
+read `user` from `useAuth` and pass `user.id` into adapter methods that need it.
+
+#### The contract
+
+`StorageAdapter` exposes one collection per entity: `discs`, `bags`, `bagHistory`,
+`coursePins`, `holeAssignments`, `collections`, `collectionDiscs`, `wishlist`,
+`forSale`, `saleTokens`. The seven primary entities implement the generic
+`Collection<T>` (`list/get/put/remove`) plus only the extra methods a hook actually
+uses today (e.g. `discs.setQuantity`, `coursePins.create` returning a success flag,
+`holeAssignments.removeByPin`, `forSale.updateStatus`). The join/side tables
+(`bagHistory`, `collectionDiscs`, `saleTokens`) expose just their real operations.
+Nothing speculative was invented. `exportAll()` is implemented (reads); `importAll()`
+is a documented Phase-0 stub (migration-phase concern).
+
+#### How a future adapter plugs in
+
+Implement a new object satisfying `StorageAdapter` (e.g. `src/lib/storage/azureAdapter.ts`,
+plain `fetch` to `/api/*`), then add one branch in `getStorage()`:
+
+```ts
+// src/lib/storage/index.ts
+if (backend === 'azure') return azureAdapter
+```
+
+Flip `VITE_STORAGE=azure` to run the new backend side-by-side. **No hook changes.**
+That is the whole win: the data layer is swappable, the UI is not rewritten.
+
+#### Verification
+- `npm run build` (tsc + vite) — **green**. (Pre-existing recharts chunk-size
+  warning is unrelated.)
+
+### Decision: Azure IaC layout + deploy pipeline (Phase 1)
+
+**Date:** 2026-10-19
+**Author:** Linus (DevOps)
+**Requested by:** AK (Anders)
+**Status:** Proposed (files authored; NOT deployed — no Azure credentials in this environment)
+**Scope:** Phase 1 of `docs/adr-azure-entra-rebuild.md` — provision the Azure
+target architecture as reproducible Infrastructure-as-Code + CI. Files only.
+
+#### Context
+
+The ADR re-targets proispro onto Azure: SWA (SPA + Entra EasyAuth) → Container
+Apps API → Azure SQL serverless, with ACR, a managed identity, and Log
+Analytics. Phase 1 (Linus) authors the IaC + CI so the stack is reproducible and
+boring — no portal click-ops.
+
+#### Decision
+
+##### IaC: azd + Bicep (subscription-scoped), modular
+
+- `infra/main.bicep` — `targetScope = 'subscription'`, creates the resource
+  group `rg-proispro-<env>` and orchestrates modules. Globally-unique names use a
+  deterministic `uniqueString` token so redeploys of an env are idempotent.
+- `infra/modules/` — `monitoring` (Log Analytics, 1 GB/day cap, 30-day
+  retention), `identity` (user-assigned MI), `registry` (ACR Basic + AcrPull role
+  to the MI), `sql` (logical server, Entra-only auth, serverless GP_S_Gen5 DB with
+  auto-pause), `containerapps` (ACA env + API app), `staticwebapp` (SWA Standard).
+- `infra/main.parameters.json` — hobby-scale defaults: `minReplicas=0`
+  (scale-to-zero), `maxReplicas=3`, SQL `minCapacity=0.5`, `autoPauseDelay=60`,
+  ACR Basic, Log Analytics PerGB2018. Uses azd `${VAR=default}` substitution.
+- `azure.yaml` — azd services: `web` (host `staticwebapp`, `dist/`) and `api`
+  (host `containerapp`, `./api` + Dockerfile). Infra module = `main`.
+
+##### Auth / identity model (no secrets in app)
+
+- **ACR pull** and **Azure SQL access** both go through one **user-assigned
+  managed identity**. ACR: AcrPull role assignment in Bicep (admin user disabled).
+  SQL: Entra-only auth; Bicep sets the Entra **admin**, but the contained DB user
+  for the MI is a **manual post-deploy SQL grant** (documented).
+- The container app receives `AZURE_CLIENT_ID`, `SQL_SERVER`, `SQL_DATABASE` as
+  env — it connects to SQL with an AAD token, **no password**.
+
+##### CI: GitHub Actions, OIDC, gated on main
+
+- `.github/workflows/azure-deploy.yml`: build API image → push to ACR → update
+  ACA revision; build SPA → deploy to SWA. OIDC federated login (`azure/login`),
+  **no stored cloud credentials**. Required repo secrets documented in the
+  workflow header. The `api` job **auto-skips until `api/Dockerfile` exists**
+  (Phase 2 dependency) so the SPA path works meanwhile.
+
+##### Cost posture
+
+Cheapest hobby tiers throughout: ACA Consumption scale-to-zero, SQL serverless
+auto-pause (compute-$0 when idle), ACR Basic, Log Analytics capped at 1 GB/day.
+Idle cost ≈ storage only.
+
+#### Manual steps that IaC deliberately does NOT own (see `docs/azure-provisioning.md`)
+
+1. **Entra app registration** — create app reg, redirect URIs, client secret,
+   (optional) expose `access_as_user` API scope, B2B guest invites for friends.
+2. **SWA auth app settings** — `AZURE_CLIENT_ID`/`AZURE_CLIENT_SECRET` (secret
+   stays out of source/IaC).
+3. **SWA linked backend** — `az staticwebapp backends link` to the ACA app
+   (one backend per SWA, region-gated); then lock ACA ingress to the proxy.
+4. **SQL identity grant** — `CREATE USER [id-proispro-…] FROM EXTERNAL PROVIDER`
+   + `db_datareader`/`db_datawriter` (contained DB user runs inside the DB).
+5. **CI bootstrap** — federated credential + repo secrets + AcrPush/Contributor.
+
+#### Verification
+
+- `az bicep build --file infra/main.bicep` → **exit 0, no errors** (Bicep CLI
+  0.34.44, Azure CLI 2.78.0). Generated ARM artifact removed; not committed.
+- Both YAML files (`azure-deploy.yml`, `azure.yaml`) parse clean.
+- Not deployed: no Azure credentials in this environment (by design).
+
+#### Consequences
+
+- Reproducible `azd up` / `az deployment sub create` stands up the whole stack;
+  `azd down` tears it back down.
+- A new container image + registry + build step is now owned (the ADR's named
+  trade-off vs managed Functions) — handled in CI.
+- Downstream phases depend on these files: Phase 2 adds `api/` + `Dockerfile`
+  (unskips the CI `api` job); Phase 3 adds `staticwebapp.config.json` + the
+  `AzureAdapter`; Phase 4 wires DNS cutover.
+
+#### Files created
+
+- `infra/main.bicep`
+- `infra/modules/{monitoring,identity,registry,sql,containerapps,staticwebapp}.bicep`
+- `infra/main.parameters.json`
+- `azure.yaml`
+- `.github/workflows/azure-deploy.yml`
+- `docs/azure-provisioning.md`
+
+### Decision: P2 — Container API tier (Fastify/TS) + Azure SQL schema
+
+**Author:** Danny (Lead/Architect) · **Date:** 2026-10-19 · **Requested by:** AK
+**Scope:** new `api/` project only; implements the ADR's Phase 2.
+
+#### API shape
+
+- Thin, hand-written Fastify/TS REST under `/api`, one uniform CRUD per entity,
+  mirroring the client `Collection<T>` contract (`src/lib/storage/types.ts`):
+  - `GET /api/{entity}` → `list()` (owner-scoped, ordered per the client's documented order)
+  - `GET /api/{entity}/:id` → `get()`
+  - `POST /api/{entity}` and `PUT /api/{entity}/:id` → `put()` (upsert)
+  - `DELETE /api/{entity}/:id` → `remove()`
+  - `GET /api/forsale/shared` → `forSale.listShared()`: every owner's
+    `visibility='shared'` listing, read-only (the friends marketplace).
+- Entities: `discs`, `bags`, `coursePins`, `holeAssignments`, `collections`,
+  `wishlist`, `forsale`. Request/response bodies are the existing **client model
+  shapes**, so a future `AzureAdapter` is a near-pass-through.
+- One generic factory (`routes/crud.ts`) builds every entity's handlers from a
+  small `EntityConfig` (`table`, `orderBy`, `immutable`, `fromRow`, `toRow`).
+  Deliberately not over-abstracted — per-entity field mapping stays explicit.
+
+#### Auth model
+
+- **Azure:** SWA EasyAuth + linked backend forwards `x-ms-client-principal`
+  (base64 JSON). `auth.ts` decodes it and uses the Entra **`oid`** claim as
+  `ownerId`. Missing/invalid → 401.
+- **Local dev:** `DEV_AUTH_OWNER` env flag bypasses the header (treats every
+  request as that owner). Absent header + absent flag → 401.
+- **Trust boundary is the deployment, not the code:** ACA ingress must be locked
+  to the SWA proxy; the forwarded header is only trustworthy there. Documented
+  fallback (not built this phase): MSAL-in-SPA + validate-JWT middleware.
+- **To Azure SQL:** Managed Identity via `DefaultAzureCredential`
+  (`AZURE_CLIENT_ID` selects the UAMI); password/connection-string fallback for
+  local dev. Pool rebuilt just before token expiry (small reconnect blip — an
+  accepted trade-off vs a token-refresh interceptor).
+
+#### ownerId boundary (replaces Supabase RLS)
+
+- `ownerId` is **always** taken from the verified principal and forced onto the
+  row in the upsert path; any `ownerId` in the request body is ignored.
+- Every statement is **parameterized** (`request.input(...)`), owner-scoped with
+  `WHERE ownerId = @ownerId`. No value is concatenated into SQL text.
+- The DB does not enforce isolation (no RLS); the API layer is the single
+  enforcement point. `/api/forsale/shared` is the one intentional cross-owner
+  read, limited to `visibility='shared'`.
+
+#### SQL schema mapping (Supabase/Postgres → Azure SQL, `api/db/schema.sql`)
+
+- `user_id UUID` (FK to `auth.users`, RLS) → `ownerId NVARCHAR(100)` (Entra oid),
+  no FK; isolation moves to the API.
+- String/uuid PKs → `NVARCHAR(64)`, client-supplied (dropped `gen_random_uuid()` defaults).
+- `TIMESTAMPTZ`→`DATETIME2` (UTC `SYSUTCDATETIME()`); `JSONB`(disc_ids)→`NVARCHAR(MAX)` JSON;
+  `NUMERIC`→`DECIMAL`; `BOOLEAN`→`BIT`; `TEXT`→`NVARCHAR`.
+- Indexes on `ownerId` for every table; plus `visibility` on `forsale_listings`.
+- `forsale_listings` gains `visibility ('private'|'shared')` + `seller_name`
+  snapshot for the marketplace; replaces the old public `sale_tokens` share model.
+- Tables: discs, bags, course_pins, hole_assignments, collections,
+  collection_discs (junction, no route this phase), wishlist_items,
+  forsale_listings, bag_history.
+
+#### Container / infra alignment
+
+- `api/Dockerfile`: multi-stage (build TS → slim `node:20-slim`), non-root `node`
+  user, `EXPOSE 3000`, honors `PORT` — matches `infra/modules/containerapps.bicep`
+  (containerPort 3000) and `azure.yaml` service `api` (host containerapp,
+  docker context `.`).
+
+#### Verification
+
+- `npm install` + `npm run build` (tsc) in `api/`: **clean** (0 errors).
+- Boot smoke test: `/api/*` with no principal → **401**; with a valid `oid`
+  principal header → auth passes (reaches DB layer); `/health` boots and probes DB.
+
+#### Follow-ups (not in this phase)
+
+- Lock ACA ingress to the SWA proxy (infra/runbook).
+- Post-deploy `CREATE USER ... FROM EXTERNAL PROVIDER` grant for the UAMI (Linus/runbook).
+- Phase 4: Supabase→Azure SQL export/import, stamping `ownerId` (Basher).
+- Optional: expose `bag_history` / `collection_discs` routes if hooks need them.
+
+### Decision: AzureAdapter + swappable Entra/Supabase auth behind VITE_STORAGE
+
+- **Author:** Rusty (Frontend)
+- **Date:** 2026-10-19
+- **Phase:** P3
+- **Scope:** `src/` only (no `api/`, `infra/`, root `package.json`, or `supabase/` changes; no new deps)
+
+#### What changed
+
+One env switch (`VITE_STORAGE`) now flips the **entire backend — data AND auth —**
+without touching a single hook or page.
+
+| `VITE_STORAGE` | Storage adapter | Auth provider |
+| -------------- | --------------- | ------------- |
+| unset / `supabase` (default) | `supabaseAdapter` | `supabaseAuth` |
+| `azure` | `azureAdapter` | `entraAuth` (SWA EasyAuth) |
+
+##### Files created
+- `src/lib/storage/azureAdapter.ts` — implements `StorageAdapter` as a thin
+  `fetch('/api/...')` client against the REST surface in `api/README.md`.
+- `src/lib/auth/types.ts` — `AppUser { id, email? }` + `AuthProviderImpl` seam.
+- `src/lib/auth/supabaseAuth.ts` — current Supabase auth logic, moved behind the seam.
+- `src/lib/auth/entraAuth.ts` — zero-SDK Entra via `/.auth/me`, `/.auth/login/aad`, `/.auth/logout`.
+- `src/lib/auth/index.ts` — `getAuthProvider()` selector (same `VITE_STORAGE` switch).
+
+##### Files changed
+- `src/lib/storage/index.ts` — `getStorage()` now returns `azureAdapter` when `VITE_STORAGE==='azure'`.
+- `src/contexts/AuthContext.tsx` — no longer hard-wired to Supabase; delegates to the
+  auth seam. **Same context value shape** (`user`, `isLoading`, `signIn`, `signOut`),
+  so `LoginPage`, `Layout`, and `App` are unchanged. `user` is now `AppUser` (Supabase
+  `User` is assignable; only `user.id`/`user.email` are consumed).
+
+#### Key decisions / rationale
+
+- **AzureAdapter is a dumb transport.** Base `/api`, overridable via `VITE_API_BASE`
+  for local dev. `credentials: 'include'` so the SWA session cookie /
+  `x-ms-client-principal` rides automatically (same-origin linked backend).
+- **Server owns `ownerId`.** The Azure path **stops sending `userId`/owner in the
+  body** (server stamps it from the verified principal). The Supabase path still
+  sends `user_id` — unchanged. `create(..., userId)` signatures are preserved for
+  contract compatibility; the Azure impl just drops the arg.
+- **Upsert endpoints are full-document**, so partial updates (`setQuantity`,
+  `bags.update`, `coursePins.update`, `collections.update`, `wishlist.update`,
+  `forSale.updateStatus`) are **read-modify-write**: GET current → merge patch →
+  re-POST. 404 on GET → undefined; 404 on DELETE → treated as success (idempotent).
+  Non-2xx → `throw new Error(serverMessage)` (mirrors the error surfacing hooks expect).
+- **Client-minted ids.** Supabase let the DB mint ids on `create`; the Azure upsert
+  requires `id` in the body, so `coursePins`/`holeAssignments`/`collections`/`wishlist`/
+  `forSale` create paths use `crypto.randomUUID()`.
+- **`importAll` is implemented on Azure** (per-entity re-upsert) — unlike the Supabase
+  Phase-0 stub — since every write is owner-stamped server-side.
+- **Entra is zero-SDK (no MSAL).** EasyAuth injects the principal; the browser never
+  handles a token. `onChange` is a no-op (redirect-based; `getUser()` re-reads
+  `/.auth/me` after the login redirect). **MSAL is the documented fallback only if the
+  SPA ever leaves SWA** (ADR §3.1) — isolated to `entraAuth.ts`.
+
+#### Known gaps (no server surface yet — documented, not silently broken)
+
+The REST API exposes the 7 CRUD entities only. These `StorageAdapter` members have
+**no `/api` route**, so the Azure impls are intentional no-ops/empties with inline
+comments pointing at the ADR:
+- `bagHistory` — audit log not carried into the Azure model (ADR §3.2).
+- `collectionDiscs` — membership is modeled as embedded `discIds` on the collection
+  (ADR §3.2), not a join table; wiring it onto the collections entity is a follow-up.
+- `saleTokens` — the anonymous `sale.html?token=...` link is replaced by the
+  authenticated friends marketplace `GET /api/forsale/shared` (ADR §3.3).
+
+`azureAdapter.forSale` additionally exposes `listShared()` → `GET /api/forsale/shared`
+for that marketplace (extra method beyond the P0 `ForSaleCollection` contract).
+
+#### Verification
+
+Both builds pass clean (`tsc && vite build`), proving both adapters + both auth impls typecheck:
+
+- `npm run build` (default / supabase) → ✓ built, 719 modules.
+- `$env:VITE_STORAGE='azure'; npm run build` → ✓ built, 719 modules.
+
+### Decision: Supabase → Azure SQL migration tooling (Phase 4)
+
+- **Author:** Basher (Data Engineer)
+- **Date:** 2026-10-19
+- **Scope:** `tools/migration/` (self-contained Node + TS CLI). No changes to
+  `src/`, `api/`, `infra/`, `supabase/`, or root `package.json`.
+- **Context:** ADR `docs/adr-azure-entra-rebuild.md` §4/§4.1 — migrate data via
+  JSON **export → import (stamping `ownerId`)**. Target schema is
+  `api/db/schema.sql` (Danny).
+
+#### Decision
+
+A one-time, isolated CLI with three commands (`export`, `import`, `verify`),
+its own `package.json` (`@supabase/supabase-js`, `mssql`, `@azure/identity`,
+`dotenv`, `typescript` + `tsx`). Compiles cleanly with `tsc`.
+
+##### Migration approach
+- **Export = faithful raw dump.** `export.ts` reads every Supabase table
+  (`discs, bags, course_pins, hole_assignments, collections, collection_discs,
+  wishlist_items, forsale_listings, bag_history`) with pagination, preserving
+  the source `user_id`, into one `proispro-backup.json` (shape mirrors
+  `StorageExport` plus `bagHistory`). `collection_discs` has no `user_id` in
+  Postgres, so each row is stamped with its parent collection's owner at export.
+- **Translation happens at import**, not export (keeps the backup auditable and
+  re-importable). `src/mapping.ts` is the single source of truth for Postgres →
+  T-SQL column names + types, reconciled against `api/db/schema.sql`:
+  snake_case columns kept, `NUMERIC→DECIMAL`, `BOOLEAN→BIT`,
+  `TIMESTAMPTZ→DATETIME2`, JSONB (`disc_ids`, `tags`) → `NVARCHAR(MAX)` JSON.
+- **Dropped (no target column):** `discs.flight` (legacy), `course_pins.holes_data`,
+  `forsale.price/currency/contact_*`.
+- **New Azure-only columns:** `forsale_listings.visibility` defaults to
+  `'private'` (owners opt into the friends marketplace later); `seller_name`
+  copied only if present. `status` constrained to `available|sold`.
+
+##### ownerId mapping (never guessed)
+- `ownerId` = Entra object id (oid, GUID). Supplied **only** via
+  `--owner <oid>` (single user) and/or `--owner-map owner-map.json`
+  (`{ "<supabase_user_id>": "<entra_oid>" }`). Map entry wins; `--owner` is the
+  fallback. If any row is unmapped, import **aborts before any DB write** — no
+  partial, half-owned load. Owner ids are shape-validated (GUID) with a warning.
+
+##### Idempotency & safety
+- Default = **UPSERT** via parameterised `MERGE` on each table's primary key →
+  re-runs converge, safe to repeat.
+- `--fresh` = **scoped truncate-and-load**: deletes only the migrated owners'
+  rows (`WHERE ownerId IN (...)`) inside a per-table transaction, then loads;
+  other users' data is never touched.
+- `--dry-run` resolves owners and builds the full row set with **zero** DB
+  writes. Every value is bound with its explicit `mssql` type (NULLs/decimals
+  safe). All writes are parameterised (no string interpolation of data).
+
+##### Verification (round-trip)
+- `verify.ts` (and `import --verify`) print per-table `source=<n> target=<n>`
+  with `OK`/`!!` and a non-zero exit on mismatch; target counts are scoped to the
+  migrated owners when a map/owner is given.
+
+##### Auth
+- Azure SQL: `SQL_AUTH=aad` (preferred, `DefaultAzureCredential` → access token)
+  or `SQL_AUTH=sql` (user/password). Both documented in `.env.example`/README.
+- Supabase export: service_role key (full read) documented as the happy path.
+
+#### Verification performed
+- `npm install` + `npm run build` (tsc) — **compiles cleanly, exit 0**, all 10
+  modules emitted.
+- `import --dry-run` against a sample backup — mapping + owner stamping correct.
+- Guardrail confirmed: no `--owner`/`--owner-map` → hard abort "Refusing to
+  guess ownership." `--owner-map` resolves source user_id → oid as expected.
+- Generated `MERGE` SQL inspected: column list matches `api/db/schema.sql`
+  exactly for `dbo.discs`.
+
+#### Columns I double-checked (and resolved)
+- `collection_discs` → no source `user_id`; stamped from parent collection. ✔
+- `forsale` `visibility`/`seller_name` → Azure-only; defaulted, not from source. ✔
+- `discs.tags` → not guaranteed in source; stored as JSON text if present else NULL. ✔
+- `course_pins.holes_data`, legacy `flight`, forsale `price/contact_*` → intentionally dropped. ✔
+
+### Decision: docs reconciled to Azure/Entra reality; cutover gated on user deploy
+
+**Author:** Danny (Lead / Architect)
+**Date:** 2026-10-19
+**Phase:** P6 (docs/config only)
+**Requested by:** Anders (AK)
+
+#### Context
+
+Phases P0–P4 built the Azure/Entra rebuild (storage-adapter seam, Bicep IaC,
+Fastify ACA API, Azure adapter + auth seam, Supabase→Azure SQL migration CLI) —
+all compile green. But the squad config docs still described the *old* stack
+(Alpine.js + Supabase + GitHub Pages), and there was no runbook for actually
+going live.
+
+#### Decision
+
+1. **`.squad/team.md` reconciled.** The "Tech Stack" table now states the real
+   target: React 18 + TS + Vite SPA, Azure Static Web Apps, Node + Fastify on
+   ACA, Azure SQL (serverless), Microsoft Entra ID (SWA EasyAuth), with the
+   `VITE_STORAGE` storage-adapter seam noted as the transition mechanism. The
+   Coding Agent capability rows were retargeted to the Azure stack (Azure SQL /
+   T-SQL 🟢, Bicep/ACA/SWA 🟢, storage seam 🟢; Entra auth / `ownerId` scoping
+   🟡, migration tooling 🟡; color 🔴).
+2. **`.squad/routing.md` reconciled.** Stale Alpine.js / Supabase-RLS rows
+   replaced: Azure SQL schema + API routes → Danny; ACA/SWA/Entra infra + CI +
+   DNS → Linus; React components/adapters/auth wiring → Rusty; Supabase→Azure
+   migration/data tooling → Basher. Table structure preserved.
+3. **`docs/CUTOVER.md` written** — an 8-step, gated, user-driven runbook:
+   provision → Entra/SWA auth + guest invites → schema + MI grant → API deploy +
+   `/health` → data migration (export/import/verify) → flip `VITE_STORAGE=azure`
+   (go-live) → **retire Supabase (destructive, point of no return)** → DNS
+   cutover. Includes an instant-rollback note (flip the toggle back) valid until
+   the retire step.
+
+#### Why gated / Supabase retained
+
+Going live requires **the user's Azure credentials and tenant permissions**
+(subscription, Entra app reg, B2B guest invites, DNS) which are **not available
+in this environment**. `VITE_STORAGE` defaults to `supabase`, so **production
+keeps running on Supabase** and remains instantly reversible until the user
+completes Step 6 and consciously executes the destructive Step 7. No Supabase
+code, the `supabase/` directory, or legacy Alpine files were removed in this
+phase — Step 7 is the checklist, executed later by the user.
+
+#### Scope / non-actions
+
+- Changed only `.squad/team.md`, `.squad/routing.md`, `docs/CUTOVER.md`, and this
+  note. No changes to `src/`, `api/`, `infra/`, `tools/`, `package.json`, or
+  `supabase/`. No git-mutating commands or `npm install` run.
+- `sale.html` fate (the old anonymous share page vs. the authenticated
+  `/api/forsale/shared` marketplace) is flagged as a Step 7 decision —
+  recommended removal or a static redirect — to be confirmed at cutover.
 
 ---
 

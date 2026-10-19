@@ -1,22 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
+import { getStorage } from '../lib/storage'
 import { useAuth } from '../contexts/AuthContext'
+import type { ClientPin, HoleAssignment } from '../lib/storage/types'
 
-export interface ClientPin {
-  id: string
-  courseName: string
-  courseId: string | null
-  bagId: string
-  createdAt: number
-}
-
-export interface HoleAssignment {
-  id: string
-  course_pin_id: string
-  hole_ref: string
-  disc_id: string
-  disc_name: string
-}
+export type { ClientPin, HoleAssignment }
 
 export interface OSMCourse {
   osmId: number
@@ -58,35 +45,14 @@ export function useCoursePins() {
 
   const loadPins = useCallback(async () => {
     if (!user) return
-    const { data } = await supabase
-      .from('course_pins')
-      .select('*')
-      .order('created_at', { ascending: false })
-    setPins(
-      (data || []).map(p => ({
-        id: p.id,
-        courseName: p.course_name || '',
-        courseId: p.course_id || null,
-        bagId: p.bag_id || '',
-        createdAt: new Date(p.created_at).getTime(),
-      }))
-    )
+    const data = await getStorage().coursePins.list()
+    setPins(data)
   }, [user])
 
   const loadHoleAssignments = useCallback(async () => {
     if (!user) return
-    const { data } = await supabase
-      .from('hole_assignments')
-      .select('*')
-    setHoleAssignments(
-      (data || []).map(h => ({
-        id: h.id,
-        course_pin_id: h.course_pin_id,
-        hole_ref: h.hole_ref || '',
-        disc_id: h.disc_id || '',
-        disc_name: h.disc_name || '',
-      }))
-    )
+    const data = await getStorage().holeAssignments.list()
+    setHoleAssignments(data)
   }, [user])
 
   useEffect(() => {
@@ -96,29 +62,24 @@ export function useCoursePins() {
 
   const createPin = async (courseName: string, courseId: string | null, bagId: string) => {
     if (!user) return
-    const { data, error } = await supabase
-      .from('course_pins')
-      .insert({ course_name: courseName, course_id: courseId, bag_id: bagId })
-      .select()
-      .single()
-    if (!error && data) {
+    const ok = await getStorage().coursePins.create({ courseName, courseId, bagId })
+    if (ok) {
       await loadPins()
     }
   }
 
   const updatePin = async (pinId: string, updates: Partial<ClientPin>) => {
-    const dbUpdates: Record<string, any> = {}
-    if (updates.courseName !== undefined) dbUpdates.course_name = updates.courseName
-    if (updates.courseId !== undefined) dbUpdates.course_id = updates.courseId
-    if (updates.bagId !== undefined) dbUpdates.bag_id = updates.bagId
-
-    await supabase.from('course_pins').update(dbUpdates).eq('id', pinId)
+    await getStorage().coursePins.update(pinId, {
+      courseName: updates.courseName,
+      courseId: updates.courseId,
+      bagId: updates.bagId,
+    })
     await loadPins()
   }
 
   const deletePin = async (pinId: string) => {
-    await supabase.from('hole_assignments').delete().eq('course_pin_id', pinId)
-    await supabase.from('course_pins').delete().eq('id', pinId)
+    await getStorage().holeAssignments.removeByPin(pinId)
+    await getStorage().coursePins.remove(pinId)
     await loadPins()
     await loadHoleAssignments()
   }
@@ -134,17 +95,17 @@ export function useCoursePins() {
       h => h.course_pin_id === pinId && h.hole_ref === holeRef
     )
     if (existing) {
-      await supabase
-        .from('hole_assignments')
-        .update({ disc_id: discId, disc_name: discName })
-        .eq('id', existing.id)
-    } else {
-      await supabase.from('hole_assignments').insert({
-        course_pin_id: pinId,
-        hole_ref: holeRef,
+      await getStorage().holeAssignments.update(existing.id, {
         disc_id: discId,
         disc_name: discName,
-        user_id: user.id,
+      })
+    } else {
+      await getStorage().holeAssignments.create({
+        pinId,
+        holeRef,
+        discId,
+        discName,
+        userId: user.id,
       })
     }
     await loadHoleAssignments()
@@ -155,7 +116,7 @@ export function useCoursePins() {
       h => h.course_pin_id === pinId && h.hole_ref === holeRef
     )
     if (existing) {
-      await supabase.from('hole_assignments').delete().eq('id', existing.id)
+      await getStorage().holeAssignments.remove(existing.id)
       await loadHoleAssignments()
     }
   }

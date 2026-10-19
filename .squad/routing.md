@@ -6,9 +6,10 @@ How to decide who handles what.
 
 | Work Type | Route To | Examples |
 |-----------|----------|----------|
-| Alpine.js components, reactive UI | Rusty | {example: build form modals, refactor DOM to x-data directives} |
-| Supabase schema, RLS policies, migrations | Danny | {example: set up Row-Level Security, design PostgreSQL schema} |
-| GitHub Pages deployment, DNS, CI/CD | Linus | {example: enable Pages, CNAME setup, GitHub Actions workflows} |
+| React components, storage adapters, auth wiring | Rusty | {example: build form modals, wire `AzureAdapter`/`SupabaseAdapter` behind the seam, SWA EasyAuth vs Supabase auth} |
+| Azure SQL schema, T-SQL, API routes | Danny | {example: design `api/db/schema.sql`, owner-scoped Fastify CRUD routes} |
+| ACA/SWA/Entra infra, Bicep, CI/CD, DNS | Linus | {example: azd/Bicep deploy, SWA linked backend, Entra app reg, CNAME cutover, GitHub Actions} |
+| Supabase→Azure SQL migration & data tooling | Basher | {example: export/import/verify CLI, `ownerId` stamping, owner-map} |
 | Color palettes, accessibility, color systems | Saul | {example: "generate an accessible color palette", "check this color for WCAG contrast"} |
 | UX critique, layout redesigns, interaction design, data viz UX | Livingston | {example: "redesign the flight guide grid", "improve the disc card layout", "audit mobile UX"} |
 | Code review | Danny | Review PRs, check quality, suggest improvements |
@@ -46,8 +47,9 @@ How to decide who handles what.
 | Work Type | Primary | Secondary |
 |-----------|---------|----------|
 | Architecture, decisions, review | Danny | — |
-| HTML, CSS, JavaScript, Alpine.js | Rusty | Saul, Livingston |
-| Supabase database, RLS policies | Danny | Basher |
-| GitHub Pages, deployment | Linus | — |
+| React, TypeScript, vanilla CSS, storage adapters | Rusty | Saul, Livingston |
+| Azure SQL schema, API routes, `ownerId` scoping | Danny | Basher |
+| ACA/SWA/Entra infra, Bicep, deployment, DNS | Linus | — |
+| Supabase→Azure SQL migration & data tooling | Basher | Danny |
 | Autonomous issue work | @copilot | Danny |
 

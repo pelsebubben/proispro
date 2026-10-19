@@ -1,18 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
+import { getStorage } from '../lib/storage'
 import { useAuth } from '../contexts/AuthContext'
 import { ClientDisc } from '../utils/disc'
+import type { ClientCollection, CollectionDisc } from '../lib/storage/types'
 
-export interface ClientCollection {
-  id: string
-  name: string
-  description: string
-}
-
-export interface CollectionDisc {
-  collection_id: string
-  disc_id: string
-}
+export type { ClientCollection, CollectionDisc }
 
 export function useCollections() {
   const { user } = useAuth()
@@ -21,25 +13,12 @@ export function useCollections() {
 
   const loadCollections = useCallback(async () => {
     if (!user) return
-    const { data: colData } = await supabase
-      .from('collections')
-      .select('*')
-      .order('created_at', { ascending: false })
-    setCollections(
-      (colData || []).map(c => ({
-        id: c.id,
-        name: c.name || '',
-        description: c.description || '',
-      }))
-    )
-
-    const { data: cdData } = await supabase.from('collection_discs').select('collection_id, disc_id')
-    setCollectionDiscs(
-      (cdData || []).map(cd => ({
-        collection_id: cd.collection_id,
-        disc_id: cd.disc_id,
-      }))
-    )
+    const [colData, cdData] = await Promise.all([
+      getStorage().collections.list(),
+      getStorage().collectionDiscs.list(),
+    ])
+    setCollections(colData)
+    setCollectionDiscs(cdData)
   }, [user])
 
   useEffect(() => {
@@ -48,18 +27,18 @@ export function useCollections() {
 
   const createCollection = async (name: string, description: string) => {
     if (!user) return
-    await supabase.from('collections').insert({ name, description })
+    await getStorage().collections.create({ name, description })
     await loadCollections()
   }
 
   const updateCollection = async (id: string, name: string, description: string) => {
-    await supabase.from('collections').update({ name, description }).eq('id', id)
+    await getStorage().collections.update(id, { name, description })
     await loadCollections()
   }
 
   const deleteCollection = async (id: string) => {
-    await supabase.from('collection_discs').delete().eq('collection_id', id)
-    await supabase.from('collections').delete().eq('id', id)
+    await getStorage().collectionDiscs.removeByCollection(id)
+    await getStorage().collections.remove(id)
     await loadCollections()
   }
 
@@ -68,13 +47,9 @@ export function useCollections() {
       cd => cd.collection_id === collectionId && cd.disc_id === discId
     )
     if (existing) {
-      await supabase
-        .from('collection_discs')
-        .delete()
-        .eq('collection_id', collectionId)
-        .eq('disc_id', discId)
+      await getStorage().collectionDiscs.remove(collectionId, discId)
     } else {
-      await supabase.from('collection_discs').insert({ collection_id: collectionId, disc_id: discId })
+      await getStorage().collectionDiscs.add(collectionId, discId)
     }
     await loadCollections()
   }

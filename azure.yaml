@@ -1,0 +1,38 @@
+# Azure Developer CLI (azd) project for proispro.
+# `azd up` provisions infra/main.bicep, builds + pushes the API image to ACR,
+# deploys the ACA revision, and deploys the SPA to Static Web Apps.
+#
+# Prereqs: azd, az, Bicep, Docker (for the api image build).
+# Set required env values first:
+#   azd env set SQL_AAD_ADMIN_LOGIN  "you@contoso.com"
+#   azd env set SQL_AAD_ADMIN_OBJECT_ID "<your-entra-object-id>"
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: proispro
+metadata:
+  template: proispro-azure@1.0.0
+
+infra:
+  provider: bicep
+  path: infra
+  module: main
+
+services:
+  # React SPA -> Azure Static Web Apps. `dist` is the Vite build output.
+  web:
+    project: .
+    language: js
+    host: staticwebapp
+    dist: dist
+
+  # Fastify/TS API -> Azure Container Apps (image built from api/Dockerfile).
+  # NOTE: the api/ project + Dockerfile are delivered by a later phase (Phase 2).
+  # Until then `azd deploy api` has nothing to build; the ACA app runs the
+  # placeholder image from main.bicep. Infra provisioning (`azd provision`) works now.
+  api:
+    project: ./api
+    language: ts
+    host: containerapp
+    docker:
+      path: Dockerfile
+      context: .

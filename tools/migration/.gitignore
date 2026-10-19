@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.log
+
+# Local secrets and real data NEVER get committed.
+.env
+owner-map.json
+proispro-backup.json
+*.backup.json
