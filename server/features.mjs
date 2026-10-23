@@ -1,4 +1,7 @@
+import { randomUUID } from 'node:crypto'
+import { finished } from 'node:stream'
 import { asUser } from './database.mjs'
+import { normalizePhoto } from './photo.mjs'
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const text = (max = 200) => value => typeof value === 'string' && value.length <= max
@@ -9,6 +12,9 @@ const integer = (min, max) => value => Number.isInteger(value) && number(min, ma
 const id = value => typeof value === 'string' && uuid.test(value)
 const boolean = value => typeof value === 'boolean'
 const oneOf = (...values) => value => values.includes(value)
+const bodyLimit = 16_384
+// Room for a base64 JPEG of up to 512 KiB (~683 KiB encoded) plus ordinary disc metadata.
+const photoBodyLimit = 737_280
 const resources = {
   discs: { table: 'owned_discs', required: ['name'], order: 'added_at DESC', fields: {
     name: requiredText, manufacturer: text(), disc_type: nullable(text()), plastic: nullable(text()),
@@ -17,6 +23,7 @@ const resources = {
     fade: nullable(number(-10, 10)), notes: nullable(text(5000)), quantity: integer(1, 10000),
     tags: value => Array.isArray(value) && value.length <= 50 && value.every(text(100)),
     user_photo_url: nullable(value => text(2048)(value) && /^https:\/\//.test(value)),
+    edition: text(200), photo: nullable(text(photoBodyLimit)),
   } },
   bags: { required: ['name'], fields: { name: requiredText,
     disc_ids: value => Array.isArray(value) && value.length <= 500 && value.every(id) && new Set(value).size === value.length } },
@@ -39,17 +46,45 @@ const resources = {
     filters: ['course_pin_id', 'hole_ref'], fields: { course_pin_id: id, hole_ref: requiredText, disc_id: id, disc_name: requiredText } },
 }
 
-export async function readBody(req) {
+const tooLarge = () => Object.assign(new Error('body_too_large'), { status: 413 })
+// How long the rest of a rejected upload is still read and thrown away before its connection is cut.
+const discardWindowMs = 1_000
+
+// The 413 must not wait for the sender to finish. A fast sender completes inside the window and keeps its
+// connection; one that stalls or never stops is disconnected once the window closes.
+function discardRemainder(req) {
+  const cutOff = setTimeout(() => req.destroy(), discardWindowMs).unref()
+  finished(req, error => {
+    clearTimeout(cutOff)
+    // Hanging up mid-upload is the client's choice; any other failure is worth a log line.
+    if (error && !['ECONNRESET', 'ERR_STREAM_PREMATURE_CLOSE'].includes(error.code)) {
+      console.error(JSON.stringify({ event: 'request_body_discard_failed', code: error.code ?? error.name }))
+    }
+  })
+  req.resume()
+}
+
+// Bodies are capped at 16 KiB. Disc writes may read more, but only a body that carries a photo string keeps it.
+export async function readBody(req, { allowPhoto = false } = {}) {
   if (!req.headers['content-type']?.startsWith('application/json')) throw Object.assign(new Error('json_required'), { status: 415 })
+  const limit = allowPhoto ? photoBodyLimit : bodyLimit
   const chunks = []
   let size = 0
-  for await (const chunk of req) {
+  let overflow = false
+  for await (const chunk of req.iterator({ destroyOnReturn: false })) {
     size += chunk.length
-    if (size > 16_384) throw Object.assign(new Error('body_too_large'), { status: 413 })
+    if (size > limit) { overflow = true; break }
     chunks.push(chunk)
   }
-  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) }
-  catch { throw Object.assign(new Error('invalid_json'), { status: 400 }) }
+  if (overflow) {
+    discardRemainder(req)
+    throw tooLarge()
+  }
+  let body
+  try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')) }
+  catch { throw size > bodyLimit ? tooLarge() : Object.assign(new Error('invalid_json'), { status: 400 }) }
+  if (size > bodyLimit && typeof body?.photo !== 'string') throw tooLarge()
+  return body
 }
 
 export async function publicSale(pool, token, json) {
@@ -65,7 +100,16 @@ export async function publicSale(pool, token, json) {
   return result === null ? json(404, { error: 'not_found' }) : json(200, { listings: result })
 }
 
-export async function featureRequest({ req, url, pool, userId, json }) {
+export async function featureRequest({ req, url, pool, userId, json, image }) {
+  // Photo bytes are private: they only leave through this owner-scoped route, never through the inventory list.
+  const photoRoute = url.pathname.match(/^\/api\/v1\/discs\/([^/]+)\/photo$/)
+  if (photoRoute) {
+    if (req.method !== 'GET') return json(405, { error: 'method_not_allowed' })
+    if (!id(photoRoute[1])) return json(400, { error: 'invalid_id' })
+    const photo = await asUser(pool, userId, async client => (await client.query(
+      'SELECT image FROM disc_photos WHERE user_id=$1 AND disc_id=$2', [userId, photoRoute[1]])).rows[0])
+    return photo ? image(photo.image) : json(404, { error: 'not_found' })
+  }
   const match = url.pathname.match(/^\/api\/v1\/([a-z_]+)(?:\/([^/]+))?$/)
   const resource = match?.[1]
   const spec = Object.hasOwn(resources, resource ?? '') ? resources[resource] : null
@@ -101,14 +145,17 @@ export async function featureRequest({ req, url, pool, userId, json }) {
     return json(405, { error: 'method_not_allowed' })
   }
   let body
-  try { body = await readBody(req) } catch (error) { return json(error.status, { error: error.message }) }
+  try { body = await readBody(req, { allowPhoto: resource === 'discs' }) } catch (error) { return json(error.status, { error: error.message }) }
   if (!body || typeof body !== 'object' || Array.isArray(body) ||
       Object.entries(body).some(([key, value]) => key === 'id' ? req.method !== 'POST' || !id(value) :
         !Object.hasOwn(spec.fields, key) || !spec.fields[key](value)) ||
       (req.method === 'POST' && spec.required?.some(key => body[key] === undefined)) ||
       (resource === 'sale_tokens' && req.method === 'POST' && Object.keys(body).length) ||
       (req.method === 'PATCH' && !Object.keys(body).length)) return json(400, { error: 'invalid_input' })
+  // A photo write replaces or removes the stored image and always supersedes the legacy photo link.
+  const photoWrite = resource === 'discs' && Object.hasOwn(body, 'photo')
   try {
+    const photo = photoWrite && body.photo !== null ? await normalizePhoto(body.photo) : null
     const result = await asUser(pool, userId, async client => {
       if (resource === 'sale_tokens' && req.method === 'POST') {
         return client.query(`INSERT INTO sale_tokens(user_id) VALUES ($1)
@@ -127,13 +174,21 @@ export async function featureRequest({ req, url, pool, userId, json }) {
         const owned = await client.query('SELECT id FROM owned_discs WHERE user_id=$1 AND id=ANY($2::uuid[])', [userId, body.disc_ids])
         if (owned.rowCount !== body.disc_ids.length) throw Object.assign(new Error('invalid_reference'), { status: 400 })
       }
-      const entries = Object.entries(body)
+      const entries = Object.entries(body).filter(([key]) => !(photoWrite && ['photo', 'user_photo_url'].includes(key)))
+      if (photoWrite) entries.push(['photo_version', photo ? randomUUID() : null], ['user_photo_url', null])
       const values = entries.map(([, value]) => Array.isArray(value) ? JSON.stringify(value) : value)
       const result = rowId
         ? await client.query(`UPDATE ${table} SET ${entries.map(([key], i) => `${key}=$${i + 1}`).join(',')}
             WHERE user_id=$${values.length + 1} AND id=$${values.length + 2} RETURNING *`, [...values, userId, rowId])
         : await client.query(`INSERT INTO ${table} (${[...entries.map(([key]) => key), 'user_id'].join(',')})
             VALUES (${[...values, userId].map((_, i) => `$${i + 1}`).join(',')}) RETURNING *`, [...values, userId])
+      if (photoWrite && result.rowCount) {
+        const discId = result.rows[0].id
+        if (photo) {
+          await client.query(`INSERT INTO disc_photos (disc_id, user_id, image) VALUES ($1,$2,$3)
+            ON CONFLICT (disc_id) DO UPDATE SET image=EXCLUDED.image`, [discId, userId, photo])
+        } else await client.query('DELETE FROM disc_photos WHERE disc_id=$1 AND user_id=$2', [discId, userId])
+      }
       if (previous && result.rowCount) {
         for (const discId of new Set([...previous.disc_ids, ...body.disc_ids])) {
           const added = body.disc_ids.includes(discId)
@@ -147,8 +202,8 @@ export async function featureRequest({ req, url, pool, userId, json }) {
     })
     return result.rowCount ? json(rowId ? 200 : 201, result.rows[0]) : json(404, { error: 'not_found' })
   } catch (error) {
-    if (error.status === 400 || ['23503', '23505', '23514', '23502'].includes(error.code)) {
-      return json(400, { error: error.status ? error.message : 'invalid_input' })
+    if (error.status === 400 || error.status === 413 || ['23503', '23505', '23514', '23502'].includes(error.code)) {
+      return json(error.status ?? 400, { error: error.status ? error.message : 'invalid_input' })
     }
     throw error
   }

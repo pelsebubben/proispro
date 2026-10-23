@@ -39,6 +39,11 @@ export function createApplication({ pool, issuer, audience, jwksUrl, requiredSco
       res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
       res.end(JSON.stringify(value))
     }
+    const image = bytes => {
+      res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': bytes.length, 'Cache-Control': 'no-store',
+        'Content-Security-Policy': "default-src 'none'; sandbox", 'Cross-Origin-Resource-Policy': 'same-origin' })
+      res.end(bytes)
+    }
     try {
       const url = new URL(req.url, 'http://localhost')
       const runtime = runtimeConfiguration(identity, { devAuth: Boolean(devIdentity), devPasscode: Boolean(devIdentity?.hosted) })
@@ -111,7 +116,7 @@ export function createApplication({ pool, issuer, audience, jwksUrl, requiredSco
         const users = await pool.query('SELECT id FROM app_users WHERE issuer=$1 AND subject=$2', [issuer, identity.sub])
         const userId = users.rows[0].id
         if (url.pathname === '/api/v1/session' && req.method === 'GET') return json(200, { userId })
-        return await featureRequest({ req, url, pool, userId, json })
+        return await featureRequest({ req, url, pool, userId, json, image })
       }
       if (!['GET', 'HEAD'].includes(req.method)) return json(405, { error: 'method_not_allowed' })
       const path = resolve(root, `.${decodeURIComponent(url.pathname)}`)

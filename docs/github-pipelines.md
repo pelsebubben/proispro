@@ -103,8 +103,9 @@ rehearsals and same-image production promotion remain unfinished.
 
 The Node 22 OCI image serves React and `/api/v1` together. The API verifies
 asymmetric issuer/audience JWTs and uses a non-owner, non-BYPASSRLS PostgreSQL role
-with transaction-local user context. Schema version 2 supports the complete
-inventory, bags/history, collections, wishlist, sale, course pin and hole
+with transaction-local user context. Schema version 3 supports the complete
+inventory (edition names and private owner-only disc photos), bags/history,
+collections, wishlist, sale, course pin and hole
 assignment data layer. All frontend data hooks use the API. Public sale links
 require an exact enabled token and disclose available listing snapshots only.
 The owner approved a fresh dataset, with no legacy data import. Customer sign-in

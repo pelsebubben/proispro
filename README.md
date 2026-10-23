@@ -84,7 +84,11 @@ See [the delivery runbook](docs/github-pipelines.md) and
 
 `server/migrations/` is the only active schema source. Version 2 expands the
 original `owned_discs` table and adds bags, bag history, collections/membership,
-wishlist items, sale listings/tokens, course pins and hole assignments. Runtime
+wishlist items, sale listings/tokens, course pins and hole assignments. Version 3
+adds a free-text `edition` to `owned_discs` and a private `disc_photos` table. The
+API normalizes an uploaded photo to a metadata-free JPEG of at most 1024px and
+256 KiB, stores it in PostgreSQL, and serves it only to the signed-in owner through
+`GET /api/v1/discs/:id/photo`. Runtime
 roles never own tables or bypass RLS. Child relationships use owner-scoped
 foreign keys; bag membership/history updates are transactional.
 Version 3 adds edition names and private, owner-scoped disc photos. Deleting a
