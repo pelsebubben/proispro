@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cdn.jsdelivr.net; img-src 'self' data: blob: https://*.supabase.co https://*.googleusercontent.com; style-src 'self' 'unsafe-inline';" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.jsdelivr.net; connect-src 'self' https://cdn.jsdelivr.net; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline';" />
   <title>Discs For Sale · ProIsPro</title>
   <link rel="stylesheet" href="styles.css" />
   <style>
@@ -109,12 +109,8 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.104.0/dist/umd/supabase.min.js" integrity="sha384-DBZI/1Gz1C29oeP5N6ORumbrmMNoaze4Afb4/c3JkFv79Wh3n1DIzbLRVbu6sJQT" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.11/dist/cdn.min.js" integrity="sha384-WPtu0YHhJ3arcykfnv1JgUffWDSKRnqnDeTpJUbOc2os2moEmLkIdaeR0trPN4be" crossorigin="anonymous"></script>
   <script>
-    const SUPABASE_URL = 'https://odqhusmmqgipvazusrxs.supabase.co';
-    const SUPABASE_ANON = 'sb_publishable_p0KpjMepMloZb6SI-y6ang_2uzbdQ9U';
-
     function saleApp() {
       return {
         loading: true,
@@ -130,34 +126,13 @@
             return;
           }
           try {
-            const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
-
-            // Resolve token → user_id via secure function (prevents bulk enumeration)
-            const { data: tokenRow, error: tokenErr } = await sb
-              .rpc('lookup_sale_token', { p_token: token })
-              .maybeSingle();
-
-            if (tokenErr || !tokenRow) {
-              this.error = 'Sale list not found. The link may be invalid or the list has been deleted.';
-              this.loading = false;
+            const response = await fetch('/api/v1/public/sales/' + encodeURIComponent(token));
+            if (response.status === 404) {
+              this.error = 'Sale list not found. The link may be invalid or the list is private.';
               return;
             }
-            if (!tokenRow.is_public) {
-              this.error = 'This sale list is currently private.';
-              this.loading = false;
-              return;
-            }
-
-            // Load available listings for this user
-            const { data: listings, error: listErr } = await sb
-              .from('forsale_listings')
-              .select('*')
-              .eq('user_id', tokenRow.user_id)
-              .eq('status', 'available')
-              .order('listed_at', { ascending: false });
-
-            if (listErr) throw listErr;
-            this.discs = listings || [];
+            if (!response.ok) throw new Error('Sale request failed');
+            this.discs = (await response.json()).listings;
           } catch (e) {
             this.error = 'Could not load sale list. Please try again later.';
           } finally {

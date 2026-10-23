@@ -1,4 +1,4 @@
-# Customer login without Supabase
+# Customer and developer login
 
 ## Deployment model
 
@@ -15,9 +15,9 @@ explicit scope; simplifying deployment does not authorize deletion or migration.
 
 ## Implemented application side
 
-The Azure runtime no longer trusts the old Supabase issuer by default. With no
-customer configuration it remains explicitly signed out; partial configuration
-fails deployment preflight/startup rather than falling back to Supabase.
+With no customer configuration the live runtime remains explicitly signed out;
+partial configuration fails deployment preflight/startup. There is no alternate
+provider SDK, legacy auth fallback or direct browser-to-database access.
 
 Microsoft's `@azure/msal-browser` implements authorization code + PKCE, redirect
 handling, state/nonce, token caching in session storage, silent acquisition and
@@ -25,19 +25,16 @@ logout. No client secret is shipped to the browser. The API verifies access-toke
 signature, exact issuer, API audience, expiry and delegated `scp` membership.
 An ID token for the separate browser registration is not an API token.
 The API maps `(issuer, sub)` to its own PostgreSQL user ID; email addresses are
-display-only and must never automatically link old Supabase accounts.
+display-only and never used to link identities.
 
 The customer sign-in screen redirects to the customer tenant's hosted user flow;
-Google is selected/configured there, not by a fake Google button that still uses
-Supabase. Failed/cancelled login is visible. Signed-in Azure users see a connection
-confirmation, not the old Supabase-backed screens. This intentionally exposes
-the remaining data migration rather than silently returning empty collections
-or making requests to the old service.
+Google is selected/configured there. Failed/cancelled login is visible.
+Signed-in users see the real inventory, bags, collections, wishlist, sale,
+course and analytics screens, all backed by the authenticated Node API.
 
-**This is not yet complete Supabase removal:** collection, bag, course, wishlist
-and sale hooks still use Supabase on the legacy Pages app. They do not mount for
-Azure identities. Migrate these schemas/API callers and explicitly map/import
-existing data before retiring the old project. GitHub login remains legacy-only.
+The owner approved starting fresh. The schema uses application-owned `app_users`
+and PostgreSQL RLS; no old records or identities are copied. The retired remote
+service remains untouched.
 
 ## External configuration still needed
 
@@ -136,16 +133,19 @@ to start if:
 never set the flag. Unit tests check these guards and confirm dev tokens are
 rejected by servers configured for customer identity.
 
-Pentesting the **deployed** app still requires real customer-tenant test
-accounts; never enable the dev identity on a hosted environment to make that
-easier.
+The shared **dev** app instead supports a passcode-protected test login. This is
+explicitly restricted to the dev deployment and uses the same token verification
+and database RLS as local/customer login. Never enable test login on live.
+The passcode is supplied through the dev app's secret, not browser runtime
+configuration, source code or test output.
 
 ## Evidence and final acceptance
 
 Local/browser fixtures exercise the real MSAL authorization redirect, code flow,
-S256 PKCE, requested API scope, state/nonce, callback cancellation and no Supabase
-requests. Real PostgreSQL tests verify signed API tokens, wrong audience/expiry,
-scope denials, ownership/RLS and persistence.
+S256 PKCE, requested API scope, state/nonce, callback cancellation and API-backed
+screen loading. Real PostgreSQL tests verify signed API tokens, wrong
+audience/expiry, scope denials, all feature relationships, ownership/RLS,
+transaction context isolation, persistence and token-gated anonymous sale links.
 
 A real customer flow still requires an owner-assisted browser check with a
 dedicated account: sign in with private Gmail, confirm the API-mapped identity,
@@ -153,6 +153,4 @@ reload, sign out, reject expired/incorrect tokens and prove cross-user denial.
 CAPTCHA/MFA/consent cannot be bypassed. Never upload tokens, browser storage or
 real identity-provider traces to public CI evidence.
 
-Once login works, replace the remaining Supabase data hooks with application API
-calls using the API access token. Preserve existing features/data unless a
-specific removal or fresh start is approved.
+Existing-provider data transfer is intentionally out of scope.

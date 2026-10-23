@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
+import { createRow, deleteRows, ensureToken, listRows, saveToken, updateRow } from '../lib/data'
 import { useAuth } from '../contexts/AuthContext'
 import { ClientDisc } from '../utils/disc'
 
@@ -22,13 +22,11 @@ export function useForSale() {
   const [listings, setListings] = useState<ForSaleListing[]>([])
   const [saleToken, setSaleToken] = useState<string>('')
   const [saleIsPublic, setSaleIsPublic] = useState<boolean>(false)
+  const [tokenId, setTokenId] = useState('')
 
   const loadListings = useCallback(async () => {
     if (!user) return
-    const { data } = await supabase
-      .from('forsale_listings')
-      .select('*')
-      .order('listed_at', { ascending: false })
+    const data = await listRows<ForSaleListing>('forsale_listings')
     setListings(
       (data || []).map(l => ({
         id: l.id,
@@ -48,33 +46,31 @@ export function useForSale() {
 
   const loadSaleToken = useCallback(async () => {
     if (!user) return
-    const { data } = await supabase.from('sale_tokens').select('*').eq('user_id', user.id).single()
+    const [data] = await listRows<{ id: string; token: string; is_public: boolean }>('sale_tokens')
     if (data) {
       setSaleToken(data.token || '')
       setSaleIsPublic(data.is_public ?? false)
+      setTokenId(data.id)
     }
   }, [user])
 
   useEffect(() => {
-    loadListings()
-    loadSaleToken()
+    void loadListings().catch(console.error)
+    void loadSaleToken().catch(console.error)
   }, [loadListings, loadSaleToken])
 
   const ensureSaleToken = async (): Promise<string> => {
     if (!user) return ''
     if (saleToken) return saleToken
-    const newToken = crypto.randomUUID()
-    await supabase.from('sale_tokens').upsert(
-      { user_id: user.id, token: newToken, is_public: false },
-      { onConflict: 'user_id' }
-    )
-    setSaleToken(newToken)
-    return newToken
+    const saved = await ensureToken()
+    setSaleToken(saved.token)
+    setTokenId(saved.id)
+    return saved.token
   }
 
   const addListing = async (disc: ClientDisc) => {
     if (!user) return
-    await supabase.from('forsale_listings').insert({
+    await createRow('forsale_listings', {
       disc_id: disc.id,
       disc_name: disc.name,
       disc_manufacturer: disc.manufacturer,
@@ -89,33 +85,32 @@ export function useForSale() {
   }
 
   const deleteListing = async (id: string) => {
-    await supabase.from('forsale_listings').delete().eq('id', id)
+    await deleteRows('forsale_listings', id)
     await loadListings()
   }
 
   const updateStatus = async (id: string, status: 'available' | 'sold') => {
-    await supabase.from('forsale_listings').update({ status }).eq('id', id)
+    await updateRow('forsale_listings', id, { status })
     await loadListings()
   }
 
   const togglePublic = async () => {
     if (!user) return
-    await ensureSaleToken()
+    const saved = tokenId ? { id: tokenId, token: saleToken } : await ensureToken()
+    setTokenId(saved.id)
+    setSaleToken(saved.token)
     const newPublic = !saleIsPublic
-    await supabase
-      .from('sale_tokens')
-      .update({ is_public: newPublic })
-      .eq('user_id', user.id)
+    await saveToken(saved.id, newPublic)
     setSaleIsPublic(newPublic)
   }
 
   const copyPublicLink = async () => {
     const token = await ensureSaleToken()
-    const url = `https://proispro.com/sale.html?token=${token}`
+    const url = `${window.location.origin}/sale.html?token=${token}`
     await navigator.clipboard.writeText(url)
   }
 
-  const publicSaleUrl = saleToken ? `https://proispro.com/sale.html?token=${saleToken}` : ''
+  const publicSaleUrl = saleToken ? `${window.location.origin}/sale.html?token=${saleToken}` : ''
 
   const getDiscForListing = (listing: ForSaleListing, allDiscs: ClientDisc[]): ClientDisc | null => {
     const live = allDiscs.find(d => d.id === listing.disc_id)

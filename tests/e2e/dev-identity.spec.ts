@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 const base = 'http://127.0.0.1:4173'
 
-test('local dev identity signs in a named test user through the API session, without Supabase', async ({ page }) => {
+test('local dev identity signs in a named test user through the API session and opens the GUI', async ({ page }) => {
   const unexpected: string[] = []
   const tokenRequests: unknown[] = []
   const sessionAuth: (string | undefined)[] = []
@@ -29,6 +29,9 @@ test('local dev identity signs in a named test user through the API session, wit
       sessionAuth.push(request.headers().authorization)
       return route.fulfill({ json: { userId: '44444444-4444-4444-8444-444444444444' } })
     }
+    if (url.pathname.startsWith('/api/v1/')) {
+      return route.fulfill({ json: { [url.pathname.split('/').at(-1)!]: [] } })
+    }
     return route.continue()
   })
   await page.goto('/')
@@ -39,12 +42,12 @@ test('local dev identity signs in a named test user through the API session, wit
   await expect(page.getByRole('alert')).toContainText('lowercase')
   await page.getByLabel('Test user').fill('bob')
   await page.getByRole('button', { name: 'Sign in locally' }).click()
-  await expect(page.getByRole('heading', { name: 'Signed in to Griplock' })).toBeVisible()
+  await expect(page.getByRole('navigation').getByRole('button', { name: /Inventory/ })).toBeVisible()
   await expect(page.getByText('bob@dev.griplock.local')).toBeVisible()
   expect(tokenRequests).toEqual([{ user: 'Bad User' }, { user: 'bob' }])
   expect(sessionAuth.at(-1)).toMatch(/^Bearer h\./)
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'Signed in to Griplock' })).toBeVisible()
+  await expect(page.getByRole('navigation').getByRole('button', { name: /Inventory/ })).toBeVisible()
   await page.getByRole('button', { name: 'Sign out' }).click()
   await expect(page.getByRole('button', { name: 'Sign in locally' })).toBeVisible()
   expect(await page.evaluate(() => sessionStorage.length)).toBe(0)
@@ -69,6 +72,7 @@ test('hosted dev login asks for the shared passcode', async ({ page }) => {
       return route.fulfill({ json: { access_token: `h.${claims}.s`, token_type: 'Bearer', expires_in: 3600, user: 'carol' } })
     }
     if (url.pathname === '/api/v1/session') return route.fulfill({ json: { userId: '55555555-5555-4555-8555-555555555555' } })
+    if (url.pathname.startsWith('/api/v1/')) return route.fulfill({ json: { [url.pathname.split('/').at(-1)!]: [] } })
     return route.continue()
   })
   await page.goto('/')

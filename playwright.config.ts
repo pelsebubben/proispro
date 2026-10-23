@@ -9,7 +9,7 @@ export default defineConfig({
   metadata: {
     sourceSha: process.env.GITHUB_SHA ?? 'local',
     runId: process.env.GITHUB_RUN_ID ?? 'local',
-    authentication: 'intercepted Supabase responses, not real provider login',
+    authentication: 'intercepted API responses, not real provider login',
   },
   reporter: [
     ['list'],

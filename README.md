@@ -1,75 +1,74 @@
-# 🥏 ProIsPro – Disc Inventory
+# Griplock / ProIsPro
 
-A personal disc golf bag tracker with **cloud sync** via Supabase, GitHub OAuth authentication, and offline-first fallback to localStorage.
-
-Hosted on **GitHub Pages** at **proispro.com**.
-
-The product is being prepared for the **Griplock** name and a staged Azure
-migration. The running frontend now uses React, TypeScript, and Vite; the
-Alpine.js/no-build descriptions below are historical.
-
-For current local checks, GitHub Actions, test evidence, and Azure OIDC bootstrap,
-see [GitHub delivery foundation](docs/github-pipelines.md). Production Pages
-publishing is now owner-dispatched, not automatic on every main push.
-
-## Features
-
-- 📦 **Add / Edit / Remove** discs from your bag
-- 🔍 **Search & filter** by type (Putter · Midrange · Fairway · Distance)
-- 🗂 **Sort** by name, type, weight, or date added
-- ☁️ **Cloud sync** — discs saved to Supabase PostgreSQL, accessible from any device
-- 🔐 **GitHub OAuth login** — secure, passwordless authentication
-- 💾 **Offline-first** — app works in localStorage mode if cloud is unavailable
-- 📤 **Export** your bag to a JSON file to share with friends
-- 📥 **Import** a friend's bag JSON and merge it with yours
-- 📱 **Fully responsive** – works great on your phone at the course
+A personal disc golf inventory and bag tracker for the owner and friends.
 
 ## Stack
 
-| Layer | Technology |
-|-------|------------|
-| **Frontend** | Alpine.js (CDN) + vanilla CSS with OKLCH color system |
-| **Backend** | Supabase PostgreSQL with Row-Level Security (RLS) |
-| **Auth** | Supabase Auth – GitHub OAuth provider |
-| **Hosting** | GitHub Pages (static, no build step) |
+- React, TypeScript and Vite frontend.
+- Plain Node HTTP API, served with the frontend in Azure Container Apps.
+- Azure PostgreSQL, application-owned users and forced per-user row-level security.
+- Entra External ID customer login; shared passcode login on dev only.
+- One dev database/application and one production database/application.
 
-## Getting Started
+Inventory, bags/history, collections, wishlist, sale listings/share links, course
+pins and hole assignments all use `/api/v1`. The public disc catalog uses DiscIt;
+course search/maps use OpenStreetMap Overpass. Neither requires our database
+credentials. Anonymous sale links disclose only available listings while their
+owner has explicitly enabled public sharing.
 
-### 1. Local Development (No Cloud)
+## Local development
 
-Simply open `index.html` in your browser. The app works in **localStorage mode** — all data is stored locally in your browser.
+Install Node 22 and PostgreSQL (or use the included Docker Compose configuration).
 
-### 2. With Supabase Backend (Cloud Sync)
+```powershell
+npm ci
+$env:PGPASSWORD = '<local PostgreSQL admin password>'
+$env:PGAPP_PASSWORD = '<32+ character local runtime password>'
+docker compose up -d postgres
+npm run build
+npm run dev:server
+```
 
-See `[docs/supabase-setup.md](docs/supabase-setup.md)` for full setup instructions.
+Open `http://127.0.0.1:8080` and sign in as `alice` or `bob`. The startup script
+applies checksum-guarded SQL migrations, then switches to a non-owner runtime
+role. For hot reload in a second terminal:
 
-### 3. Azure API runtime with local test login
+```powershell
+$env:GRIPLOCK_DEV_API = 'http://127.0.0.1:8080'
+npm run dev
+```
 
-`npm run dev:server` runs the Azure API runtime locally with a loopback-only test
-identity (sign in as `alice`, `bob`, …). It is intended for development and
-security testing. See [docs/customer-login.md](docs/customer-login.md#local-development-and-security-testing-identity).
+Without the API proxy/runtime configuration, the static preview intentionally
+disables sign-in. There is no localStorage data fallback.
 
-## Architecture Overview
+## Checks and deployment
 
-**Frontend:** `index.html` loads Alpine.js and Supabase client via CDN. No build step. ~250 lines of reactive JavaScript.
+```powershell
+npm run check
+npm run test:unit
+npm run test:api
+npm run build
+npx playwright test
+```
 
-**Backend:** Supabase PostgreSQL database with Row-Level Security policies ensuring users can only access their own discs.
+API tests require a disposable PostgreSQL database and `PGHOST`, `PGPORT`,
+`PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGAPP_PASSWORD` (and `PGSSLMODE=disable` for
+local PostgreSQL). Never point them at dev or production application data.
 
-**Auth:** GitHub OAuth via Supabase Auth. Users log in with GitHub → receive JWT → all database queries validated by RLS.
+PRs deploy to shared dev. Successful main CI triggers the production release.
+Azure dev/prod are the only supported deployments; standalone GitHub Pages
+publishing is retired because it cannot serve the same-origin application API.
+See [the delivery runbook](docs/github-pipelines.md) and
+[customer/local login configuration](docs/customer-login.md).
 
-**Offline fallback:** If Supabase is unavailable, app silently falls back to localStorage. User can still view/edit discs locally; changes sync when cloud is available.
+## Data model
 
-## Fields Tracked per Disc
+`server/migrations/` is the only active schema source. Version 2 expands the
+original `owned_discs` table and adds bags, bag history, collections/membership,
+wishlist items, sale listings/tokens, course pins and hole assignments. Runtime
+roles never own tables or bypass RLS. Child relationships use owner-scoped
+foreign keys; bag membership/history updates are transactional.
 
-| Field | Example |
-|-------|---------|
-| Name | Destroyer |
-| Manufacturer | Innova |
-| Type | Distance Driver |
-| Plastic | Star |
-| Weight | 175 g |
-| Color | Red |
-| Condition | Good |
-| Flight numbers | 12 / 5 / -1 / 3 |
-| Notes | Free-text notes |
-| Added | 2026-04-20 |
+This deployment starts with a fresh Azure dataset. No old records, identities
+or objects are imported. The retired provider's remote resources remain
+untouched; historical architecture notes are not active setup instructions.

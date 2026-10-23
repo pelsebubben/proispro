@@ -101,15 +101,15 @@ releases the app only after database verification/migration. No Kubernetes is
 required. Customer identity, PR-isolated previews, object upload access, restore
 rehearsals and same-image production promotion remain unfinished.
 
-The Node 22 OCI image serves React and `/api/v1` together. The initial owned-disc
-API verifies asymmetric issuer/audience JWTs and uses a non-owner, non-BYPASSRLS
-PostgreSQL role with transaction-local user context. It implements session ID
-mapping and owned-disc CRUD, not the complete legacy application schema.
-The existing frontend still uses Supabase on GitHub Pages. Azure staging serves
-a no-cache runtime configuration that disables real sign-in, session persistence,
-and automatic token refresh until customer identity/data migration is ready.
-This is an isolation gate, not a test-login bypass. Staging makes no production
-data writes. Real Google/Entra sign-in is not claimed by the synthetic JWT tests.
+The Node 22 OCI image serves React and `/api/v1` together. The API verifies
+asymmetric issuer/audience JWTs and uses a non-owner, non-BYPASSRLS PostgreSQL role
+with transaction-local user context. Schema version 2 supports the complete
+inventory, bags/history, collections, wishlist, sale, course pin and hole
+assignment data layer. All frontend data hooks use the API. Public sale links
+require an exact enabled token and disclose available listing snapshots only.
+The owner approved a fresh dataset, with no legacy data import. Customer sign-in
+remains disabled until Entra is configured; the dev app has its own passcode login.
+Real Google/Entra sign-in is not claimed by synthetic JWT tests.
 
 ### Staging sizing and cost assumption
 
@@ -153,7 +153,7 @@ testing an unrelated server.
 
 The browser suite covers signed-out login options and collection load/filter
 behavior on desktop Chromium and a mobile Chromium viewport. It intercepts
-Supabase responses in the test browser, blocks unexpected external traffic,
+API responses in the test browser, blocks unexpected external traffic,
 and uses synthetic users/discs. It adds no auth bypass to application code.
 It does not prove real OAuth, RLS, live backend persistence, or mobile Safari.
 
@@ -410,25 +410,11 @@ must be diagnosed against the previous known-good digest before an explicit
 rollback; rerunning a release preserves credentials and reruns checksum-guarded
 migrations. Production and DNS are untouched by these workflows.
 
-Production Pages publishing remains separate:
-
-```powershell
-gh workflow run deploy.yml --repo pelsebubben/proispro --ref main
-```
-
-Only the repository owner may dispatch a successful production run; a trusted
-main-branch guard enforces actor ownership and the exact event SHA is tested.
-Other actors fail before checkout/build. The workflow also checks via GitHub's
-API that `github-pages` has the owner as its sole required reviewer. Set this
-native environment protection before publishing; the existing environment did
-not have a required reviewer when inspected. The deploy job waits for its approval.
-
-Dispatch is not approval: an agent may use the owner's CLI credentials, but must
-never approve its own pending deployment on the owner's behalf. The owner must
-approve the exact run in GitHub. If dispatching and approving as the same account,
-GitHub's prevent-self-review option cannot be enabled; a distinct agent GitHub
-identity allows that extra safeguard. This personal-owner rule must be revisited
-if repository ownership moves to an organization.
+Standalone GitHub Pages publishing (`deploy.yml`) is retired. It cannot host the
+same-origin Node API, authentication endpoints or PostgreSQL-backed feature
+routes. Azure dev (`dev.yml`) and production (`prod.yml`) are the only supported
+deployments. This repository cleanup does not modify existing DNS, GitHub Pages
+service settings or the retired provider's remote resources.
 
 ## Remaining milestones
 

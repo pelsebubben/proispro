@@ -124,7 +124,7 @@ test('hosted dev passcode login is only allowed on the dev app', () => {
 
 test('only the dev app deployment can receive the passcode', async () => {
   const read = path => readFile(new URL(`../../${path}`, import.meta.url), 'utf8')
-  const bicep = await read('infra/app.bicep')
+  const bicep = (await read('infra/app.bicep')).replace(/\r\n/g, '\n')
   assert.match(bicep, /^var devLogin = !live && !empty\(devLoginPasscode\)$/m)
   assert.equal(bicep.match(/GRIPLOCK_DEV_PASSCODE/g).length, 1)
   assert.match(bicep, /devLogin \? \[\n  \{ name: 'GRIPLOCK_STAGE', value: 'dev' \}\n  \{ name: 'GRIPLOCK_DEV_PASSCODE', secretRef: 'dev-passcode' \}\n\] : \[\]/)

@@ -3,13 +3,13 @@ import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { resolve, extname, sep } from 'node:path'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
-import { asUser } from './database.mjs'
+import { featureRequest, publicSale } from './features.mjs'
+import { schemaVersion } from './migrate.mjs'
 import { runtimeConfiguration } from './identity.mjs'
 import { isLoopbackAddress } from './dev-identity.mjs'
 
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
   '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' }
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export function createApplication({ pool, issuer, audience, jwksUrl, requiredScope,
   identity = null, devIdentity = null, staticRoot = 'dist', sourceSha = 'local' }) {
@@ -81,8 +81,13 @@ export function createApplication({ pool, issuer, audience, jwksUrl, requiredSco
       if (url.pathname === '/health/live') return json(200, { status: 'ok', sourceSha })
       if (url.pathname === '/health/ready') {
         const result = await pool.query('SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1')
-        if (result.rows[0]?.version !== 1) return json(503, { status: 'schema_not_ready' })
-        return json(200, { status: 'ready', sourceSha, schemaVersion: 1 })
+        if (result.rows[0]?.version !== schemaVersion) return json(503, { status: 'schema_not_ready' })
+        return json(200, { status: 'ready', sourceSha, schemaVersion })
+      }
+      const sale = url.pathname.match(/^\/api\/v1\/public\/sales\/([^/]+)$/)
+      if (sale) {
+        if (req.method !== 'GET') return json(405, { error: 'method_not_allowed' })
+        return await publicSale(pool, sale[1], json)
       }
       if (url.pathname.startsWith('/api/')) {
         const token = req.headers.authorization?.match(/^Bearer (\S+)$/)?.[1]
@@ -106,41 +111,7 @@ export function createApplication({ pool, issuer, audience, jwksUrl, requiredSco
         const users = await pool.query('SELECT id FROM app_users WHERE issuer=$1 AND subject=$2', [issuer, identity.sub])
         const userId = users.rows[0].id
         if (url.pathname === '/api/v1/session' && req.method === 'GET') return json(200, { userId })
-        const match = url.pathname.match(/^\/api\/v1\/discs(?:\/([^/]+))?$/)
-        if (!match) return json(404, { error: 'not_found' })
-        const id = match[1]
-        if (id && !uuid.test(id)) return json(400, { error: 'invalid_disc_id' })
-        if (req.method === 'GET' && !id) {
-          const rows = await asUser(pool, userId, client => client.query(
-            'SELECT id, name, manufacturer, added_at FROM owned_discs WHERE user_id=$1 ORDER BY added_at DESC LIMIT 100', [userId]))
-          return json(200, { discs: rows.rows })
-        }
-        if ((req.method === 'POST' && !id) || (req.method === 'PATCH' && id)) {
-          if (!req.headers['content-type']?.startsWith('application/json')) return json(415, { error: 'json_required' })
-          const chunks = []
-          let size = 0
-          for await (const chunk of req) {
-            size += chunk.length
-            if (size > 16_384) return json(413, { error: 'body_too_large' })
-            chunks.push(chunk)
-          }
-          let body
-          try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { return json(400, { error: 'invalid_json' }) }
-          if (!body || typeof body.name !== 'string' || !body.name.trim() || body.name.length > 200 ||
-              (body.manufacturer !== undefined && (typeof body.manufacturer !== 'string' || body.manufacturer.length > 200))) {
-            return json(400, { error: 'invalid_disc' })
-          }
-          const values = [body.name.trim(), body.manufacturer ?? '', userId]
-          const result = await asUser(pool, userId, client => id
-            ? client.query('UPDATE owned_discs SET name=$1, manufacturer=$2 WHERE user_id=$3 AND id=$4 RETURNING id,name,manufacturer', [...values, id])
-            : client.query('INSERT INTO owned_discs (name,manufacturer,user_id) VALUES ($1,$2,$3) RETURNING id,name,manufacturer', values))
-          return result.rowCount ? json(id ? 200 : 201, result.rows[0]) : json(404, { error: 'not_found' })
-        }
-        if (req.method === 'DELETE' && id) {
-          const result = await asUser(pool, userId, client => client.query('DELETE FROM owned_discs WHERE id=$1 AND user_id=$2', [id, userId]))
-          return json(result.rowCount ? 200 : 404, result.rowCount ? { deleted: true } : { error: 'not_found' })
-        }
-        return json(405, { error: 'method_not_allowed' })
+        return await featureRequest({ req, url, pool, userId, json })
       }
       if (!['GET', 'HEAD'].includes(req.method)) return json(405, { error: 'method_not_allowed' })
       const path = resolve(root, `.${decodeURIComponent(url.pathname)}`)

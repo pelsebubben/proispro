@@ -14,11 +14,11 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: true,
     rollupOptions: {
+      input: { app: 'index.html', sale: 'sale.html' },
       output: {
         manualChunks: {
           'vendor-react': ['react', 'react-dom'],
           'vendor-recharts': ['recharts'],
-          'vendor-supabase': ['@supabase/supabase-js'],
         },
       },
     },
