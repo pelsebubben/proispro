@@ -10,9 +10,16 @@ test('deployed release is healthy, private by default and isolated from producti
     if (new URL(req.url()).origin !== new URL(process.env.STAGING_URL!).origin) external.push(req.url())
   })
   await page.goto('/')
-  await expect(page.getByRole('status')).toContainText('Production data is not connected')
-  await expect(page.getByRole('button', { name: /Sign in with Google/ })).toBeDisabled()
-  await expect(page.getByRole('button', { name: /Sign in with GitHub/ })).toBeDisabled()
+  const configuration = await (await request.get('/auth/config')).json()
+  expect(configuration.dataBackend).toBe('api')
+  if (configuration.identityReady) {
+    await expect(page.getByRole('button', { name: 'Sign in to Griplock' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: /Sign in with GitHub/ })).toHaveCount(0)
+  } else {
+    await expect(page.getByRole('status')).toContainText('Supabase data is not connected')
+    await expect(page.getByRole('button', { name: /Sign in with Google/ })).toBeDisabled()
+    await expect(page.getByRole('button', { name: /Sign in with GitHub/ })).toBeDisabled()
+  }
   expect(external).toEqual([])
   const again = await request.get('/health/ready')
   expect((await again.json()).sourceSha).toBe(process.env.SOURCE_SHA)

@@ -28,11 +28,11 @@ test('real PostgreSQL API enforces signed identity, ownership, RLS and persisten
   t.after(() => new Promise(resolve => identityServer.close(resolve)))
   const issuer = `http://127.0.0.1:${identityServer.address().port}`
   const app = createApplication({ pool: runtime, issuer, audience: 'griplock-test',
-    jwksUrl: `${issuer}/jwks`, sourceSha: 'integration' }).listen(0, '127.0.0.1')
+    jwksUrl: `${issuer}/jwks`, requiredScope: 'access_as_user', sourceSha: 'integration' }).listen(0, '127.0.0.1')
   await once(app, 'listening')
   t.after(() => new Promise(resolve => app.close(resolve)))
   const base = `http://127.0.0.1:${app.address().port}`
-  const token = (subject, audience = 'griplock-test', expiry = '5m') => new SignJWT({})
+  const token = (subject, audience = 'griplock-test', expiry = '5m', scope = 'access_as_user') => new SignJWT({ scp: scope })
     .setProtectedHeader({ alg: 'RS256', kid: 'integration-key' }).setIssuer(issuer)
     .setSubject(subject).setAudience(audience).setExpirationTime(expiry).sign(privateKey)
   const alice = await token(randomUUID())
@@ -47,6 +47,11 @@ test('real PostgreSQL API enforces signed identity, ownership, RLS and persisten
   assert.equal((await request('/api/v1/discs', 'not-a-token')).status, 401)
   assert.equal((await request('/api/v1/discs', await token('alice', 'wrong'))).status, 401)
   assert.equal((await request('/api/v1/discs', await token('alice', 'griplock-test', '-1s'))).status, 401)
+  for (const scope of ['', 'other_scope', 'prefix_access_as_user', 'access_as_user_extra']) {
+    const denied = await request('/api/v1/discs', await token('alice', 'griplock-test', '5m', scope))
+    assert.equal(denied.status, 403)
+    assert.deepEqual(await denied.json(), { error: 'insufficient_scope' })
+  }
   assert.equal((await request('/api/v1/discs', alice, 'POST', { name: '' })).status, 400)
   const created = await request('/api/v1/discs', alice, 'POST', { name: 'API fixture', manufacturer: 'Test' })
   assert.equal(created.status, 201)

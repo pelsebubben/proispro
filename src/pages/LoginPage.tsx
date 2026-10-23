@@ -2,7 +2,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { runtime } from '../lib/runtime'
 
 export function LoginPage() {
-  const { signIn } = useAuth()
+  const { signIn, error } = useAuth()
   return (
     <div style={{
       minHeight: '100vh',
@@ -18,9 +18,13 @@ export function LoginPage() {
       <h1 style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--clr-accent)' }}>ProIsPro</h1>
       <p style={{ color: 'var(--clr-muted)', marginBottom: '1rem' }}>Your personal disc golf bag tracker</p>
       {!runtime.identityReady && (
-        <p role="status">Griplock staging: customer sign-in is not configured. Production data is not connected.</p>
+        <p role="status">Customer sign-in is not configured. Supabase data is not connected.</p>
       )}
+      {error && <p role="alert">{error}</p>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '240px' }}>
+        {runtime.dataBackend === 'api' && runtime.identityReady ? (
+          <button onClick={() => signIn('google')}>Sign in to Griplock</button>
+        ) : <>
         <button
           disabled={!runtime.identityReady}
           onClick={() => signIn('google')}
@@ -53,6 +57,7 @@ export function LoginPage() {
         >
           🐙 Sign in with GitHub
         </button>
+        </>}
       </div>
     </div>
   )

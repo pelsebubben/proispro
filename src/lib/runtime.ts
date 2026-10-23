@@ -1,7 +1,14 @@
+interface RuntimeConfiguration {
+  environment: string
+  identityReady: boolean
+  dataBackend?: 'api'
+  entra?: { clientId: string; authority: string; scope: string }
+}
+
 declare global {
   interface Window {
-    __GRIPLOCK_RUNTIME__?: { environment: string; identityReady: boolean }
+    __GRIPLOCK_RUNTIME__?: RuntimeConfiguration
   }
 }
 
-export const runtime = window.__GRIPLOCK_RUNTIME__ ?? { environment: 'legacy', identityReady: true }
+export const runtime: RuntimeConfiguration = window.__GRIPLOCK_RUNTIME__ ?? { environment: 'legacy', identityReady: true }

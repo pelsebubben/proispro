@@ -1,14 +1,13 @@
 import { createApplication } from './app.mjs'
 import { createPool } from './database.mjs'
+import { identityConfiguration } from './identity.mjs'
 
-for (const name of ['AUTH_ISSUER', 'AUTH_AUDIENCE', 'AUTH_JWKS_URL']) {
-  if (!process.env[name]) throw new Error(`Missing ${name}`)
-}
+const identity = identityConfiguration(process.env)
+if (!identity) console.warn(JSON.stringify({ event: 'customer_identity_not_configured' }))
 const pool = createPool()
 pool.on('error', error => console.error(JSON.stringify({ event: 'database_pool_error', code: error.code })))
 const server = createApplication({
-  pool, issuer: process.env.AUTH_ISSUER, audience: process.env.AUTH_AUDIENCE,
-  jwksUrl: process.env.AUTH_JWKS_URL, sourceSha: process.env.SOURCE_SHA ?? 'local',
+  pool, ...(identity ?? {}), identity, sourceSha: process.env.SOURCE_SHA ?? 'local',
 })
 server.requestTimeout = 30_000
 server.headersTimeout = 15_000

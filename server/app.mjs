@@ -4,19 +4,24 @@ import { readFile } from 'node:fs/promises'
 import { resolve, extname, sep } from 'node:path'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
 import { asUser } from './database.mjs'
+import { runtimeConfiguration } from './identity.mjs'
 
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
   '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export function createApplication({ pool, issuer, audience, jwksUrl, staticRoot = 'dist', sourceSha = 'local' }) {
-  const issuerUrl = new URL(issuer)
-  const keysUrl = new URL(jwksUrl)
-  if (keysUrl.origin !== issuerUrl.origin) throw new Error('JWKS and issuer origins must match')
-  if (process.env.NODE_ENV === 'production' && issuerUrl.protocol !== 'https:') {
-    throw new Error('Production identity requires HTTPS')
+export function createApplication({ pool, issuer, audience, jwksUrl, requiredScope,
+  identity = null, staticRoot = 'dist', sourceSha = 'local' }) {
+  let jwks
+  if (issuer || audience || jwksUrl) {
+    const issuerUrl = new URL(issuer)
+    const keysUrl = new URL(jwksUrl)
+    if (!audience || keysUrl.origin !== issuerUrl.origin) throw new Error('JWKS, issuer and audience must be configured together')
+    if (process.env.NODE_ENV === 'production' && issuerUrl.protocol !== 'https:') {
+      throw new Error('Production identity requires HTTPS')
+    }
+    jwks = createRemoteJWKSet(keysUrl)
   }
-  const jwks = createRemoteJWKSet(keysUrl)
   const root = resolve(staticRoot)
   return createServer(async (req, res) => {
     const requestId = randomUUID()
@@ -29,9 +34,10 @@ export function createApplication({ pool, issuer, audience, jwksUrl, staticRoot 
     }
     try {
       const url = new URL(req.url, 'http://localhost')
+      if (url.pathname === '/auth/config') return json(200, runtimeConfiguration(identity))
       if (url.pathname === '/runtime-config.js') {
         res.writeHead(200, { 'Content-Type': 'text/javascript', 'Cache-Control': 'no-store' })
-        return res.end("window.__GRIPLOCK_RUNTIME__ = { environment: 'staging', identityReady: false }")
+        return res.end(`window.__GRIPLOCK_RUNTIME__ = ${JSON.stringify(runtimeConfiguration(identity))}`)
       }
       if (url.pathname === '/health/live') return json(200, { status: 'ok', sourceSha })
       if (url.pathname === '/health/ready') {
@@ -42,10 +48,15 @@ export function createApplication({ pool, issuer, audience, jwksUrl, staticRoot 
       if (url.pathname.startsWith('/api/')) {
         const token = req.headers.authorization?.match(/^Bearer (\S+)$/)?.[1]
         if (!token) return json(401, { error: 'unauthorized' })
+        if (!jwks) return json(503, { error: 'identity_not_configured' })
         let identity
         try {
           const result = await jwtVerify(token, jwks, { issuer, audience, algorithms: ['RS256', 'ES256'] })
           if (!result.payload.sub) return json(401, { error: 'unauthorized' })
+          if (requiredScope && (typeof result.payload.scp !== 'string' ||
+              !result.payload.scp.split(' ').includes(requiredScope))) {
+            return json(403, { error: 'insufficient_scope' })
+          }
           identity = result.payload
         } catch (error) {
           console.warn(JSON.stringify({ event: 'authentication_rejected', requestId, code: error.code ?? 'verification_failed' }))

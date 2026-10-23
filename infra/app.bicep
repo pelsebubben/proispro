@@ -6,6 +6,13 @@ param registryServer string
 param pullIdentityId string
 param sourceSha string
 param releaseId string
+param entraClientId string = ''
+param entraAuthority string = ''
+param entraApiScope string = ''
+param authIssuer string = ''
+param authAudience string = ''
+param authJwksUrl string = ''
+param authRequiredScope string = ''
 @secure()
 param postgresAppPassword string
 
@@ -43,9 +50,13 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'PGUSER', value: 'griplock_app' }
           { name: 'PGPASSWORD', secretRef: 'pg-app' }
           { name: 'SOURCE_SHA', value: sourceSha }
-          { name: 'AUTH_ISSUER', value: 'https://odqhusmmqgipvazusrxs.supabase.co/auth/v1' }
-          { name: 'AUTH_JWKS_URL', value: 'https://odqhusmmqgipvazusrxs.supabase.co/auth/v1/.well-known/jwks.json' }
-          { name: 'AUTH_AUDIENCE', value: 'authenticated' }
+          { name: 'AUTH_ISSUER', value: authIssuer }
+          { name: 'AUTH_JWKS_URL', value: authJwksUrl }
+          { name: 'AUTH_AUDIENCE', value: authAudience }
+          { name: 'AUTH_REQUIRED_SCOPE', value: authRequiredScope }
+          { name: 'ENTRA_CLIENT_ID', value: entraClientId }
+          { name: 'ENTRA_AUTHORITY', value: entraAuthority }
+          { name: 'ENTRA_API_SCOPE', value: entraApiScope }
         ]
         probes: [
           { type: 'Liveness', httpGet: { path: '/health/live', port: 8080 }, initialDelaySeconds: 10, periodSeconds: 10 }

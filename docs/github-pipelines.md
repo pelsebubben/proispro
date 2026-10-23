@@ -1,5 +1,17 @@
 # Griplock GitHub delivery foundation
 
+## Current operating scope
+
+The owner clarified that this is one live environment for personal use/friends,
+with testing in the pipeline and separate test/application databases on the same
+PostgreSQL server. Existing `staging` Azure/GitHub names are retained to avoid
+unnecessary resource replacement; a second production stack, PR previews and
+enterprise review gates are not prerequisites for the next milestone.
+See [customer login](customer-login.md) for the Supabase authentication replacement
+and the external configuration still required. Historical staging/production
+roadmap sections below describe the earlier proposal, not a requirement to
+provision another platform now.
+
 ## Current deployment state
 
 Main CI passes, including the OCI image against real PostgreSQL and desktop/
