@@ -69,6 +69,40 @@ test('failed API loads are visible instead of looking like an empty collection',
   await expect(page.getByRole('alert')).toContainText('503')
 })
 
+test('editing notes immediately preserves every other saved disc field', async ({ page }) => {
+  await isolateNetwork(page, true)
+  await page.route('https://discit-api.fly.dev/disc', route => route.fulfill({ json: [] }))
+  const saved = {
+    id: '11111111-1111-4111-8111-111111111112', name: 'Immediate edit',
+    manufacturer: 'Test brand', disc_type: 'midrange', plastic: 'Premium', weight: 174,
+    color: 'Blue', condition: 'used', speed: 5, glide: 4, turn: -1.5, fade: 1,
+    notes: 'Existing notes', quantity: 2, tags: ['favorite'], user_photo_url: null,
+    added_at: '2026-01-01T00:00:00Z',
+  }
+  const { id: _id, added_at: _added, ...originalFields } = saved
+  const writes: object[] = []
+  await page.route('**/api/v1/discs**', route => {
+    if (route.request().method() === 'PATCH') {
+      const fields = route.request().postDataJSON()
+      writes.push(fields)
+      Object.assign(saved, fields)
+      return route.fulfill({ json: saved })
+    }
+    return route.fulfill({ json: { discs: [saved] } })
+  })
+  await page.goto('/')
+  await expect(page.getByText('Immediate edit', { exact: true })).toBeVisible()
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await page.getByRole('button', { name: /Edit/, exact: false }).click()
+    await page.locator('textarea').fill(`Notes changed immediately ${attempt}`)
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Edit Disc' })).toHaveCount(0)
+    await expect.poll(() => writes.length).toBe(attempt + 1)
+    expect(writes[attempt]).toEqual({ ...originalFields, notes: `Notes changed immediately ${attempt}` })
+  }
+  await expect(page.getByRole('alert')).toHaveCount(0)
+})
+
 test('new inventory and bags reach other tabs without reload and picker membership stays current', async ({ page }) => {
   const unexpected = await isolateNetwork(page, true)
   const discs: Record<string, unknown>[] = []

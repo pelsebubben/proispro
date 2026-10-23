@@ -40,23 +40,27 @@ const COLOR_SWATCHES = [
 const NAME_SUGGESTION_LIMIT = 8
 const NAME_SUGGESTIONS_ID = 'disc-name-suggestions'
 
-export function DiscModal({ disc, onSave, onClose }: DiscModalProps) {
-  const [form, setForm] = useState({
-    name: '',
-    manufacturer: '',
-    type: '',
-    plastic: '',
-    weight: '',
-    quantity: 1,
-    color: '',
-    condition: 'good',
-    speed: '' as string | number,
-    glide: '' as string | number,
-    turn: '' as string | number,
-    fade: '' as string | number,
-    notes: '',
-    tags: [] as string[],
-  })
+export function DiscModal(props: DiscModalProps) {
+  return <DiscForm key={props.disc?.id ?? 'new'} {...props} />
+}
+
+function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
+  const [form, setForm] = useState(() => ({
+    name: disc?.name ?? '',
+    manufacturer: disc?.manufacturer ?? '',
+    type: disc?.type ?? '',
+    plastic: disc?.plastic ?? '',
+    weight: disc?.weight ?? '',
+    quantity: disc?.quantity ?? 1,
+    color: disc?.color ?? '',
+    condition: disc?.condition ?? 'good',
+    speed: disc?.speed ?? '',
+    glide: disc?.glide ?? '',
+    turn: disc?.turn ?? '',
+    fade: disc?.fade ?? '',
+    notes: disc?.notes ?? '',
+    tags: disc?.tags ?? [],
+  }))
   const [tagInput, setTagInput] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const { catalog, isLoading: isCatalogLoading } = useDiscCatalog()
@@ -89,27 +93,6 @@ export function DiscModal({ disc, onSave, onClose }: DiscModalProps) {
     setActiveSuggestion(-1)
     setDropdownPos(null)
   }
-
-  useEffect(() => {
-    if (disc) {
-      setForm({
-        name: disc.name,
-        manufacturer: disc.manufacturer,
-        type: disc.type,
-        plastic: disc.plastic,
-        weight: disc.weight,
-        quantity: disc.quantity,
-        color: disc.color,
-        condition: disc.condition,
-        speed: disc.speed,
-        glide: disc.glide,
-        turn: disc.turn,
-        fade: disc.fade,
-        notes: disc.notes,
-        tags: disc.tags,
-      })
-    }
-  }, [disc])
 
   useEffect(() => {
     setActiveSuggestion(-1)
