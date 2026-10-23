@@ -17,8 +17,16 @@ param authJwksUrl string = ''
 param authRequiredScope string = ''
 @secure()
 param postgresAppPassword string
+@secure()
+param devLoginPasscode string = ''
 
 var live = stage == 'live'
+// Shared passcode login exists only on the dev app and replaces customer sign-in there.
+var devLogin = !live && !empty(devLoginPasscode)
+var devLoginEnv = devLogin ? [
+  { name: 'GRIPLOCK_STAGE', value: 'dev' }
+  { name: 'GRIPLOCK_DEV_PASSCODE', secretRef: 'dev-passcode' }
+] : []
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: live ? 'app-griplock-staging' : 'app-griplock-dev'
@@ -37,7 +45,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         transport: 'http'
         allowInsecure: false
       }
-      secrets: [{ name: 'pg-app', value: postgresAppPassword }]
+      secrets: concat([{ name: 'pg-app', value: postgresAppPassword }], devLogin ? [{ name: 'dev-passcode', value: devLoginPasscode }] : [])
     }
     template: {
       revisionSuffix: 'r-${take(sourceSha, 12)}-${releaseId}'
@@ -46,7 +54,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         name: 'app'
         image: image
         resources: { cpu: json('0.5'), memory: '1Gi' }
-        env: [
+        env: concat([
           { name: 'NODE_ENV', value: 'production' }
           { name: 'PORT', value: '8080' }
           { name: 'PGHOST', value: databaseHost }
@@ -54,14 +62,14 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'PGUSER', value: live ? 'griplock_app' : 'griplock_dev_app' }
           { name: 'PGPASSWORD', secretRef: 'pg-app' }
           { name: 'SOURCE_SHA', value: sourceSha }
-          { name: 'AUTH_ISSUER', value: authIssuer }
-          { name: 'AUTH_JWKS_URL', value: authJwksUrl }
-          { name: 'AUTH_AUDIENCE', value: authAudience }
-          { name: 'AUTH_REQUIRED_SCOPE', value: authRequiredScope }
-          { name: 'ENTRA_CLIENT_ID', value: entraClientId }
-          { name: 'ENTRA_AUTHORITY', value: entraAuthority }
-          { name: 'ENTRA_API_SCOPE', value: entraApiScope }
-        ]
+          { name: 'AUTH_ISSUER', value: devLogin ? '' : authIssuer }
+          { name: 'AUTH_JWKS_URL', value: devLogin ? '' : authJwksUrl }
+          { name: 'AUTH_AUDIENCE', value: devLogin ? '' : authAudience }
+          { name: 'AUTH_REQUIRED_SCOPE', value: devLogin ? '' : authRequiredScope }
+          { name: 'ENTRA_CLIENT_ID', value: devLogin ? '' : entraClientId }
+          { name: 'ENTRA_AUTHORITY', value: devLogin ? '' : entraAuthority }
+          { name: 'ENTRA_API_SCOPE', value: devLogin ? '' : entraApiScope }
+        ], devLoginEnv)
         probes: [
           { type: 'Liveness', httpGet: { path: '/health/live', port: 8080 }, initialDelaySeconds: 10, periodSeconds: 10 }
           { type: 'Readiness', httpGet: { path: '/health/ready', port: 8080 }, initialDelaySeconds: 5, periodSeconds: 10 }

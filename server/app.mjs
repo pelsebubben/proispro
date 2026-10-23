@@ -15,7 +15,7 @@ export function createApplication({ pool, issuer, audience, jwksUrl, requiredSco
   identity = null, devIdentity = null, staticRoot = 'dist', sourceSha = 'local' }) {
   let jwks
   if (devIdentity) {
-    if (process.env.NODE_ENV === 'production') throw new Error('Local dev identity is forbidden in production')
+    if (!devIdentity.hosted && process.env.NODE_ENV === 'production') throw new Error('Local dev identity is forbidden in production')
     if (identity || jwksUrl) throw new Error('Local dev identity cannot be combined with customer identity')
     ;({ issuer, audience, requiredScope } = devIdentity)
     jwks = devIdentity.keys
@@ -29,6 +29,7 @@ export function createApplication({ pool, issuer, audience, jwksUrl, requiredSco
     jwks = createRemoteJWKSet(keysUrl)
   }
   const root = resolve(staticRoot)
+  let passcodeFailures = []
   return createServer(async (req, res) => {
     const requestId = randomUUID()
     res.setHeader('X-Request-Id', requestId)
@@ -40,14 +41,14 @@ export function createApplication({ pool, issuer, audience, jwksUrl, requiredSco
     }
     try {
       const url = new URL(req.url, 'http://localhost')
-      const runtime = runtimeConfiguration(identity, { devAuth: Boolean(devIdentity) })
+      const runtime = runtimeConfiguration(identity, { devAuth: Boolean(devIdentity), devPasscode: Boolean(devIdentity?.hosted) })
       if (url.pathname === '/auth/config') return json(200, runtime)
       if (url.pathname === '/runtime-config.js') {
         res.writeHead(200, { 'Content-Type': 'text/javascript', 'Cache-Control': 'no-store' })
         return res.end(`window.__GRIPLOCK_RUNTIME__ = ${JSON.stringify(runtime)}`)
       }
       if (url.pathname.startsWith('/dev-auth/')) {
-        if (!devIdentity || !isLoopbackAddress(req.socket.remoteAddress)) return json(404, { error: 'not_found' })
+        if (!devIdentity || (!devIdentity.hosted && !isLoopbackAddress(req.socket.remoteAddress))) return json(404, { error: 'not_found' })
         if (url.pathname !== '/dev-auth/token') return json(404, { error: 'not_found' })
         if (req.method !== 'POST') return json(405, { error: 'method_not_allowed' })
         if (!req.headers['content-type']?.startsWith('application/json')) return json(415, { error: 'json_required' })
@@ -58,6 +59,16 @@ export function createApplication({ pool, issuer, audience, jwksUrl, requiredSco
         }
         let body
         try { body = JSON.parse(raw) } catch { return json(400, { error: 'invalid_json' }) }
+        if (devIdentity.hosted) {
+          const now = Date.now()
+          passcodeFailures = passcodeFailures.filter(time => now - time < 60_000)
+          if (passcodeFailures.length >= 20) return json(429, { error: 'too_many_attempts' })
+          if (!devIdentity.checkPasscode(body?.passcode)) {
+            passcodeFailures.push(now)
+            console.warn(JSON.stringify({ event: 'dev_passcode_rejected', requestId }))
+            return json(401, { error: 'invalid_passcode' })
+          }
+        }
         try {
           const issued = await devIdentity.issue({ user: body?.user, ...(body?.scope !== undefined ? { scope: body.scope } : {}) })
           console.warn(JSON.stringify({ event: 'dev_identity_token_issued', requestId, user: issued.user }))

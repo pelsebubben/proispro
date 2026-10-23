@@ -68,6 +68,7 @@ jobs:
       PG_ADMIN: ${{ secrets.PG_ADMIN_PASSWORD }}
       PG_APP: ${{ secrets.PG_APP_PASSWORD }}
       PG_DEV_APP: ${{ secrets.PG_DEV_APP_PASSWORD }}
+      DEV_LOGIN: ${{ secrets.DEV_LOGIN_PASSCODE }}
     steps:
       - name: Enforce staging prerequisites
         env:
@@ -82,6 +83,7 @@ jobs:
           test "${#PG_ADMIN}" -ge 32
           test "${#PG_APP}" -ge 32
           test "${#PG_DEV_APP}" -ge 32
+          test "${#DEV_LOGIN}" -ge 32
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ env.SOURCE_SHA }}
@@ -168,7 +170,7 @@ jobs:
             --template-file infra/app.bicep \
             --parameters stage=dev environmentId="$environment_id" databaseHost="$database_host" \
               image="$IMAGE" registryServer="$REGISTRY_SERVER" pullIdentityId="$PULL_IDENTITY" \
-              sourceSha="$SOURCE_SHA" releaseId="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" postgresAppPassword="$PG_DEV_APP" \
+              sourceSha="$SOURCE_SHA" releaseId="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" postgresAppPassword="$PG_DEV_APP" devLoginPasscode="$DEV_LOGIN" \
               entraClientId="$ENTRA_CLIENT_ID" entraAuthority="$ENTRA_AUTHORITY" entraApiScope="$ENTRA_API_SCOPE" \
               authIssuer="$AUTH_ISSUER" authAudience="$AUTH_AUDIENCE" authJwksUrl="$AUTH_JWKS_URL" \
               authRequiredScope="$AUTH_REQUIRED_SCOPE"

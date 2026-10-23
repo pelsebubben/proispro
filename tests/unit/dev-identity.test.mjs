@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { exportJWK, generateKeyPair } from 'jose'
 import { createApplication } from '../../server/app.mjs'
-import { assertDevIdentityAllowed, createDevIdentity, DEV_ISSUER } from '../../server/dev-identity.mjs'
+import { assertDevIdentityAllowed, createDevIdentity, DEV_ISSUER, hostedDevPasscode } from '../../server/dev-identity.mjs'
 
 const local = { GRIPLOCK_DEV_AUTH: 'local-only', NODE_ENV: 'development' }
 
@@ -102,4 +102,59 @@ test('servers without dev identity expose no token endpoint and reject dev token
   const disabled = await serve(t, {})
   assert.equal((await disabled.post({ user: 'alice' })).status, 404)
   assert.equal((await disabled.session(devToken)).status, 503)
+})
+
+const passcode = 'p'.repeat(40)
+const hosted = { GRIPLOCK_DEV_PASSCODE: passcode, GRIPLOCK_STAGE: 'dev', CONTAINER_APP_NAME: 'app-griplock-dev', NODE_ENV: 'production' }
+
+test('hosted dev passcode login is only allowed on the dev app', () => {
+  assert.equal(hostedDevPasscode({}), null)
+  assert.equal(hostedDevPasscode({ GRIPLOCK_DEV_PASSCODE: '' }), null)
+  assert.equal(hostedDevPasscode(hosted), passcode)
+  const refused = [
+    { ...hosted, CONTAINER_APP_NAME: 'app-griplock-staging' },
+    { ...hosted, CONTAINER_APP_NAME: undefined },
+    { ...hosted, GRIPLOCK_STAGE: 'live' },
+    { ...hosted, GRIPLOCK_STAGE: undefined },
+    { ...hosted, GRIPLOCK_DEV_PASSCODE: 'short' },
+    { ...hosted, GRIPLOCK_DEV_AUTH: 'local-only' },
+  ]
+  for (const env of refused) assert.throws(() => hostedDevPasscode(env), undefined, JSON.stringify(env))
+})
+
+test('only the dev app deployment can receive the passcode', async () => {
+  const read = path => readFile(new URL(`../../${path}`, import.meta.url), 'utf8')
+  const bicep = await read('infra/app.bicep')
+  assert.match(bicep, /^var devLogin = !live && !empty\(devLoginPasscode\)$/m)
+  assert.equal(bicep.match(/GRIPLOCK_DEV_PASSCODE/g).length, 1)
+  assert.match(bicep, /devLogin \? \[\n  \{ name: 'GRIPLOCK_STAGE', value: 'dev' \}\n  \{ name: 'GRIPLOCK_DEV_PASSCODE', secretRef: 'dev-passcode' \}\n\] : \[\]/)
+  const prod = (await read('.github/workflows/prod.yml')).replace(/\r\n/g, '\n')
+  const uses = prod.split('az deployment group create').filter(block => block.includes('devLoginPasscode'))
+  assert.equal(uses.length, 1)
+  assert.match(uses[0], /-n "dev-app-\$GITHUB_RUN_ID"[\s\S]*stage=dev/)
+  for (const path of ['infra/staging.bicep', '.github/workflows/dev.yml', 'Dockerfile']) {
+    assert.doesNotMatch(await read(path), /GRIPLOCK_DEV_PASSCODE|DEV_LOGIN|devLoginPasscode/, path)
+  }
+})
+
+test('hosted dev login requires the passcode and throttles guessing', async t => {
+  const previous = process.env.NODE_ENV
+  process.env.NODE_ENV = 'production'
+  let app
+  try {
+    app = await serve(t, { devIdentity: await createDevIdentity({ passcode }) })
+  } finally {
+    process.env.NODE_ENV = previous
+  }
+  const { base, post, session } = app
+  assert.deepEqual(await (await fetch(`${base}/auth/config`)).json(),
+    { environment: 'dev', dataBackend: 'api', identityReady: true, devAuth: true, devPasscode: true })
+  assert.equal((await post({ user: 'alice' })).status, 401)
+  assert.equal((await post({ user: 'alice', passcode: `${passcode}x` })).status, 401)
+  assert.equal((await post({ user: 'alice', passcode: 7 })).status, 401)
+  const ok = await post({ user: 'alice', passcode })
+  assert.equal(ok.status, 200)
+  assert.deepEqual(await (await session((await ok.json()).access_token)).json(), { userId: 'user:dev:alice' })
+  for (let i = 0; i < 17; i++) assert.equal((await post({ user: 'alice', passcode: 'wrong' })).status, 401)
+  assert.equal((await post({ user: 'alice', passcode })).status, 429)
 })

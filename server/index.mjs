@@ -1,12 +1,18 @@
 import { createApplication } from './app.mjs'
 import { createPool } from './database.mjs'
 import { identityConfiguration } from './identity.mjs'
-import { assertDevIdentityAllowed, createDevIdentity, devIdentityRequested } from './dev-identity.mjs'
+import { assertDevIdentityAllowed, createDevIdentity, devIdentityRequested, hostedDevPasscode } from './dev-identity.mjs'
 
 const identity = identityConfiguration(process.env)
 let devIdentity = null
 let host = '0.0.0.0'
-if (devIdentityRequested(process.env)) {
+const passcode = hostedDevPasscode(process.env)
+if (passcode) {
+  if (identity) throw new Error('Dev passcode login cannot be combined with customer identity configuration')
+  devIdentity = await createDevIdentity({ passcode })
+  console.warn(JSON.stringify({ event: 'dev_passcode_login_enabled',
+    warning: 'HOSTED DEV LOGIN: passcode holders can sign in as any test user on the dev database' }))
+} else if (devIdentityRequested(process.env)) {
   host = process.env.HOST ?? '127.0.0.1'
   assertDevIdentityAllowed(process.env, { host, customerIdentity: identity })
   devIdentity = await createDevIdentity()

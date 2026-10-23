@@ -3,6 +3,7 @@ interface RuntimeConfiguration {
   identityReady: boolean
   dataBackend?: 'api'
   devAuth?: boolean
+  devPasscode?: boolean
   entra?: { clientId: string; authority: string; scope: string }
 }
 
