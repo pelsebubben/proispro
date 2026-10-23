@@ -1,4 +1,4 @@
-name: Release Griplock staging
+name: Release Griplock prod
 
 on:
   workflow_dispatch:
@@ -52,7 +52,7 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    environment: staging-infrastructure
+    environment: prod
     outputs:
       url: ${{ steps.release.outputs.url }}
       image: ${{ steps.release.outputs.image }}
@@ -65,9 +65,9 @@ jobs:
       REGISTRY: ${{ vars.AZURE_REGISTRY_NAME }}
       REGISTRY_SERVER: ${{ vars.AZURE_REGISTRY_SERVER }}
       PULL_IDENTITY: ${{ vars.AZURE_PULL_IDENTITY_ID }}
-      PG_ADMIN: ${{ secrets.STAGING_PG_ADMIN_PASSWORD }}
-      PG_APP: ${{ secrets.STAGING_PG_APP_PASSWORD }}
-      PG_DEV_APP: ${{ secrets.STAGING_PG_DEV_APP_PASSWORD }}
+      PG_ADMIN: ${{ secrets.PG_ADMIN_PASSWORD }}
+      PG_APP: ${{ secrets.PG_APP_PASSWORD }}
+      PG_DEV_APP: ${{ secrets.PG_DEV_APP_PASSWORD }}
     steps:
       - name: Enforce staging prerequisites
         env:

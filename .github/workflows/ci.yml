@@ -140,7 +140,7 @@ jobs:
           "$RUNNER_TEMP/actionlint/actionlint"
           .github/workflows/ci.yml
           .github/workflows/infra.yml
-          .github/workflows/staging.yml
+          .github/workflows/prod.yml
           .github/workflows/deploy.yml
           .github/workflows/squad-ci.yml
 

@@ -67,7 +67,7 @@ and migration of the existing frontend/data are separate, unfinished milestones.
 - `ci.yml`: every PR, main push, or manual run gets application checks, browser
   tests, the built OCI runtime tested against PostgreSQL 16, offline infrastructure
   validation, and a single `Required CI` result.
-- `staging.yml`: the live release. It starts automatically when push CI on main
+- `prod.yml`: the live release. It starts automatically when push CI on main
   succeeds (`workflow_run`), or by explicit main-only dispatch, and always releases
   the exact CI-verified SHA. Builds once without cloud credentials, publishes to private ACR, validates/
   previews/applies staging infrastructure, verifies a separate private database,
@@ -192,7 +192,7 @@ CODEOWNERS and a job name do not enforce protection by themselves. These setting
 have not been changed by this implementation. Review existing rules rather than
 replacing them wholesale.
 
-Create GitHub environment `staging-infrastructure` with deployment branches
+Create GitHub environment `prod` with deployment branches
 restricted to main. The Azure login identity must have a GitHub federated
 credential with:
 
@@ -200,7 +200,7 @@ credential with:
 |-------|-------|
 | Issuer | `https://token.actions.githubusercontent.com` |
 | Audience | `api://AzureADTokenExchange` |
-| Subject | `repo:pelsebubben/proispro:environment:staging-infrastructure` |
+| Subject | `repo:pelsebubben/proispro:environment:prod` |
 
 Repository renaming changes this subject and must be handled explicitly.
 Use a dedicated identity; do not copy a broadly privileged infra-repository
@@ -246,14 +246,14 @@ Configured with owner approval on 2026-10-23:
 | Managed identity | `id-griplock-staging-github` |
 | Client ID | `ba8e7edf-b1ac-4adc-b5a4-73e40b470ce0` |
 | Principal ID | `a4bf9172-2287-4d26-a5a7-ec6bd0bc76f6` |
-| GitHub environment | `staging-infrastructure`, main branch only |
+| GitHub environment | `prod`, main branch only |
 | Enabled | `INFRA_ENABLED=true` |
 
 GitHub issued an ID-qualified subject in the actual run. The configured trust
 matches it exactly, rather than the legacy name-only example above:
 
 ```text
-repo:pelsebubben@218121150/proispro@1209640240:environment:staging-infrastructure
+repo:pelsebubben@218121150/proispro@1209640240:environment:prod
 ```
 
 The issuer and audience are unchanged. When changing repository ownership/name
@@ -281,7 +281,7 @@ are registered in the target subscription.
 
 Additional staging environment variables: `AZURE_REGISTRY_NAME`,
 `AZURE_REGISTRY_SERVER`, and `AZURE_PULL_IDENTITY_ID`. Two independently generated
-environment secrets, `STAGING_PG_ADMIN_PASSWORD` and `STAGING_PG_APP_PASSWORD`,
+environment secrets, `PG_ADMIN_PASSWORD` and `PG_APP_PASSWORD`,
 persist database credentials between runs; no values belong in source/logs.
 App containers receive only the runtime password, while finite migration/test
 jobs receive administrator credentials. Do not regenerate the secrets on every
@@ -320,8 +320,8 @@ Merging to main releases live automatically once `Griplock CI` passes on the
 merge commit. A manual release of main remains available:
 
 ```powershell
-gh workflow run staging.yml --repo pelsebubben/proispro --ref main
-gh run list --repo pelsebubben/proispro --workflow staging.yml --limit 5
+gh workflow run prod.yml --repo pelsebubben/proispro --ref main
+gh run list --repo pelsebubben/proispro --workflow prod.yml --limit 5
 gh run watch RUN_ID --repo pelsebubben/proispro --exit-status
 ```
 
@@ -365,7 +365,7 @@ To reset dev data, drop and recreate the database, then run the live release:
 
 ```powershell
 az postgres flexible-server db delete -g rg-griplock-staging -s pg-griplock-gmfarjpxlkg2e -d griplock_dev --yes
-gh workflow run staging.yml --repo pelsebubben/proispro --ref main
+gh workflow run prod.yml --repo pelsebubben/proispro --ref main
 ```
 
 The dev app uses the same customer sign-in settings as live. Add its origin as

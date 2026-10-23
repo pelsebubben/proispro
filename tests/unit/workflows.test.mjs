@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from 'yaml'
 
-const names = ['ci.yml', 'infra.yml', 'staging.yml', 'dev.yml', 'deploy.yml', 'squad-ci.yml']
+const names = ['ci.yml', 'infra.yml', 'prod.yml', 'dev.yml', 'deploy.yml', 'squad-ci.yml']
 const sources = Object.fromEntries(await Promise.all(names.map(async name => [
   name, await readFile(new URL(`../../.github/workflows/${name}`, import.meta.url), 'utf8'),
 ])))
@@ -29,7 +29,7 @@ function checkTrustBoundary(files) {
   }
   const ci = workflows['ci.yml']
   assert.deepEqual(ci.permissions, { contents: 'read' })
-  for (const browser of [ci.jobs.browser, workflows['staging.yml'].jobs.browser]) {
+  for (const browser of [ci.jobs.browser, workflows['prod.yml'].jobs.browser]) {
     assert.match(browser.container.image, new RegExp(`^mcr.microsoft.com/playwright:v${playwrightVersion.replaceAll('.', '\\.')}-noble@sha256:[a-f0-9]{64}$`))
     assert.equal(browser.permissions?.['id-token'], undefined, 'browser gets no cloud identity')
     assert.equal(browser.environment, undefined, 'browser gets no environment secrets')
@@ -50,7 +50,7 @@ function checkTrustBoundary(files) {
   assert.deepEqual(Object.keys(infra.on), ['workflow_dispatch'], 'infra dispatch only')
   assert.deepEqual(infra.on.workflow_dispatch.inputs.operation.options, ['plan', 'apply'])
   assert.equal(infra.on.workflow_dispatch.inputs.operation.default, 'plan')
-  assert.equal(infra.jobs.staging.environment, 'staging-infrastructure')
+  assert.equal(infra.jobs.staging.environment, 'prod')
   assert.equal(infra.jobs.staging.permissions['id-token'], 'write')
   assert.equal(infra.concurrency['cancel-in-progress'], false, 'do not interrupt migrations/deployments')
   const guard = infra.jobs.staging.steps[0].run
@@ -58,7 +58,7 @@ function checkTrustBoundary(files) {
   assert.match(guard, /test "\$ENABLED" = true/)
   const apply = infra.jobs.staging.steps.find(step => step.name === 'Apply staging foundation')
   assert.equal(apply.if, "${{ inputs.operation == 'apply' }}", 'plan cannot apply')
-  const staging = workflows['staging.yml']
+  const staging = workflows['prod.yml']
   assert.deepEqual(Object.keys(staging.on), ['workflow_dispatch', 'workflow_run'])
   assert.deepEqual(staging.on.workflow_run, { workflows: ['Griplock CI'], types: ['completed'], branches: ['main'] })
   assert.equal(staging.env.SOURCE_SHA, '${{ github.event.workflow_run.head_sha || github.sha }}')
@@ -75,7 +75,7 @@ function checkTrustBoundary(files) {
   assert.match(staging.jobs.build.steps[0].run, /head_sha=\$SOURCE_SHA&event=push/)
   assert.match(staging.jobs.build.steps[0].run, /\.conclusion == "success"/)
   assert.equal(staging.jobs.staging.needs, 'build')
-  assert.equal(staging.jobs.staging.environment, 'staging-infrastructure')
+  assert.equal(staging.jobs.staging.environment, 'prod')
   assert.equal(staging.jobs.staging.permissions['id-token'], 'write')
   for (const job of Object.values(staging.jobs)) assert.equal(job['runs-on'], 'ubuntu-24.04')
   assert.match(staging.jobs.staging.steps[0].run, /test "\$ENABLED" = true/)
@@ -142,19 +142,19 @@ test('gates reject real workflow mutations that grant PR OIDC or remove apply pr
     ['infra.yml', 'test "$ENABLED" = true', 'echo enabled'],
     ['ci.yml', 'test "$BROWSER" = success', 'echo browser-skipped'],
     ['ci.yml', 'test "$API" = success', 'echo api-skipped'],
-    ['staging.yml', '.conclusion == "success"', '.conclusion != "success"'],
-    ['staging.yml', 'test "$ENABLED" = true', 'echo enabled'],
-    ['staging.yml', 'releaseId="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"', 'releaseId="constant"'],
+    ['prod.yml', '.conclusion == "success"', '.conclusion != "success"'],
+    ['prod.yml', 'test "$ENABLED" = true', 'echo enabled'],
+    ['prod.yml', 'releaseId="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"', 'releaseId="constant"'],
     ['ci.yml', 'playwright:v1.60.0-noble', 'playwright:v1.59.0-noble'],
-    ['staging.yml', 'run: node scripts/record-staging-release.mjs', 'run: echo release-skipped'],
-    ['staging.yml', 'identityConfiguration(process.env)', 'console.log("validation-skipped")'],
+    ['prod.yml', 'run: node scripts/record-staging-release.mjs', 'run: echo release-skipped'],
+    ['prod.yml', 'identityConfiguration(process.env)', 'console.log("validation-skipped")'],
     ['deploy.yml', 'if [ "$protected" != true ]', 'if [ false = true ]'],
     ['dev.yml', ' && (github.event_name', ' || (github.event_name'],
     ['dev.yml', 'DEV_MIGRATION: job-griplock-migrate-dev', 'DEV_MIGRATION: job-griplock-migrate'],
-    ['staging.yml', "github.event.workflow_run.conclusion == 'success'", "github.event.workflow_run.conclusion != 'cancelled'"],
-    ['staging.yml', '          bash scripts/backup-live-database.sh', '          echo backup-skipped'],
-    ['staging.yml', '          ref: ${{ env.SOURCE_SHA }}', '          ref: main'],
-    ['staging.yml', '-- server/migrations server/migrate.mjs', '-- docs'],
+    ['prod.yml', "github.event.workflow_run.conclusion == 'success'", "github.event.workflow_run.conclusion != 'cancelled'"],
+    ['prod.yml', '          bash scripts/backup-live-database.sh', '          echo backup-skipped'],
+    ['prod.yml', '          ref: ${{ env.SOURCE_SHA }}', '          ref: main'],
+    ['prod.yml', '-- server/migrations server/migrate.mjs', '-- docs'],
   ]) {
     assert.ok(sources[file].includes(before), `${file}: mutation must affect actual source`)
     assert.throws(() => checkTrustBoundary({ ...sources, [file]: sources[file].replace(before, after) }), Error, `${file}: ${before}`)
