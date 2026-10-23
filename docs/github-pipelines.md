@@ -1,5 +1,24 @@
 # Griplock GitHub delivery foundation
 
+## Current deployment state
+
+Main CI passes, including the OCI image against real PostgreSQL and desktop/
+mobile browser tests. Staging delivery code is merged through PRs #79–#82.
+**Azure application deployment is blocked on PostgreSQL regional capacity**;
+there is no verified public staging app URL yet.
+
+- [First release, B1ms](https://github.com/pelsebubben/proispro/actions/runs/39935671862):
+  OIDC, private ACR image publication, ARM preflight and foundation provisioning
+  succeeded; PostgreSQL returned `RegionalAllocationFailed`.
+- [Second release, B2s](https://github.com/pelsebubben/proispro/actions/runs/39937100609):
+  the next-smallest supported SKU returned the same regional capacity error.
+- Registry, pull identity, VNet/private DNS, Container Apps environment, locked
+  storage and logging exist in Sweden Central. No PostgreSQL server or app
+  revision was created; migration and deployed-browser gates correctly did not run.
+- A materially larger general-purpose database or a region change needs an owner
+  sizing decision. No automatic expensive/region fallback, production migration,
+  real customer login, or DNS cutover was attempted.
+
 ## Delivery scope
 
 The overall scope is a scalable GitHub-native change and deployment flow for
