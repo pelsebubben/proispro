@@ -158,3 +158,25 @@ test('hosted dev login requires the passcode and throttles guessing', async t =>
   for (let i = 0; i < 17; i++) assert.equal((await post({ user: 'alice', passcode: 'wrong' })).status, 401)
   assert.equal((await post({ user: 'alice', passcode })).status, 429)
 })
+
+test('hosted dev sessions survive restarts until the passcode is rotated', async t => {
+  const previous = process.env.NODE_ENV
+  process.env.NODE_ENV = 'production'
+  let first, restarted, rotated, local
+  try {
+    first = await serve(t, { devIdentity: await createDevIdentity({ passcode }) })
+    restarted = await serve(t, { devIdentity: await createDevIdentity({ passcode }) })
+    rotated = await serve(t, { devIdentity: await createDevIdentity({ passcode: 'q'.repeat(40) }) })
+  } finally {
+    process.env.NODE_ENV = previous
+  }
+  local = await serve(t, { devIdentity: await createDevIdentity() })
+  const issued = await (await first.post({ user: 'alice', passcode })).json()
+  assert.equal(issued.expires_in, 12 * 60 * 60)
+  assert.deepEqual(await (await restarted.session(issued.access_token)).json(), { userId: 'user:dev:alice' })
+  assert.equal((await rotated.session(issued.access_token)).status, 401)
+  assert.equal((await local.session(issued.access_token)).status, 401)
+  const localToken = (await (await local.post({ user: 'alice' })).json()).access_token
+  const localRestart = await serve(t, { devIdentity: await createDevIdentity() })
+  assert.equal((await localRestart.session(localToken)).status, 401)
+})

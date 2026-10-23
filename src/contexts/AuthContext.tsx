@@ -38,6 +38,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { active = false }
   }, [])
 
+  useEffect(() => {
+    const expire = () => {
+      setUser(null)
+      setError('Your session expired. Please sign in again.')
+    }
+    window.addEventListener('griplock-session-expired', expire)
+    return () => window.removeEventListener('griplock-session-expired', expire)
+  }, [])
+
   const signIn = async () => {
     setError(null)
     try {

@@ -104,8 +104,8 @@ function checkTrustBoundary(files) {
   assert.equal(dev.concurrency, undefined, 'skipped draft jobs must not cancel active deployments')
   assert.deepEqual(dev.jobs.dev.concurrency, { group: 'griplock-dev', 'cancel-in-progress': true })
   assert.deepEqual(Object.keys(dev.jobs), ['dev'])
-  assert.equal(dev.jobs.dev.if, "${{ vars.DEV_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository)) }}",
-    'draft and fork PRs never receive the dev cloud identity; manual dispatch remains available')
+  assert.equal(dev.jobs.dev.if, "${{ vars.DEV_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.draft == false && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository)) }}",
+      'draft, Dependabot and fork PRs never receive the dev cloud identity; manual dispatch remains available')
   assert.equal(dev.jobs.dev.environment.name, 'dev')
   assert.equal(dev.jobs.dev.permissions['id-token'], 'write')
   assert.equal(dev.jobs.dev['runs-on'], 'ubuntu-24.04')
@@ -149,6 +149,7 @@ test('gates reject real workflow mutations that grant PR OIDC or remove apply pr
     ['ci.yml', '          .github/workflows/dev.yml', '          .github/workflows/deploy.yml'],
     ['dev.yml', ' && (github.event_name', ' || (github.event_name'],
     ['dev.yml', 'github.event.pull_request.draft == false && ', ''],
+    ['dev.yml', "github.event.pull_request.user.login != 'dependabot[bot]' && ", ''],
     ['dev.yml', ', ready_for_review', ''],
     ['dev.yml', '    concurrency:', '    ignored-concurrency:'],
     ['dev.yml', 'DEV_MIGRATION: job-griplock-migrate-dev', 'DEV_MIGRATION: job-griplock-migrate'],

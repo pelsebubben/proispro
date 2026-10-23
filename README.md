@@ -73,7 +73,7 @@ API tests require a disposable PostgreSQL database and `PGHOST`, `PGPORT`,
 local PostgreSQL). Never point them at dev or production application data.
 
 Non-draft PRs deploy to shared dev; drafts run CI without replacing the dev app.
-Marking a draft ready for review starts its deployment.
+Marking a draft ready for review starts its deployment. Dependabot PRs run CI only.
 Successful main CI triggers the production release.
 Azure dev/prod are the only supported deployments; standalone GitHub Pages
 publishing is retired because it cannot serve the same-origin application API.
