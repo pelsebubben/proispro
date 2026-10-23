@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from 'yaml'
 
-const names = ['ci.yml', 'infra.yml', 'deploy.yml', 'squad-ci.yml']
+const names = ['ci.yml', 'infra.yml', 'staging.yml', 'deploy.yml', 'squad-ci.yml']
 const sources = Object.fromEntries(await Promise.all(names.map(async name => [
   name, await readFile(new URL(`../../.github/workflows/${name}`, import.meta.url), 'utf8'),
 ])))
@@ -29,13 +29,13 @@ function checkTrustBoundary(files) {
   assert.deepEqual(ci.permissions, { contents: 'read' })
   assert.ok(Object.hasOwn(ci.on, 'pull_request'))
   assert.equal(ci.on.pull_request, null, 'all PR changes get the same required check')
-  assert.deepEqual(ci.jobs.required.needs, ['application', 'browser', 'infrastructure'])
+  assert.deepEqual(ci.jobs.required.needs, ['application', 'browser', 'api', 'infrastructure'])
   assert.equal(ci.jobs.required.if, '${{ always() }}')
   const requiredGuard = ci.jobs.required.steps[0].run
-  for (const result of ['APPLICATION', 'BROWSER', 'INFRASTRUCTURE']) {
+  for (const result of ['APPLICATION', 'BROWSER', 'API', 'INFRASTRUCTURE']) {
     assert.ok(requiredGuard.includes(`test "$${result}" = success`), `required gate checks ${result}`)
   }
-  for (const name of ['application', 'browser', 'infrastructure']) {
+  for (const name of ['application', 'browser', 'api', 'infrastructure']) {
     assert.equal(ci.jobs[name].permissions?.['id-token'], undefined, 'untrusted jobs have no OIDC')
   }
   const infra = workflows['infra.yml']
@@ -50,6 +50,24 @@ function checkTrustBoundary(files) {
   assert.match(guard, /test "\$ENABLED" = true/)
   const apply = infra.jobs.staging.steps.find(step => step.name === 'Apply staging foundation')
   assert.equal(apply.if, "${{ inputs.operation == 'apply' }}", 'plan cannot apply')
+  const staging = workflows['staging.yml']
+  assert.deepEqual(Object.keys(staging.on), ['workflow_dispatch'])
+  assert.equal(staging.concurrency.group, infra.concurrency.group, 'serialize all staging changes')
+  assert.equal(staging.concurrency['cancel-in-progress'], false)
+  assert.equal(staging.jobs.build.permissions?.['id-token'], undefined)
+  assert.match(staging.jobs.build.steps[0].run, /test "\$GITHUB_REF" = refs\/heads\/main/)
+  assert.match(staging.jobs.build.steps[0].run, /head_sha=\$SOURCE_SHA&event=push/)
+  assert.match(staging.jobs.build.steps[0].run, /\.conclusion == "success"/)
+  assert.equal(staging.jobs.staging.needs, 'build')
+  assert.equal(staging.jobs.staging.environment, 'staging-infrastructure')
+  assert.equal(staging.jobs.staging.permissions['id-token'], 'write')
+  assert.match(staging.jobs.staging.steps[0].run, /test "\$ENABLED" = true/)
+  const publish = staging.jobs.staging.steps.find(step => step.name === 'Publish exact image to private ACR')
+  assert.match(publish.run, /griplock@%s/)
+  const migrationIndex = staging.jobs.staging.steps.findIndex(step => step.name === 'Verify private database and apply schema')
+  const deployIndex = staging.jobs.staging.steps.findIndex(step => step.name === 'Release immutable app revision')
+  assert.ok(migrationIndex > 0 && deployIndex > migrationIndex, 'verify and migrate before releasing app')
+  assert.ok(staging.jobs.staging.steps.some(step => step.run === 'npm run test:staging'))
   const deploy = workflows['deploy.yml']
   assert.deepEqual(Object.keys(deploy.on), ['workflow_dispatch'], 'production never deploys on push')
   assert.equal(deploy.jobs.deploy.needs, 'checks')
@@ -73,6 +91,9 @@ test('gates reject real workflow mutations that grant PR OIDC or remove apply pr
     ['deploy.yml', 'test "$ACTOR" = "$OWNER"', 'echo approval-skipped'],
     ['infra.yml', 'test "$ENABLED" = true', 'echo enabled'],
     ['ci.yml', 'test "$BROWSER" = success', 'echo browser-skipped'],
+    ['ci.yml', 'test "$API" = success', 'echo api-skipped'],
+    ['staging.yml', '.conclusion == "success"', '.conclusion != "success"'],
+    ['staging.yml', 'test "$ENABLED" = true', 'echo enabled'],
     ['deploy.yml', 'if [ "$protected" != true ]', 'if [ false = true ]'],
   ]) {
     assert.ok(sources[file].includes(before), `${file}: mutation must affect actual source`)

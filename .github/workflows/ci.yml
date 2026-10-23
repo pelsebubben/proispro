@@ -71,6 +71,41 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  api:
+    name: PostgreSQL and OCI integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-bookworm
+        env:
+          POSTGRES_PASSWORD: synthetic-ci-admin
+          POSTGRES_DB: griplock_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      NODE_ENV: test
+      PGHOST: '127.0.0.1'
+      PGDATABASE: griplock_test
+      PGUSER: postgres
+      PGPASSWORD: synthetic-ci-admin
+      PGAPP_PASSWORD: synthetic-ci-runtime-password-at-least-32-characters
+      PGSSLMODE: disable
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Build portable runtime
+        run: docker build --tag griplock:ci .
+      - name: Test the actual runtime image against PostgreSQL
+        run: |
+          docker run --rm --network host \
+            -e NODE_ENV -e PGHOST -e PGDATABASE -e PGUSER \
+            -e PGPASSWORD -e PGAPP_PASSWORD -e PGSSLMODE \
+            griplock:ci node --test tests/api/discs.test.mjs
+
   infrastructure:
     name: Infrastructure checks
     runs-on: ubuntu-latest
@@ -83,6 +118,9 @@ jobs:
         run: |
           az bicep install --version "$BICEP_VERSION"
           az bicep build --file infra/main.bicep --stdout > /dev/null
+          az bicep build --file infra/bootstrap.bicep --stdout > /dev/null
+          az bicep build --file infra/staging.bicep --stdout > /dev/null
+          az bicep build --file infra/app.bicep --stdout > /dev/null
       - name: Install checksum-verified actionlint
         env:
           GH_TOKEN: ${{ github.token }}
@@ -101,13 +139,14 @@ jobs:
           "$RUNNER_TEMP/actionlint/actionlint"
           .github/workflows/ci.yml
           .github/workflows/infra.yml
+          .github/workflows/staging.yml
           .github/workflows/deploy.yml
           .github/workflows/squad-ci.yml
 
   required:
     name: Required CI
     if: ${{ always() }}
-    needs: [application, browser, infrastructure]
+    needs: [application, browser, api, infrastructure]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -116,7 +155,9 @@ jobs:
           APPLICATION: ${{ needs.application.result }}
           BROWSER: ${{ needs.browser.result }}
           INFRASTRUCTURE: ${{ needs.infrastructure.result }}
+          API: ${{ needs.api.result }}
         run: |
           test "$APPLICATION" = success
           test "$BROWSER" = success
           test "$INFRASTRUCTURE" = success
+          test "$API" = success

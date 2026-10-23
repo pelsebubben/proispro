@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: griplock-staging-infrastructure
+  group: griplock-staging-release
   cancel-in-progress: false
 
 jobs:
@@ -94,5 +94,5 @@ jobs:
         env:
           SOURCE_SHA: ${{ github.sha }}
         run: |
-          printf '## Griplock staging infrastructure\n\nOperation: `%s`\n\nCommit: `%s`\n' \
+          printf '## Griplock staging infrastructure\n\nOperation: %s\n\nCommit: %s\n' \
             "$OPERATION" "$SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
