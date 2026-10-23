@@ -1,14 +1,22 @@
 import { runtime } from './runtime'
-import { devAccessToken } from './devAuth'
+import { devAccessToken, devSignOut } from './devAuth'
 import { entraAccessToken } from './entra'
 
 type Filters = Record<string, string>
 type Resource = 'discs' | 'bags' | 'bag_history' | 'collections' | 'collection_discs' |
   'wishlist_items' | 'forsale_listings' | 'sale_tokens' | 'course_pins' | 'hole_assignments'
 
+export const sessionExpiredMessage = 'Your session expired. Please sign in again.'
+
+function sessionExpired(): never {
+  if (runtime.devAuth) devSignOut()
+  window.dispatchEvent(new Event('griplock-session-expired'))
+  throw new Error(sessionExpiredMessage)
+}
+
 async function accessToken() {
   const token = runtime.devAuth ? devAccessToken() : await entraAccessToken()
-  if (!token) throw new Error('Your session has expired. Please sign in again.')
+  if (!token) sessionExpired()
   return token
 }
 
@@ -20,6 +28,7 @@ async function request<T>(path: string, method = 'GET', body?: object): Promise<
       headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}),
     })
+    if (response.status === 401) sessionExpired()
     if (!response.ok) {
       const detail = await response.json()
       throw new Error(`Could not ${method === 'GET' ? 'load' : 'save'} data (${response.status}: ${detail.error})`)
@@ -43,6 +52,7 @@ export async function loadDiscPhoto(path: string, signal: AbortSignal): Promise<
   }
   const token = await accessToken()
   const response = await fetch(path, { signal, cache: 'no-store', headers: { Authorization: `Bearer ${token}` } })
+  if (response.status === 401) sessionExpired()
   if (!response.ok) throw new Error(`Photo could not be loaded (${response.status}).`)
   return response.blob()
 }

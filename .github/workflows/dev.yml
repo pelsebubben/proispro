@@ -17,7 +17,7 @@ env:
 jobs:
   dev:
     name: Deploy branch to shared dev
-    if: ${{ vars.DEV_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository)) }}
+    if: ${{ vars.DEV_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.draft == false && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository)) }}
     concurrency:
       group: griplock-dev
       cancel-in-progress: true

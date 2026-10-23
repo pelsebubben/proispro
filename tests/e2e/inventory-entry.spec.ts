@@ -69,6 +69,21 @@ test('instant local search finds mold, manufacturer and editions without duplica
   expect(external).toEqual([])
 })
 
+test('an expired session on save returns to sign-in with a clear message and clears the stale token', async ({ page }) => {
+  const { writes } = await inventory(page)
+  await page.route('**/api/v1/discs', route => route.request().method() === 'POST'
+    ? route.fulfill({ status: 401, json: { error: 'unauthorized' } })
+    : route.fallback())
+  await page.getByRole('combobox', { name: /Disc Name/ }).fill('Destroyer')
+  await page.getByRole('option', { name: /^Destroyer Innova/ }).click()
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('Your session expired. Please sign in again.')
+  await expect(page.getByRole('button', { name: 'Sign in locally' })).toBeVisible()
+  await expect(page.getByText(/401|unauthorized/)).toHaveCount(0)
+  expect(await page.evaluate(() => sessionStorage.getItem('griplock.devAccessToken'))).toBeNull()
+  expect(writes).toEqual([])
+})
+
 test('no-match menu dismisses on blur, Tab, Escape and custom selection, then Utility saves', async ({ page }) => {
   const { writes } = await inventory(page)
   const input = page.getByRole('combobox', { name: /Disc Name/ })

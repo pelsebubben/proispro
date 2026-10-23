@@ -347,6 +347,7 @@ non-draft same-repository PR runs `dev.yml`: build, push `griplock:dev-<sha>`, m
 `/health/ready` reports the branch SHA. The newest push wins (in-progress dev
 deploys are cancelled). Draft PRs still run CI but do not deploy or cancel an
 active deployment. Marking a draft ready for review starts its dev deployment.
+Dependabot PRs run CI only and never replace the shared dev app.
 Fork PRs never deploy. Explicit manual dispatch remains available for any branch.
 Each live release resets the dev app to main.
 
@@ -375,9 +376,10 @@ gh workflow run prod.yml --repo pelsebubben/proispro --ref main
 
 The dev app does not use customer sign-in. Its login page asks for a test user
 name (for example `alice`) and the shared dev passcode, so people and agents can
-test the real GUI as any number of separate test users. Tokens are signed by an
-in-memory key and verified like customer tokens; they last one hour and end when
-the app restarts or scales to zero. Read the passcode with Azure RBAC:
+test the real GUI as any number of separate test users. Tokens are verified like
+customer tokens and last 12 hours. The signing key is derived from the passcode,
+so sessions survive deploys, restarts and scale-to-zero; rotating the passcode
+revokes them all. Any API 401 returns the GUI to sign-in with a clear message. Read the passcode with Azure RBAC:
 
 ```powershell
 az containerapp secret show -g rg-griplock-staging -n app-griplock-dev --secret-name dev-passcode --query value -o tsv
