@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from 'yaml'
 
-const names = ['ci.yml', 'infra.yml', 'staging.yml', 'deploy.yml', 'squad-ci.yml']
+const names = ['ci.yml', 'infra.yml', 'staging.yml', 'dev.yml', 'deploy.yml', 'squad-ci.yml']
 const sources = Object.fromEntries(await Promise.all(names.map(async name => [
   name, await readFile(new URL(`../../.github/workflows/${name}`, import.meta.url), 'utf8'),
 ])))
@@ -59,7 +59,15 @@ function checkTrustBoundary(files) {
   const apply = infra.jobs.staging.steps.find(step => step.name === 'Apply staging foundation')
   assert.equal(apply.if, "${{ inputs.operation == 'apply' }}", 'plan cannot apply')
   const staging = workflows['staging.yml']
-  assert.deepEqual(Object.keys(staging.on), ['workflow_dispatch'])
+  assert.deepEqual(Object.keys(staging.on), ['workflow_dispatch', 'workflow_run'])
+  assert.deepEqual(staging.on.workflow_run, { workflows: ['Griplock CI'], types: ['completed'], branches: ['main'] })
+  assert.equal(staging.env.SOURCE_SHA, '${{ github.event.workflow_run.head_sha || github.sha }}')
+  assert.equal(staging.jobs.build.if, "${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}",
+    'auto-release only after a successful main push CI run')
+  for (const job of [staging.jobs.build, staging.jobs.staging]) {
+    const checkout = job.steps.find(step => step.uses?.startsWith('actions/checkout@'))
+    assert.equal(checkout.with.ref, '${{ env.SOURCE_SHA }}', 'release the CI-verified commit, not the latest main')
+  }
   assert.equal(staging.concurrency.group, infra.concurrency.group, 'serialize all staging changes')
   assert.equal(staging.concurrency['cancel-in-progress'], false)
   assert.equal(staging.jobs.build.permissions?.['id-token'], undefined)
@@ -76,7 +84,28 @@ function checkTrustBoundary(files) {
   const migrationIndex = staging.jobs.staging.steps.findIndex(step => step.name === 'Verify private database and apply schema')
   const deployIndex = staging.jobs.staging.steps.findIndex(step => step.name === 'Release immutable app revision')
   assert.ok(migrationIndex > 0 && deployIndex > migrationIndex, 'verify and migrate before releasing app')
-  assert.match(staging.jobs.staging.steps[deployIndex].run, /releaseId="\$GITHUB_RUN_ID-\$GITHUB_RUN_ATTEMPT"/)
+  const schema = staging.jobs.staging.steps[migrationIndex].run
+  const backup = schema.indexOf('bash scripts/backup-live-database.sh')
+  assert.ok(schema.indexOf('job-griplock-verify') < backup, 'verify before backup')
+  assert.ok(backup > 0 && backup < schema.indexOf('job-griplock-migrate\n'), 'back up live data before migrating it')
+  assert.ok(schema.indexOf('job-griplock-migrate-dev') > backup)
+  assert.match(schema, /git diff --quiet "\$previous" "\$SOURCE_SHA" -- server\/migrations server\/migrate\.mjs/,
+    'skip the slow backup only when no schema code changed since the live release')
+  assert.equal(staging.jobs.staging.steps.find(step => step.uses?.startsWith('actions/checkout@')).with['fetch-depth'], 0)
+  assert.match(staging.jobs.staging.steps[deployIndex].run, /--parameters stage=dev .*postgresAppPassword="\$PG_DEV_APP"/s)
+  const dev = workflows['dev.yml']
+  assert.deepEqual(Object.keys(dev.on), ['pull_request', 'workflow_dispatch'])
+  assert.deepEqual(dev.concurrency, { group: 'griplock-dev', 'cancel-in-progress': true })
+  assert.deepEqual(Object.keys(dev.jobs), ['dev'])
+  assert.equal(dev.jobs.dev.if, "${{ vars.DEV_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}",
+    'fork PRs never receive the dev cloud identity')
+  assert.equal(dev.jobs.dev.environment.name, 'dev')
+  assert.equal(dev.jobs.dev.permissions['id-token'], 'write')
+  assert.equal(dev.jobs.dev['runs-on'], 'ubuntu-24.04')
+  assert.ok(!files['dev.yml'].includes('secrets.'), 'dev deploys hold no database or registry secrets')
+  assert.ok(!/job-griplock-migrate\b(?!-dev)|app-griplock-staging/.test(files['dev.yml']), 'dev never targets live resources')
+  assert.equal(staging.jobs.staging.steps[deployIndex].run.match(/releaseId="\$GITHUB_RUN_ID-\$GITHUB_RUN_ATTEMPT"/g)?.length, 2,
+    'live and dev app revisions are unique per run attempt')
   assert.match(staging.jobs.staging.steps[deployIndex].run, /identityConfiguration\(process.env\)/)
   assert.equal(staging.jobs.browser.env.IDENTITY_READY, '${{ needs.staging.outputs.identityReady }}')
   for (const name of ['ENTRA_CLIENT_ID', 'ENTRA_AUTHORITY', 'ENTRA_API_SCOPE', 'AUTH_ISSUER',
@@ -120,8 +149,14 @@ test('gates reject real workflow mutations that grant PR OIDC or remove apply pr
     ['staging.yml', 'run: node scripts/record-staging-release.mjs', 'run: echo release-skipped'],
     ['staging.yml', 'identityConfiguration(process.env)', 'console.log("validation-skipped")'],
     ['deploy.yml', 'if [ "$protected" != true ]', 'if [ false = true ]'],
+    ['dev.yml', ' && (github.event_name', ' || (github.event_name'],
+    ['dev.yml', 'DEV_MIGRATION: job-griplock-migrate-dev', 'DEV_MIGRATION: job-griplock-migrate'],
+    ['staging.yml', "github.event.workflow_run.conclusion == 'success'", "github.event.workflow_run.conclusion != 'cancelled'"],
+    ['staging.yml', '          bash scripts/backup-live-database.sh', '          echo backup-skipped'],
+    ['staging.yml', '          ref: ${{ env.SOURCE_SHA }}', '          ref: main'],
+    ['staging.yml', '-- server/migrations server/migrate.mjs', '-- docs'],
   ]) {
     assert.ok(sources[file].includes(before), `${file}: mutation must affect actual source`)
-    assert.throws(() => checkTrustBoundary({ ...sources, [file]: sources[file].replace(before, after) }))
+    assert.throws(() => checkTrustBoundary({ ...sources, [file]: sources[file].replace(before, after) }), Error, `${file}: ${before}`)
   }
 })

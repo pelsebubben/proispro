@@ -5,6 +5,8 @@ param location string = resourceGroup().location
 param postgresAdminPassword string
 @secure()
 param postgresAppPassword string
+@secure()
+param postgresDevAppPassword string
 param image string
 param registryServer string
 param pullIdentityId string
@@ -79,6 +81,11 @@ resource testDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-
   name: 'griplock_verify'
   properties: { charset: 'UTF8', collation: 'en_US.utf8' }
 }
+resource devDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08-01' = {
+  parent: database
+  name: 'griplock_dev'
+  properties: { charset: 'UTF8', collation: 'en_US.utf8' }
+}
 resource objects 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: 'stgrip${suffix}'
   location: location
@@ -148,6 +155,24 @@ module verify './job.bicep' = {
     appPassword: postgresAppPassword
   }
 }
+module devMigration './job.bicep' = {
+  name: 'dev-migration-job'
+  params: {
+    location: location
+    environmentId: environment.id
+    name: 'job-griplock-migrate-dev'
+    image: image
+    registryServer: registryServer
+    pullIdentityId: pullIdentityId
+    command: ['node', 'server/migrate.mjs']
+    databaseHost: database.properties.fullyQualifiedDomainName
+    databaseName: devDatabase.name
+    appUser: 'griplock_dev_app'
+    adminPassword: postgresAdminPassword
+    appPassword: postgresDevAppPassword
+  }
+}
 output environmentId string = environment.id
 output databaseHost string = database.properties.fullyQualifiedDomainName
+output databaseServer string = database.name
 output storageAccount string = objects.name

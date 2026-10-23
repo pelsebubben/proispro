@@ -18,6 +18,11 @@ test('real PostgreSQL API enforces signed identity, ownership, RLS and persisten
   t.after(() => runtime.end())
   const roles = await admin.query("SELECT rolbypassrls,rolsuper FROM pg_roles WHERE rolname='griplock_app'")
   assert.deepEqual(roles.rows, [{ rolbypassrls: false, rolsuper: false }])
+  await migrate(admin, password, 'griplock_alt_app')
+  const devRole = await admin.query(`SELECT r.rolbypassrls, r.rolsuper, r.rolcreaterole,
+    has_table_privilege('griplock_alt_app', 'owned_discs', 'DELETE') AS deletes
+    FROM pg_roles r WHERE r.rolname = 'griplock_alt_app'`)
+  assert.deepEqual(devRole.rows, [{ rolbypassrls: false, rolsuper: false, rolcreaterole: false, deletes: true }])
   const { privateKey, publicKey } = await generateKeyPair('RS256')
   const jwk = { ...await exportJWK(publicKey), kid: 'integration-key', alg: 'RS256', use: 'sig' }
   const identityServer = createServer((_req, res) => {

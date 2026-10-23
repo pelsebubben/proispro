@@ -1,4 +1,6 @@
 param location string = resourceGroup().location
+@allowed(['live', 'dev'])
+param stage string = 'live'
 param environmentId string
 param databaseHost string
 param image string
@@ -16,10 +18,12 @@ param authRequiredScope string = ''
 @secure()
 param postgresAppPassword string
 
+var live = stage == 'live'
+
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
-  name: 'app-griplock-staging'
+  name: live ? 'app-griplock-staging' : 'app-griplock-dev'
   location: location
-  tags: { application: 'griplock', environment: 'staging', managedBy: 'bicep', sourceSha: sourceSha }
+  tags: { application: 'griplock', environment: live ? 'staging' : 'dev', managedBy: 'bicep', sourceSha: sourceSha }
   identity: { type: 'UserAssigned', userAssignedIdentities: { '${pullIdentityId}': {} } }
   properties: {
     environmentId: environmentId
@@ -37,7 +41,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
     }
     template: {
       revisionSuffix: 'r-${take(sourceSha, 12)}-${releaseId}'
-      scale: { minReplicas: 1, maxReplicas: 3 }
+      scale: { minReplicas: live ? 1 : 0, maxReplicas: live ? 3 : 1 }
       containers: [{
         name: 'app'
         image: image
@@ -46,8 +50,8 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'NODE_ENV', value: 'production' }
           { name: 'PORT', value: '8080' }
           { name: 'PGHOST', value: databaseHost }
-          { name: 'PGDATABASE', value: 'griplock' }
-          { name: 'PGUSER', value: 'griplock_app' }
+          { name: 'PGDATABASE', value: live ? 'griplock' : 'griplock_dev' }
+          { name: 'PGUSER', value: live ? 'griplock_app' : 'griplock_dev_app' }
           { name: 'PGPASSWORD', secretRef: 'pg-app' }
           { name: 'SOURCE_SHA', value: sourceSha }
           { name: 'AUTH_ISSUER', value: authIssuer }

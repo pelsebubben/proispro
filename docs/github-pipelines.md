@@ -67,11 +67,16 @@ and migration of the existing frontend/data are separate, unfinished milestones.
 - `ci.yml`: every PR, main push, or manual run gets application checks, browser
   tests, the built OCI runtime tested against PostgreSQL 16, offline infrastructure
   validation, and a single `Required CI` result.
-- `staging.yml`: explicit main-only release, requiring green push CI for that exact
-  SHA. Builds once without cloud credentials, publishes to private ACR, validates/
+- `staging.yml`: the live release. It starts automatically when push CI on main
+  succeeds (`workflow_run`), or by explicit main-only dispatch, and always releases
+  the exact CI-verified SHA. Builds once without cloud credentials, publishes to private ACR, validates/
   previews/applies staging infrastructure, verifies a separate private database,
-  migrates the app database, deploys the digest, and runs real deployed browser
+  backs up live data when schema code changed, migrates the live and dev databases,
+  deploys the digest to live, resets the dev app to the same digest, and runs real deployed browser
   checks. It shares a non-cancelling concurrency group with `infra.yml`.
+- `dev.yml`: deploys every same-repository PR push (or a manual dispatch from any
+  branch) to the shared dev app `app-griplock-dev` on database `griplock_dev`. See
+  [Shared dev environment](#shared-dev-environment).
 - `infra.yml`: explicit main-branch dispatch for staging `plan` or `apply`, using
   environment-scoped OIDC. Disabled until `INFRA_ENABLED=true` is configured.
 - `deploy.yml`: preserves existing GitHub Pages hosting, but publishing now
@@ -309,15 +314,63 @@ gh run watch RUN_ID --repo pelsebubben/proispro --exit-status
 Review what-if for the exact SHA. When authorized, dispatch `operation=apply`
 on main. Apply repeats preflight and what-if; it is serialized with plan runs
 and is never cancelled midway by a newer run. A new commit requires reviewing
-the new plan. Ordinary main pushes never apply infrastructure.
+the new plan. `infra.yml` never applies on push; the live release applies only `infra/staging.bicep` after green main CI.
 
-After green main CI, release the staging app and infrastructure together:
+Merging to main releases live automatically once `Griplock CI` passes on the
+merge commit. A manual release of main remains available:
 
 ```powershell
 gh workflow run staging.yml --repo pelsebubben/proispro --ref main
 gh run list --repo pelsebubben/proispro --workflow staging.yml --limit 5
 gh run watch RUN_ID --repo pelsebubben/proispro --exit-status
 ```
+
+Live data protection: Azure keeps continuous point-in-time restore for 7 days.
+When `server/migrations/` or `server/migrate.mjs` changed since the SHA currently
+live, the release first takes an on-demand full backup named
+`pre-release-<run>-<attempt>` (about 6–7 minutes) and keeps the newest five.
+Releases without schema changes skip it. Restores always create a new server:
+
+```powershell
+az postgres flexible-server backup list -g rg-griplock-staging -n pg-griplock-gmfarjpxlkg2e -o table
+az postgres flexible-server restore -g rg-griplock-staging -n pg-griplock-restore --source-server pg-griplock-gmfarjpxlkg2e --restore-time 2026-01-01T12:00:00Z
+```
+
+## Shared dev environment
+
+One shared dev app (`app-griplock-dev`, scales to zero) runs on the same
+PostgreSQL server as live, in its own database `griplock_dev` with its own runtime
+role `griplock_dev_app`. That role has no grants on live tables. Every push to a
+same-repository PR runs `dev.yml`: build, push `griplock:dev-<sha>`, migrate
+`griplock_dev` with the branch code, update the dev app, and wait until
+`/health/ready` reports the branch SHA. The newest push wins (in-progress dev
+deploys are cancelled). Fork PRs never deploy. Each live release resets the dev
+app to main.
+
+```powershell
+gh workflow run dev.yml --repo pelsebubben/proispro --ref BRANCH
+gh run list --repo pelsebubben/proispro --workflow dev.yml --limit 5
+```
+
+The `dev` GitHub environment holds no secrets; it uses its own managed identity
+`id-griplock-dev-github`, limited to pushing images, updating the dev app and dev
+migration job, and reading the resource group. It cannot change live resources
+or infrastructure.
+
+Caveat: the dev migration job connects as the server admin so it can create
+dev schema. Branch migration code therefore runs with admin rights on the shared
+server, and could in principle touch the live database. Only trusted
+collaborators can push branches here. Review migration code before pushing it.
+To reset dev data, drop and recreate the database, then run the live release:
+
+```powershell
+az postgres flexible-server db delete -g rg-griplock-staging -s pg-griplock-gmfarjpxlkg2e -d griplock_dev --yes
+gh workflow run staging.yml --repo pelsebubben/proispro --ref main
+```
+
+The dev app uses the same customer sign-in settings as live. Add its origin as
+an extra SPA redirect URI on the Griplock Web registration once Entra is set up.
+The loopback-only local developer identity is never available on dev or live.
 
 The release artifact contains source SHA, immutable ACR digest, schema version,
 Azure URL, run link, and identity limitation. Deployed desktop/mobile tests make

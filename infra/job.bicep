@@ -7,6 +7,7 @@ param pullIdentityId string
 param command array
 param databaseHost string
 param databaseName string
+param appUser string = 'griplock_app'
 @secure()
 param adminPassword string
 @secure()
@@ -44,6 +45,7 @@ resource job 'Microsoft.App/jobs@2024-03-01' = {
           { name: 'PGUSER', value: 'griplock_admin' }
           { name: 'PGPASSWORD', secretRef: 'pg-admin' }
           { name: 'PGAPP_PASSWORD', secretRef: 'pg-app' }
+          { name: 'PGAPP_USER', value: appUser }
         ]
       }]
     }

@@ -2,6 +2,10 @@ name: Release Griplock staging
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: [Griplock CI]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
@@ -11,13 +15,14 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  SOURCE_SHA: ${{ github.sha }}
+  SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
   BICEP_VERSION: v0.48.1
   RESOURCE_GROUP: rg-griplock-staging
 
 jobs:
   build:
     name: Build trusted release
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -31,6 +36,7 @@ jobs:
             | jq -e --arg sha "$SOURCE_SHA" '.workflow_runs | any(.head_sha == $sha and .head_branch == "main" and .conclusion == "success")'
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          ref: ${{ env.SOURCE_SHA }}
           persist-credentials: false
       - run: docker build --tag "griplock:$SOURCE_SHA" .
       - run: docker save "griplock:$SOURCE_SHA" | gzip > "$RUNNER_TEMP/griplock.tar.gz"
@@ -61,6 +67,7 @@ jobs:
       PULL_IDENTITY: ${{ vars.AZURE_PULL_IDENTITY_ID }}
       PG_ADMIN: ${{ secrets.STAGING_PG_ADMIN_PASSWORD }}
       PG_APP: ${{ secrets.STAGING_PG_APP_PASSWORD }}
+      PG_DEV_APP: ${{ secrets.STAGING_PG_DEV_APP_PASSWORD }}
     steps:
       - name: Enforce staging prerequisites
         env:
@@ -74,8 +81,11 @@ jobs:
           test -n "$PULL_IDENTITY"
           test "${#PG_ADMIN}" -ge 32
           test "${#PG_APP}" -ge 32
+          test "${#PG_DEV_APP}" -ge 32
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -105,20 +115,30 @@ jobs:
           az deployment group validate --resource-group "$RESOURCE_GROUP" \
             --template-file infra/staging.bicep \
             --parameters image="$IMAGE" registryServer="$REGISTRY_SERVER" pullIdentityId="$PULL_IDENTITY" \
-              postgresAdminPassword="$PG_ADMIN" postgresAppPassword="$PG_APP"
+              postgresAdminPassword="$PG_ADMIN" postgresAppPassword="$PG_APP" postgresDevAppPassword="$PG_DEV_APP"
           az deployment group what-if --resource-group "$RESOURCE_GROUP" \
             --template-file infra/staging.bicep --result-format ResourceIdOnly \
             --parameters image="$IMAGE" registryServer="$REGISTRY_SERVER" pullIdentityId="$PULL_IDENTITY" \
-              postgresAdminPassword="$PG_ADMIN" postgresAppPassword="$PG_APP"
+              postgresAdminPassword="$PG_ADMIN" postgresAppPassword="$PG_APP" postgresDevAppPassword="$PG_DEV_APP"
           az deployment group create --resource-group "$RESOURCE_GROUP" --name "core-$GITHUB_RUN_ID" \
             --template-file infra/staging.bicep \
             --parameters image="$IMAGE" registryServer="$REGISTRY_SERVER" pullIdentityId="$PULL_IDENTITY" \
-              postgresAdminPassword="$PG_ADMIN" postgresAppPassword="$PG_APP"
+              postgresAdminPassword="$PG_ADMIN" postgresAppPassword="$PG_APP" postgresDevAppPassword="$PG_DEV_APP"
       - name: Verify private database and apply schema
         run: |
           set -euo pipefail
           bash scripts/run-staging-job.sh job-griplock-verify
+          server=$(az deployment group show -g "$RESOURCE_GROUP" -n "core-$GITHUB_RUN_ID" \
+            --query properties.outputs.databaseServer.value -o tsv)
+          previous=$(az containerapp show -g "$RESOURCE_GROUP" -n app-griplock-staging --query tags.sourceSha -o tsv || true)
+          if [ -n "$previous" ] && git cat-file -e "$previous^{commit}" \
+            && git diff --quiet "$previous" "$SOURCE_SHA" -- server/migrations server/migrate.mjs; then
+            printf 'Schema code unchanged since live %s; continuous PITR covers this release\n' "$previous"
+          else
+            bash scripts/backup-live-database.sh "$server" "pre-release-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          fi
           bash scripts/run-staging-job.sh job-griplock-migrate
+          bash scripts/run-staging-job.sh job-griplock-migrate-dev
       - name: Release immutable app revision
         id: release
         env:
@@ -141,6 +161,14 @@ jobs:
             --parameters environmentId="$environment_id" databaseHost="$database_host" \
               image="$IMAGE" registryServer="$REGISTRY_SERVER" pullIdentityId="$PULL_IDENTITY" \
               sourceSha="$SOURCE_SHA" releaseId="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" postgresAppPassword="$PG_APP" \
+              entraClientId="$ENTRA_CLIENT_ID" entraAuthority="$ENTRA_AUTHORITY" entraApiScope="$ENTRA_API_SCOPE" \
+              authIssuer="$AUTH_ISSUER" authAudience="$AUTH_AUDIENCE" authJwksUrl="$AUTH_JWKS_URL" \
+              authRequiredScope="$AUTH_REQUIRED_SCOPE"
+          az deployment group create -g "$RESOURCE_GROUP" -n "dev-app-$GITHUB_RUN_ID" \
+            --template-file infra/app.bicep \
+            --parameters stage=dev environmentId="$environment_id" databaseHost="$database_host" \
+              image="$IMAGE" registryServer="$REGISTRY_SERVER" pullIdentityId="$PULL_IDENTITY" \
+              sourceSha="$SOURCE_SHA" releaseId="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" postgresAppPassword="$PG_DEV_APP" \
               entraClientId="$ENTRA_CLIENT_ID" entraAuthority="$ENTRA_AUTHORITY" entraApiScope="$ENTRA_API_SCOPE" \
               authIssuer="$AUTH_ISSUER" authAudience="$AUTH_AUDIENCE" authJwksUrl="$AUTH_JWKS_URL" \
               authRequiredScope="$AUTH_REQUIRED_SCOPE"
