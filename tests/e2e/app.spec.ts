@@ -68,3 +68,59 @@ test('failed API loads are visible instead of looking like an empty collection',
   await page.goto('/')
   await expect(page.getByRole('alert')).toContainText('503')
 })
+
+test('new inventory and bags reach other tabs without reload and picker membership stays current', async ({ page }) => {
+  const unexpected = await isolateNetwork(page, true)
+  const discs: Record<string, unknown>[] = []
+  const bags: { id: string; name: string; disc_ids: string[] }[] = []
+  await page.route('https://discit-api.fly.dev/disc', route => route.fulfill({ json: [] }))
+  await page.route('**/api/v1/discs**', async route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { discs } })
+    const disc = { ...route.request().postDataJSON(), added_at: new Date().toISOString() }
+    discs.push(disc)
+    return route.fulfill({ status: 201, json: disc })
+  })
+  await page.route('**/api/v1/bags**', async route => {
+    const request = route.request()
+    if (request.method() === 'GET') return route.fulfill({ json: { bags } })
+    if (request.method() === 'POST') {
+      const bag = request.postDataJSON()
+      bags.push(bag)
+      return route.fulfill({ status: 201, json: bag })
+    }
+    const bag = bags.find(b => b.id === new URL(request.url()).pathname.split('/').at(-1))!
+    Object.assign(bag, request.postDataJSON())
+    return route.fulfill({ json: bag })
+  })
+  await page.route('**/api/v1/collections?*', route => route.fulfill({ json: {
+    collections: [{ id: '11111111-1111-4111-8111-111111111114', name: 'Favorites', description: '' }],
+  } }))
+  await page.goto('/')
+  await page.getByRole('button', { name: '+ Add Disc', exact: true }).click()
+  await page.locator('input[role="combobox"]').fill('Fresh disc')
+  await page.locator('select').filter({ has: page.locator('option[value="midrange"]') }).selectOption('midrange')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.getByText('Fresh disc', { exact: true })).toBeVisible()
+  const nav = page.getByRole('navigation')
+  await nav.getByRole('button', { name: /Bags/ }).click()
+  page.once('dialog', dialog => dialog.accept('Fresh bag'))
+  await page.getByRole('button', { name: '+ Create Bag' }).click()
+  await expect(page.getByText('Fresh bag', { exact: true })).toBeVisible()
+  await page.getByText('Fresh bag', { exact: true }).click()
+  await page.getByRole('button', { name: 'Add / Remove Discs', exact: true }).click()
+  const membership = page.getByRole('checkbox', { name: /Fresh disc/ })
+  await membership.click()
+  await expect(membership).toBeChecked()
+  await membership.click()
+  await expect(membership).not.toBeChecked()
+  await page.keyboard.press('Escape')
+  await nav.getByRole('button', { name: /Collections/ }).click()
+  await page.getByRole('button', { name: '+ Add / Remove', exact: true }).click()
+  await expect(page.getByText('Fresh disc', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Done', exact: true }).click()
+  await nav.getByRole('button', { name: /Courses/ }).click()
+  await page.getByRole('button', { name: '+ Pin Course', exact: true }).click()
+  await expect(page.locator('select option', { hasText: 'Fresh bag' })).toHaveCount(1)
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  expect(unexpected).toEqual([])
+})

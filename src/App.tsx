@@ -17,14 +17,10 @@ type Tab = 'inventory' | 'bags' | 'courses' | 'collections' | 'wishlist' | 'fors
 
 function FeatureAppShell() {
   const { error: authError } = useAuth()
-  const { discs, loadDiscs } = useDiscs()
-  const { bags, loadBags } = useBags()
+  const { discs } = useDiscs()
+  const { bags } = useBags()
   const [activeTab, setActiveTab] = useState<Tab>('inventory')
   const [dataError, setDataError] = useState('')
-  useEffect(() => {
-    void loadDiscs()
-    void loadBags().catch(console.error)
-  }, [activeTab, loadDiscs, loadBags])
   useEffect(() => {
     const listener = (event: Event) => setDataError((event as CustomEvent<string>).detail)
     window.addEventListener('griplock-data-error', listener)

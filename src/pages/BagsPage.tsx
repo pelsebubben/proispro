@@ -12,7 +12,8 @@ export function BagsPage() {
 
   const [expandedBagId, setExpandedBagId] = useState<string | null>(null)
   const [popoutBag, setPopoutBag] = useState<ClientBag | null>(null)
-  const [pickerBag, setPickerBag] = useState<ClientBag | null>(null)
+  const [pickerBagId, setPickerBagId] = useState<string | null>(null)
+  const pickerBag = bags.find(bag => bag.id === pickerBagId)
   const [renamingBag, setRenamingBag] = useState<ClientBag | null>(null)
   const [renameValue, setRenameValue] = useState('')
 
@@ -109,7 +110,7 @@ export function BagsPage() {
               onToggleExpand={() => setExpandedBagId(expandedBagId === bag.id ? null : bag.id)}
               onRename={() => handleRename(bag)}
               onDelete={() => handleDelete(bag)}
-              onOpenDiscPicker={() => setPickerBag(bag)}
+              onOpenDiscPicker={() => setPickerBagId(bag.id)}
               onOpenPopout={() => setPopoutBag(bag)}
               onRemoveDisc={discId => handleRemoveDisc(bag.id, discId)}
               loadBagHistory={loadBagHistory}
@@ -129,7 +130,7 @@ export function BagsPage() {
           bag={pickerBag}
           allDiscs={discs}
           onToggle={discId => toggleDiscInBag(pickerBag.id, discId, discs)}
-          onClose={() => setPickerBag(null)}
+          onClose={() => setPickerBagId(null)}
         />
       )}
 

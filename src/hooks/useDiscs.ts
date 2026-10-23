@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { createRow, deleteRows, listRows, updateRow } from '../lib/data'
+import { createRow, deleteRows, listRows, subscribeToChanges, updateRow } from '../lib/data'
 import { useAuth } from '../contexts/AuthContext'
 import { ClientDisc, fromDbDisc, toDbDisc } from '../utils/disc'
 
@@ -22,7 +22,10 @@ export function useDiscs() {
     }
   }, [user])
 
-  useEffect(() => { void loadDiscs() }, [loadDiscs])
+  useEffect(() => {
+    void loadDiscs()
+    return subscribeToChanges(['discs'], loadDiscs)
+  }, [loadDiscs])
 
   const saveDisc = async (disc: Omit<ClientDisc, 'id'> & { id?: string }): Promise<ClientDisc | null> => {
     if (!user) return null

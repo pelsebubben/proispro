@@ -19,13 +19,25 @@ async function request<T>(path: string, method = 'GET', body?: object): Promise<
       const detail = await response.json()
       throw new Error(`Could not ${method === 'GET' ? 'load' : 'save'} data (${response.status}: ${detail.error})`)
     }
-    return await response.json()
+    const result = await response.json()
+    if (method !== 'GET') {
+      window.dispatchEvent(new CustomEvent('griplock-data-changed', { detail: path.split(/[/?]/)[0] }))
+    }
+    return result
   } catch (error) {
     window.dispatchEvent(new CustomEvent('griplock-data-error', {
       detail: error instanceof Error ? error.message : 'Data request failed',
     }))
     throw error
   }
+}
+
+export function subscribeToChanges(resources: Resource[], reload: () => Promise<void>) {
+  const listener = (event: Event) => {
+    if (resources.includes((event as CustomEvent<Resource>).detail)) void reload().catch(console.error)
+  }
+  window.addEventListener('griplock-data-changed', listener)
+  return () => window.removeEventListener('griplock-data-changed', listener)
 }
 
 export async function listRows<T>(resource: Resource, filters: Filters = {}): Promise<T[]> {

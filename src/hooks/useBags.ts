@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { createRow, deleteRows, listRows, updateRow } from '../lib/data'
+import { createRow, deleteRows, listRows, subscribeToChanges, updateRow } from '../lib/data'
 import { useAuth } from '../contexts/AuthContext'
 import { ClientBag, ClientDisc } from '../utils/disc'
 
@@ -42,6 +42,7 @@ export function useBags() {
 
   useEffect(() => {
     void loadBags().catch(console.error)
+    return subscribeToChanges(['bags', 'discs'], loadBags)
   }, [loadBags])
 
   const createBag = async (name: string) => {
