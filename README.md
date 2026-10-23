@@ -56,6 +56,8 @@ API tests require a disposable PostgreSQL database and `PGHOST`, `PGPORT`,
 local PostgreSQL). Never point them at dev or production application data.
 
 PRs deploy to shared dev. Successful main CI triggers the production release.
+Azure dev/prod are the only supported deployments; standalone GitHub Pages
+publishing is retired because it cannot serve the same-origin application API.
 See [the delivery runbook](docs/github-pipelines.md) and
 [customer/local login configuration](docs/customer-login.md).
 

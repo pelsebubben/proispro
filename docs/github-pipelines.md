@@ -410,25 +410,11 @@ must be diagnosed against the previous known-good digest before an explicit
 rollback; rerunning a release preserves credentials and reruns checksum-guarded
 migrations. Production and DNS are untouched by these workflows.
 
-Production Pages publishing remains separate:
-
-```powershell
-gh workflow run deploy.yml --repo pelsebubben/proispro --ref main
-```
-
-Only the repository owner may dispatch a successful production run; a trusted
-main-branch guard enforces actor ownership and the exact event SHA is tested.
-Other actors fail before checkout/build. The workflow also checks via GitHub's
-API that `github-pages` has the owner as its sole required reviewer. Set this
-native environment protection before publishing; the existing environment did
-not have a required reviewer when inspected. The deploy job waits for its approval.
-
-Dispatch is not approval: an agent may use the owner's CLI credentials, but must
-never approve its own pending deployment on the owner's behalf. The owner must
-approve the exact run in GitHub. If dispatching and approving as the same account,
-GitHub's prevent-self-review option cannot be enabled; a distinct agent GitHub
-identity allows that extra safeguard. This personal-owner rule must be revisited
-if repository ownership moves to an organization.
+Standalone GitHub Pages publishing (`deploy.yml`) is retired. It cannot host the
+same-origin Node API, authentication endpoints or PostgreSQL-backed feature
+routes. Azure dev (`dev.yml`) and production (`prod.yml`) are the only supported
+deployments. This repository cleanup does not modify existing DNS, GitHub Pages
+service settings or the retired provider's remote resources.
 
 ## Remaining milestones
 

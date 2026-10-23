@@ -16,6 +16,7 @@ const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage').then(m => ({ de
 type Tab = 'inventory' | 'bags' | 'courses' | 'collections' | 'wishlist' | 'forsale' | 'analytics'
 
 function FeatureAppShell() {
+  const { error: authError } = useAuth()
   const { discs, loadDiscs } = useDiscs()
   const { bags, loadBags } = useBags()
   const [activeTab, setActiveTab] = useState<Tab>('inventory')
@@ -32,6 +33,7 @@ function FeatureAppShell() {
 
   return (
     <Layout activeTab={activeTab} onTabChange={setActiveTab}>
+      {authError && <p role="alert">{authError}</p>}
       {dataError && <div role="alert" style={{ padding: '1rem' }}>
         {dataError} <button onClick={() => setDataError('')}>Dismiss</button>
       </div>}
