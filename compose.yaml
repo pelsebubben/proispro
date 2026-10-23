@@ -1,0 +1,13 @@
+# Local development database only. Bound to loopback; never used by deployments.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: griplock
+      POSTGRES_PASSWORD: ${PGPASSWORD:?Set PGPASSWORD for the local database}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - griplock-local-pg:/var/lib/postgresql/data
+volumes:
+  griplock-local-pg: {}

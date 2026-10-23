@@ -7,6 +7,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "start": "node server/index.mjs",
+    "dev:server": "node scripts/dev-server.mjs",
     "migrate": "node server/migrate.mjs",
     "test:api": "node --test tests/api/*.test.mjs",
     "test:staging": "playwright test --config playwright.staging.config.ts",
@@ -16,6 +17,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@azure/msal-browser": "^5.26.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",

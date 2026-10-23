@@ -44,8 +44,8 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
   auth: {
     storage: authStorage,
     lock: authLock,
-    autoRefreshToken: runtime.identityReady,
-    persistSession: runtime.identityReady,
-    detectSessionInUrl: runtime.identityReady,
+    autoRefreshToken: runtime.dataBackend !== 'api' && runtime.identityReady,
+    persistSession: runtime.dataBackend !== 'api' && runtime.identityReady,
+    detectSessionInUrl: runtime.dataBackend !== 'api' && runtime.identityReady,
   },
 })

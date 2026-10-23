@@ -13,8 +13,7 @@ test('runtime serves SPA and immutable assets without allowing unauthenticated A
   await writeFile(join(root, 'index.html'), '<h1>Griplock fixture</h1>')
   await writeFile(join(root, 'assets', 'app-123.js'), 'console.log("fixture")')
   const pool = { query: async () => ({ rows: [{ version: 1 }] }) }
-  const server = createApplication({ pool, issuer: 'https://identity.example.test',
-    audience: 'test', jwksUrl: 'https://identity.example.test/jwks', staticRoot: root,
+  const server = createApplication({ pool, staticRoot: root,
     sourceSha: 'unit-release' }).listen(0, '127.0.0.1')
   await once(server, 'listening')
   t.after(() => new Promise(resolve => server.close(resolve)))
@@ -22,8 +21,16 @@ test('runtime serves SPA and immutable assets without allowing unauthenticated A
   const ready = await request('/health/ready')
   assert.deepEqual(await ready.json(), { status: 'ready', sourceSha: 'unit-release', schemaVersion: 1 })
   assert.equal((await request('/api/v1/discs')).status, 401)
+  const disabled = await fetch(`http://127.0.0.1:${server.address().port}/api/v1/discs`, {
+    headers: { Authorization: 'Bearer synthetic-not-a-token' },
+  })
+  assert.equal(disabled.status, 503)
+  assert.deepEqual(await disabled.json(), { error: 'identity_not_configured' })
+  assert.deepEqual(await (await request('/auth/config')).json(), {
+    environment: 'live', dataBackend: 'api', identityReady: false,
+  })
   const config = await request('/runtime-config.js')
-  assert.equal(await config.text(), "window.__GRIPLOCK_RUNTIME__ = { environment: 'staging', identityReady: false }")
+  assert.equal(await config.text(), 'window.__GRIPLOCK_RUNTIME__ = {"environment":"live","dataBackend":"api","identityReady":false}')
   assert.equal(config.headers.get('cache-control'), 'no-store')
   const deepLink = await request('/inventory')
   assert.equal(await deepLink.text(), '<h1>Griplock fixture</h1>')

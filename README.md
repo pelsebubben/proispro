@@ -43,6 +43,12 @@ Simply open `index.html` in your browser. The app works in **localStorage mode**
 
 See `[docs/supabase-setup.md](docs/supabase-setup.md)` for full setup instructions.
 
+### 3. Azure API runtime with local test login
+
+`npm run dev:server` runs the Azure API runtime locally with a loopback-only test
+identity (sign in as `alice`, `bob`, …). It is intended for development and
+security testing. See [docs/customer-login.md](docs/customer-login.md#local-development-and-security-testing-identity).
+
 ## Architecture Overview
 
 **Frontend:** `index.html` loads Alpine.js and Supabase client via CDN. No build step. ~250 lines of reactive JavaScript.

@@ -50,6 +50,7 @@ jobs:
     outputs:
       url: ${{ steps.release.outputs.url }}
       image: ${{ steps.release.outputs.image }}
+      identityReady: ${{ steps.release.outputs.identityReady }}
     permissions:
       contents: read
       id-token: write
@@ -120,8 +121,17 @@ jobs:
           bash scripts/run-staging-job.sh job-griplock-migrate
       - name: Release immutable app revision
         id: release
+        env:
+          ENTRA_CLIENT_ID: ${{ vars.ENTRA_CLIENT_ID }}
+          ENTRA_AUTHORITY: ${{ vars.ENTRA_AUTHORITY }}
+          ENTRA_API_SCOPE: ${{ vars.ENTRA_API_SCOPE }}
+          AUTH_ISSUER: ${{ vars.AUTH_ISSUER }}
+          AUTH_AUDIENCE: ${{ vars.AUTH_AUDIENCE }}
+          AUTH_JWKS_URL: ${{ vars.AUTH_JWKS_URL }}
+          AUTH_REQUIRED_SCOPE: ${{ vars.AUTH_REQUIRED_SCOPE }}
         run: |
           set -euo pipefail
+          node --input-type=module -e 'import { identityConfiguration } from "./server/identity.mjs"; identityConfiguration(process.env)'
           environment_id=$(az deployment group show -g "$RESOURCE_GROUP" -n "core-$GITHUB_RUN_ID" \
             --query properties.outputs.environmentId.value -o tsv)
           database_host=$(az deployment group show -g "$RESOURCE_GROUP" -n "core-$GITHUB_RUN_ID" \
@@ -130,13 +140,18 @@ jobs:
             --template-file infra/app.bicep \
             --parameters environmentId="$environment_id" databaseHost="$database_host" \
               image="$IMAGE" registryServer="$REGISTRY_SERVER" pullIdentityId="$PULL_IDENTITY" \
-              sourceSha="$SOURCE_SHA" releaseId="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" postgresAppPassword="$PG_APP"
+              sourceSha="$SOURCE_SHA" releaseId="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" postgresAppPassword="$PG_APP" \
+              entraClientId="$ENTRA_CLIENT_ID" entraAuthority="$ENTRA_AUTHORITY" entraApiScope="$ENTRA_API_SCOPE" \
+              authIssuer="$AUTH_ISSUER" authAudience="$AUTH_AUDIENCE" authJwksUrl="$AUTH_JWKS_URL" \
+              authRequiredScope="$AUTH_REQUIRED_SCOPE"
           url=$(az deployment group show -g "$RESOURCE_GROUP" -n "app-$GITHUB_RUN_ID" \
             --query properties.outputs.url.value -o tsv)
           printf 'url=%s\nimage=%s\n' "$url" "$IMAGE" >> "$GITHUB_OUTPUT"
           for ((attempt=0; attempt<30; attempt++)); do
             if curl --fail --silent --max-time 15 "$url/health/ready" \
               | jq -e --arg sha "$SOURCE_SHA" '.status == "ready" and .sourceSha == $sha and .schemaVersion == 1'; then
+              identity_ready=$(curl --fail --silent --max-time 15 "$url/auth/config" | jq -er '.identityReady | tostring')
+              printf 'identityReady=%s\n' "$identity_ready" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             sleep 10
@@ -154,6 +169,7 @@ jobs:
     env:
       STAGING_URL: ${{ needs.staging.outputs.url }}
       IMAGE: ${{ needs.staging.outputs.image }}
+      IDENTITY_READY: ${{ needs.staging.outputs.identityReady }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
