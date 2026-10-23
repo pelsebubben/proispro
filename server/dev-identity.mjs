@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose'
 
 // Local development/security-testing identity. Tokens are signed by an
@@ -25,15 +25,34 @@ export function assertDevIdentityAllowed(env, { host, customerIdentity }) {
   if (!loopbackHosts.has(host)) throw new Error('Local dev identity requires a loopback listen address')
 }
 
+// Shared dev login for the hosted dev app only. Anyone holding the passcode can
+// sign in as any test user against the dev database; prod can never enable it.
+export const HOSTED_DEV_APP = 'app-griplock-dev'
+
+export function hostedDevPasscode(env) {
+  const passcode = env.GRIPLOCK_DEV_PASSCODE
+  if (passcode === undefined || passcode === '') return null
+  if (env.GRIPLOCK_STAGE !== 'dev' || env.CONTAINER_APP_NAME !== HOSTED_DEV_APP) {
+    throw new Error(`Dev passcode login is only allowed on ${HOSTED_DEV_APP}`)
+  }
+  if (devIdentityRequested(env)) throw new Error('Dev passcode login cannot be combined with local dev identity')
+  if (passcode.length < 32) throw new Error('Dev passcode must be at least 32 characters')
+  return passcode
+}
+
 export function isLoopbackAddress(address) {
   return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
 }
 
-export async function createDevIdentity() {
+export async function createDevIdentity({ passcode = null } = {}) {
   const { privateKey, publicKey } = await generateKeyPair('ES256')
   const kid = randomUUID()
   const keys = createLocalJWKSet({ keys: [{ ...await exportJWK(publicKey), kid, alg: 'ES256', use: 'sig' }] })
+  const digest = value => createHash('sha256').update(String(value)).digest()
+  const expected = passcode ? digest(passcode) : null
   return {
+    hosted: Boolean(passcode),
+    checkPasscode: value => Boolean(expected) && typeof value === 'string' && timingSafeEqual(digest(value), expected),
     issuer: DEV_ISSUER,
     audience: DEV_AUDIENCE,
     requiredScope: DEV_SCOPE,

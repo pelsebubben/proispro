@@ -9,7 +9,7 @@ interface AuthContextValue {
   error: string | null
   isLoading: boolean
   signIn: (provider: 'google' | 'github') => Promise<void>
-  devSignIn: (user: string) => Promise<void>
+  devSignIn: (user: string, passcode?: string) => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -70,11 +70,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const devSignIn = async (name: string) => {
+  const devSignIn = async (name: string, passcode?: string) => {
     setError(null)
     try {
       if (!runtime.devAuth) throw new Error('Local sign-in is not available')
-      setUser(await (await import('../lib/devAuth')).devSignIn(name))
+      setUser(await (await import('../lib/devAuth')).devSignIn(name, passcode))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign-in failed')
     }

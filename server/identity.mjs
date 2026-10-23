@@ -26,7 +26,8 @@ export function identityConfiguration(env) {
   }
 }
 
-export function runtimeConfiguration(identity, { devAuth = false } = {}) {
+export function runtimeConfiguration(identity, { devAuth = false, devPasscode = false } = {}) {
+  if (devPasscode) return { environment: 'dev', dataBackend: 'api', identityReady: true, devAuth: true, devPasscode: true }
   if (devAuth) return { environment: 'local-dev', dataBackend: 'api', identityReady: true, devAuth: true }
   return { environment: 'live', dataBackend: 'api', identityReady: Boolean(identity),
     ...(identity ? { entra: identity.browser } : {}) }

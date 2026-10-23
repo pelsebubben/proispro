@@ -368,8 +368,24 @@ az postgres flexible-server db delete -g rg-griplock-staging -s pg-griplock-gmfa
 gh workflow run prod.yml --repo pelsebubben/proispro --ref main
 ```
 
-The dev app uses the same customer sign-in settings as live. Add its origin as
-an extra SPA redirect URI on the Griplock Web registration once Entra is set up.
+### Dev sign-in (shared passcode)
+
+The dev app does not use customer sign-in. Its login page asks for a test user
+name (for example `alice`) and the shared dev passcode, so people and agents can
+test the real GUI as any number of separate test users. Tokens are signed by an
+in-memory key and verified like customer tokens; they last one hour and end when
+the app restarts or scales to zero. Read the passcode with Azure RBAC:
+
+```powershell
+az containerapp secret show -g rg-griplock-staging -n app-griplock-dev --secret-name dev-passcode --query value -o tsv
+```
+
+The passcode lives in the `prod` environment secret `DEV_LOGIN_PASSCODE` and is
+passed only to the dev app deployment. `app.bicep` injects it only when
+`stage=dev`, and the server refuses it unless `CONTAINER_APP_NAME` is
+`app-griplock-dev`, so live can never enable it. Wrong passcodes return 401 and
+more than 20 failures per minute return 429. To rotate it, set a new secret
+(at least 32 characters) and run the live release.
 The loopback-only local developer identity is never available on dev or live.
 
 The release artifact contains source SHA, immutable ACR digest, schema version,

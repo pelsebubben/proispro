@@ -1,12 +1,17 @@
-// Local development identity client. Only active when the local server reports
-// devAuth; deployed builds never expose the token endpoint.
+// Development identity client. Active only when the server reports devAuth: the
+// loopback-only local server, or the hosted dev app behind a shared passcode.
 const storageKey = 'griplock.devAccessToken'
 
-export async function devSignIn(user: string) {
+export async function devSignIn(user: string, passcode?: string) {
   const response = await fetch('/dev-auth/token', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(passcode === undefined ? { user } : { user, passcode }),
   })
-  if (!response.ok) throw new Error(response.status === 400 ? 'Use lowercase letters, digits, ".", "_" or "-"' : `Local sign-in failed (${response.status})`)
+  if (!response.ok) {
+    if (response.status === 400) throw new Error('Use lowercase letters, digits, ".", "_" or "-"')
+    if (response.status === 401) throw new Error('Wrong dev passcode')
+    if (response.status === 429) throw new Error('Too many attempts. Wait a minute and try again')
+    throw new Error(`Dev sign-in failed (${response.status})`)
+  }
   const data: unknown = await response.json()
   if (!data || typeof data !== 'object' || !('access_token' in data) || typeof data.access_token !== 'string') {
     throw new Error('Invalid local sign-in response')
