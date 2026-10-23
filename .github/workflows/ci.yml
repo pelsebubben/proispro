@@ -141,7 +141,7 @@ jobs:
           .github/workflows/ci.yml
           .github/workflows/infra.yml
           .github/workflows/prod.yml
-          .github/workflows/deploy.yml
+          .github/workflows/dev.yml
           .github/workflows/squad-ci.yml
 
   required:

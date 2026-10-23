@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from 'yaml'
 
-const names = ['ci.yml', 'infra.yml', 'prod.yml', 'dev.yml', 'deploy.yml', 'squad-ci.yml']
+const names = ['ci.yml', 'infra.yml', 'prod.yml', 'dev.yml', 'squad-ci.yml']
 const sources = Object.fromEntries(await Promise.all(names.map(async name => [
   name, await readFile(new URL(`../../.github/workflows/${name}`, import.meta.url), 'utf8'),
 ])))
@@ -29,6 +29,9 @@ function checkTrustBoundary(files) {
   }
   const ci = workflows['ci.yml']
   assert.deepEqual(ci.permissions, { contents: 'read' })
+  const lint = ci.jobs.infrastructure.steps.find(step => step.name === 'Lint delivery workflows')
+  const lintedNames = [...lint.run.matchAll(/\.github\/workflows\/([\w-]+\.yml)/g)].map(match => match[1])
+  assert.deepEqual(lintedNames.sort(), [...names].sort(), 'lint every supported delivery workflow')
   for (const browser of [ci.jobs.browser, workflows['prod.yml'].jobs.browser]) {
     assert.match(browser.container.image, new RegExp(`^mcr.microsoft.com/playwright:v${playwrightVersion.replaceAll('.', '\\.')}-noble@sha256:[a-f0-9]{64}$`))
     assert.equal(browser.permissions?.['id-token'], undefined, 'browser gets no cloud identity')
@@ -118,16 +121,6 @@ function checkTrustBoundary(files) {
   const verification = staging.jobs.browser.steps.findIndex(step => step.run === 'npm run test:staging')
   assert.ok(recording > verification && verification >= 0, 'record only after deployed tests pass')
   assert.equal(staging.jobs.browser.steps[recording].run, 'node scripts/record-staging-release.mjs')
-  const deploy = workflows['deploy.yml']
-  assert.deepEqual(Object.keys(deploy.on), ['workflow_dispatch'], 'production never deploys on push')
-  assert.equal(deploy.jobs.deploy.needs, 'checks')
-  assert.match(deploy.jobs.checks.steps[0].run, /test "\$ACTOR" = "\$OWNER"/)
-  assert.match(deploy.jobs.checks.steps[0].run, /test "\$GITHUB_REF" = refs\/heads\/main/)
-  const nativeReview = deploy.jobs.checks.steps.find(step => step.name === 'Require native owner review protection')
-  assert.match(nativeReview.run, /required_reviewers/)
-  assert.match(nativeReview.run, /if \[ "\$protected" != true \]/)
-  assert.equal(deploy.jobs.deploy.environment.name, 'github-pages')
-  assert.ok(deploy.jobs.checks.steps.some(step => step.run === 'npm run test:e2e'))
 }
 
 test('delivery workflows enforce their source-level trust and deployment contracts', () => {
@@ -138,7 +131,6 @@ test('gates reject real workflow mutations that grant PR OIDC or remove apply pr
   for (const [file, before, after] of [
     ['ci.yml', '  contents: read', '  contents: read\n  id-token: write'],
     ['infra.yml', "if: ${{ inputs.operation == 'apply' }}", 'if: ${{ always() }}'],
-    ['deploy.yml', 'test "$ACTOR" = "$OWNER"', 'echo approval-skipped'],
     ['infra.yml', 'test "$ENABLED" = true', 'echo enabled'],
     ['ci.yml', 'test "$BROWSER" = success', 'echo browser-skipped'],
     ['ci.yml', 'test "$API" = success', 'echo api-skipped'],
@@ -148,7 +140,7 @@ test('gates reject real workflow mutations that grant PR OIDC or remove apply pr
     ['ci.yml', 'playwright:v1.60.0-noble', 'playwright:v1.59.0-noble'],
     ['prod.yml', 'run: node scripts/record-staging-release.mjs', 'run: echo release-skipped'],
     ['prod.yml', 'identityConfiguration(process.env)', 'console.log("validation-skipped")'],
-    ['deploy.yml', 'if [ "$protected" != true ]', 'if [ false = true ]'],
+    ['ci.yml', '          .github/workflows/dev.yml', '          .github/workflows/deploy.yml'],
     ['dev.yml', ' && (github.event_name', ' || (github.event_name'],
     ['dev.yml', 'DEV_MIGRATION: job-griplock-migrate-dev', 'DEV_MIGRATION: job-griplock-migrate'],
     ['prod.yml', "github.event.workflow_run.conclusion == 'success'", "github.event.workflow_run.conclusion != 'cancelled'"],
