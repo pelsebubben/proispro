@@ -1,5 +1,25 @@
 # Griplock GitHub delivery foundation
 
+## Current deployment state
+
+Main CI passes, including the OCI image against real PostgreSQL and desktop/
+mobile browser tests. Staging delivery code is merged through PRs #79–#82.
+**Azure application deployment is blocked on PostgreSQL regional capacity**;
+there is no verified public staging app URL yet.
+
+- [First release, B1ms](https://github.com/pelsebubben/proispro/actions/runs/39935671862):
+  OIDC, private ACR image publication, ARM preflight and foundation provisioning
+  succeeded; PostgreSQL returned `RegionalAllocationFailed`.
+- [Second release, B2s](https://github.com/pelsebubben/proispro/actions/runs/39937100609):
+  the next-smallest supported SKU returned the same regional capacity error.
+- Registry, pull identity, VNet/private DNS, Container Apps environment, locked
+  storage and logging exist in Sweden Central. No PostgreSQL server or app
+  revision was created; migration and deployed-browser gates correctly did not run.
+- With the owner unavailable and autonomous recovery delegated, the next bounded
+  attempt uses General Purpose D2ads v5 (2 vCPU/8 GiB) in the same region.
+  There is no automatic escalation beyond that size or region fallback.
+  Production migration, real customer login and DNS cutover remain untouched.
+
 ## Delivery scope
 
 The overall scope is a scalable GitHub-native change and deployment flow for
@@ -56,19 +76,20 @@ data writes. Real Google/Entra sign-in is not claimed by the synthetic JWT tests
 
 ### Staging sizing and cost assumption
 
-Sweden Central, PostgreSQL 16 B2s (32 GiB, 7-day backups, no HA), ACR Basic,
+Sweden Central, PostgreSQL 16 D2ads v5 (2 vCPU/8 GiB, 32 GiB storage, 7-day
+backups, no HA), ACR Basic,
 one warm 0.5-vCPU/1-GiB app replica (maximum three), finite jobs, and capped
 Log Analytics are the low-complexity staging baseline, not a production SLA.
 Azure retail consumption rates queried before workload deployment on 2026-10-23:
-PostgreSQL B2s $0.0398/hour plus $0.1369/GiB-month, registry $0.1666/day,
+PostgreSQL D2ads v5 $0.187/hour plus $0.1369/GiB-month, registry $0.1666/day,
 ACA active CPU $0.000024/vCPU-second and memory $0.000003/GiB-second
 (idle CPU $0.000003/vCPU-second). At 730 hours/month this is approximately
-$50 idle to $78 continuously active for one replica, before free grants,
+$158 idle to $185 continuously active for one replica, before free grants,
 logs, storage, network, requests, extra replicas, taxes and currency conversion.
-The first release attempted B1ms ($0.0199/hour) but Azure returned
-`RegionalAllocationFailed` in Sweden Central. B2s is the next-smallest supported
-burstable size, not an automatic unbounded scaling fallback.
-This is an estimate, not a spending cap. B2s and single-region/no-HA are
+Azure returned `RegionalAllocationFailed` for both B1ms ($0.0199/hour) and B2s
+($0.0398/hour). D2ads v5 is a bounded same-region alternative using a different
+compute family, not an automatic unbounded scaling fallback.
+This is an estimate, not a spending cap. Two vCPUs and single-region/no-HA are
 deliberate staging choices; production sizing/recovery need separate approval.
 
 ## Local checks and test evidence
