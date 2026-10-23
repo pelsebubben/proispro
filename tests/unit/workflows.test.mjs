@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from 'yaml'
+import { schemaVersion } from '../../server/migrate.mjs'
 
 const names = ['ci.yml', 'infra.yml', 'prod.yml', 'dev.yml', 'squad-ci.yml']
 const sources = Object.fromEntries(await Promise.all(names.map(async name => [
@@ -98,10 +99,13 @@ function checkTrustBoundary(files) {
   assert.match(staging.jobs.staging.steps[deployIndex].run, /--parameters stage=dev .*postgresAppPassword="\$PG_DEV_APP"/s)
   const dev = workflows['dev.yml']
   assert.deepEqual(Object.keys(dev.on), ['pull_request', 'workflow_dispatch'])
-  assert.deepEqual(dev.concurrency, { group: 'griplock-dev', 'cancel-in-progress': true })
+  assert.deepEqual(dev.on.pull_request.types, ['opened', 'synchronize', 'reopened', 'ready_for_review'],
+    'making a draft ready starts its dev deployment')
+  assert.equal(dev.concurrency, undefined, 'skipped draft jobs must not cancel active deployments')
+  assert.deepEqual(dev.jobs.dev.concurrency, { group: 'griplock-dev', 'cancel-in-progress': true })
   assert.deepEqual(Object.keys(dev.jobs), ['dev'])
-  assert.equal(dev.jobs.dev.if, "${{ vars.DEV_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}",
-    'fork PRs never receive the dev cloud identity')
+  assert.equal(dev.jobs.dev.if, "${{ vars.DEV_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository)) }}",
+    'draft and fork PRs never receive the dev cloud identity; manual dispatch remains available')
   assert.equal(dev.jobs.dev.environment.name, 'dev')
   assert.equal(dev.jobs.dev.permissions['id-token'], 'write')
   assert.equal(dev.jobs.dev['runs-on'], 'ubuntu-24.04')
@@ -110,6 +114,8 @@ function checkTrustBoundary(files) {
   assert.equal(staging.jobs.staging.steps[deployIndex].run.match(/releaseId="\$GITHUB_RUN_ID-\$GITHUB_RUN_ATTEMPT"/g)?.length, 2,
     'live and dev app revisions are unique per run attempt')
   assert.match(staging.jobs.staging.steps[deployIndex].run, /identityConfiguration\(process.env\)/)
+  assert.match(staging.jobs.staging.steps[deployIndex].run, new RegExp(`\\.schemaVersion == ${schemaVersion}(?!\\d)`),
+    'the release waits for the schema version this code was built for')
   assert.equal(staging.jobs.browser.env.IDENTITY_READY, '${{ needs.staging.outputs.identityReady }}')
   for (const name of ['ENTRA_CLIENT_ID', 'ENTRA_AUTHORITY', 'ENTRA_API_SCOPE', 'AUTH_ISSUER',
     'AUTH_AUDIENCE', 'AUTH_JWKS_URL', 'AUTH_REQUIRED_SCOPE']) {
@@ -142,13 +148,24 @@ test('gates reject real workflow mutations that grant PR OIDC or remove apply pr
     ['prod.yml', 'identityConfiguration(process.env)', 'console.log("validation-skipped")'],
     ['ci.yml', '          .github/workflows/dev.yml', '          .github/workflows/deploy.yml'],
     ['dev.yml', ' && (github.event_name', ' || (github.event_name'],
+    ['dev.yml', 'github.event.pull_request.draft == false && ', ''],
+    ['dev.yml', ', ready_for_review', ''],
+    ['dev.yml', '    concurrency:', '    ignored-concurrency:'],
     ['dev.yml', 'DEV_MIGRATION: job-griplock-migrate-dev', 'DEV_MIGRATION: job-griplock-migrate'],
     ['prod.yml', "github.event.workflow_run.conclusion == 'success'", "github.event.workflow_run.conclusion != 'cancelled'"],
     ['prod.yml', '          bash scripts/backup-live-database.sh', '          echo backup-skipped'],
     ['prod.yml', '          ref: ${{ env.SOURCE_SHA }}', '          ref: main'],
     ['prod.yml', '-- server/migrations server/migrate.mjs', '-- docs'],
+    ['prod.yml', `.schemaVersion == ${schemaVersion}`, `.schemaVersion == ${schemaVersion - 1}`],
   ]) {
     assert.ok(sources[file].includes(before), `${file}: mutation must affect actual source`)
     assert.throws(() => checkTrustBoundary({ ...sources, [file]: sources[file].replace(before, after) }), Error, `${file}: ${before}`)
   }
+})
+
+test('every release readiness contract expects the current schema version', async () => {
+  const migrations = (await readdir(new URL('../../server/migrations/', import.meta.url))).filter(name => name.endsWith('.sql'))
+  assert.equal(migrations.length, schemaVersion, 'schemaVersion counts the migration files')
+  const stagingSpec = await readFile(new URL('../../tests/staging/staging.spec.ts', import.meta.url), 'utf8')
+  assert.match(stagingSpec, new RegExp(`schemaVersion: ${schemaVersion} \\}`), 'the deployed-release browser check')
 })

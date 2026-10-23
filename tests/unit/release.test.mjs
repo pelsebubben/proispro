@@ -19,7 +19,7 @@ test('release recorder emits exact provenance and rejects mutable or unidentifie
   assert.equal(result.status, 0, result.stderr)
   assert.deepEqual(JSON.parse(await readFile(join(root, 'staging-release.json'), 'utf8')), {
     sourceSha: env.SOURCE_SHA, image: env.IMAGE, url: env.STAGING_URL,
-    run: 'https://github.com/example/griplock/actions/runs/123', schemaVersion: 2,
+    run: 'https://github.com/example/griplock/actions/runs/123', schemaVersion: 3,
     environment: 'live', identityReady: false,
   })
   assert.match(await readFile(env.GITHUB_STEP_SUMMARY, 'utf8'), /Customer identity configured: false/)

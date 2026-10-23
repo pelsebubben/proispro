@@ -6,10 +6,15 @@ type Filters = Record<string, string>
 type Resource = 'discs' | 'bags' | 'bag_history' | 'collections' | 'collection_discs' |
   'wishlist_items' | 'forsale_listings' | 'sale_tokens' | 'course_pins' | 'hole_assignments'
 
+async function accessToken() {
+  const token = runtime.devAuth ? devAccessToken() : await entraAccessToken()
+  if (!token) throw new Error('Your session has expired. Please sign in again.')
+  return token
+}
+
 async function request<T>(path: string, method = 'GET', body?: object): Promise<T> {
   try {
-    const token = runtime.devAuth ? devAccessToken() : await entraAccessToken()
-    if (!token) throw new Error('Your session has expired. Please sign in again.')
+    const token = await accessToken()
     const response = await fetch(`/api/v1/${path}`, {
       method, cache: 'no-store',
       headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
@@ -30,6 +35,16 @@ async function request<T>(path: string, method = 'GET', body?: object): Promise<
     }))
     throw error
   }
+}
+
+export async function loadDiscPhoto(path: string, signal: AbortSignal): Promise<Blob> {
+  if (!/^\/api\/v1\/discs\/[0-9a-f-]{36}\/photo\?v=[0-9a-f-]{36}$/i.test(path)) {
+    throw new Error('Invalid disc photo address.')
+  }
+  const token = await accessToken()
+  const response = await fetch(path, { signal, cache: 'no-store', headers: { Authorization: `Bearer ${token}` } })
+  if (!response.ok) throw new Error(`Photo could not be loaded (${response.status}).`)
+  return response.blob()
 }
 
 export function subscribeToChanges(resources: Resource[], reload: () => Promise<void>) {

@@ -2,14 +2,11 @@ name: Deploy Griplock dev
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
   contents: read
-
-concurrency:
-  group: griplock-dev
-  cancel-in-progress: true
 
 env:
   SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -20,7 +17,10 @@ env:
 jobs:
   dev:
     name: Deploy branch to shared dev
-    if: ${{ vars.DEV_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    if: ${{ vars.DEV_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository)) }}
+    concurrency:
+      group: griplock-dev
+      cancel-in-progress: true
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment:

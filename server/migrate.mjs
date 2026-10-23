@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 import { createPool } from './database.mjs'
 
-export const schemaVersion = 2
+export const schemaVersion = 3
 
 export async function migrate(pool, appPassword, appRole = 'griplock_app') {
   if (!appPassword || appPassword.length < 32) throw new Error('PGAPP_PASSWORD must contain at least 32 characters')
@@ -14,7 +14,7 @@ export async function migrate(pool, appPassword, appRole = 'griplock_app') {
     await client.query("SELECT pg_advisory_xact_lock(72491922)")
     await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
       version integer PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`)
-    for (const [index, file] of ['001_initial.sql', '002_features.sql'].entries()) {
+    for (const [index, file] of ['001_initial.sql', '002_features.sql', '003_disc_photos.sql'].entries()) {
       const sql = await readFile(new URL(`./migrations/${file}`, import.meta.url), 'utf8')
       const checksum = createHash('sha256').update(sql).digest('hex')
       const version = index + 1
@@ -41,7 +41,8 @@ export async function migrate(pool, appPassword, appRole = 'griplock_app') {
     await client.query(`GRANT SELECT, INSERT ON app_users TO ${appRole}`)
     await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON owned_discs TO ${appRole}`)
     await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON bags, bag_history, collections,
-      collection_discs, wishlist_items, forsale_listings, sale_tokens, course_pins, hole_assignments TO ${appRole}`)
+      collection_discs, wishlist_items, forsale_listings, sale_tokens, course_pins, hole_assignments,
+      disc_photos TO ${appRole}`)
     await client.query(`GRANT SELECT ON schema_migrations TO ${appRole}`)
     await client.query('COMMIT')
   } catch (error) {

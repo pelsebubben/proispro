@@ -11,10 +11,27 @@ A personal disc golf inventory and bag tracker for the owner and friends.
 - One dev database/application and one production database/application.
 
 Inventory, bags/history, collections, wishlist, sale listings/share links, course
-pins and hole assignments all use `/api/v1`. The public disc catalog uses DiscIt;
-course search/maps use OpenStreetMap Overpass. Neither requires our database
-credentials. Anonymous sale links disclose only available listings while their
+pins and hole assignments all use `/api/v1`. Disc search uses a bundled DiscIt
+snapshot, so typing never waits on an external service. Course search/maps use
+OpenStreetMap Overpass. Anonymous sale links disclose only available listings while their
 owner has explicitly enabled public sharing.
+
+## Adding discs
+
+Search by mold, manufacturer or special edition (for example, Origin or Midnight
+Prowl II). The mold and optional Edition / Run are saved separately and are both
+searchable in inventory. Missing catalogue entries can be added manually.
+Arrow keys and Enter select a result; Escape, Tab or clicking another field
+dismiss the list. [Catalogue sources and refresh instructions](docs/disc-catalog.md)
+describe the bundled data and its deliberately limited special-edition coverage.
+
+The Type selector and inventory filters include Utility. A personal JPEG, PNG
+or WebP photo can be added, replaced or removed in Add/Edit Disc. Files up to
+10 MB are resized in the browser before upload. The server validates and
+re-encodes them to metadata-free JPEGs, at most 1024 pixels and 256 KiB.
+Photos are private to their owner and stored in PostgreSQL, not a new cloud
+service. Cancelling the form does not upload or save changes. Metadata and
+photos save together; inventory responses contain photo references, not images.
 
 ## Local development
 
@@ -55,7 +72,9 @@ API tests require a disposable PostgreSQL database and `PGHOST`, `PGPORT`,
 `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGAPP_PASSWORD` (and `PGSSLMODE=disable` for
 local PostgreSQL). Never point them at dev or production application data.
 
-PRs deploy to shared dev. Successful main CI triggers the production release.
+Non-draft PRs deploy to shared dev; drafts run CI without replacing the dev app.
+Marking a draft ready for review starts its deployment.
+Successful main CI triggers the production release.
 Azure dev/prod are the only supported deployments; standalone GitHub Pages
 publishing is retired because it cannot serve the same-origin application API.
 See [the delivery runbook](docs/github-pipelines.md) and
@@ -65,8 +84,12 @@ See [the delivery runbook](docs/github-pipelines.md) and
 
 `server/migrations/` is the only active schema source. Version 2 expands the
 original `owned_discs` table and adds bags, bag history, collections/membership,
-wishlist items, sale listings/tokens, course pins and hole assignments. Runtime
-roles never own tables or bypass RLS. Child relationships use owner-scoped
+wishlist items, sale listings/tokens, course pins and hole assignments. Version 3
+adds a free-text `edition` to `owned_discs` and a private `disc_photos` table. The
+API normalizes an uploaded photo to a metadata-free JPEG of at most 1024px and
+256 KiB, stores it in PostgreSQL, and serves it only to the signed-in owner through
+`GET /api/v1/discs/:id/photo`. Deleting a disc also deletes its photo.
+Runtime roles never own tables or bypass RLS. Child relationships use owner-scoped
 foreign keys; bag membership/history updates are transactional.
 
 This deployment starts with a fresh Azure dataset. No old records, identities

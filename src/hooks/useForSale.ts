@@ -118,6 +118,7 @@ export function useForSale() {
     return {
       id: listing.disc_id,
       name: listing.disc_name,
+      edition: '',
       manufacturer: listing.disc_manufacturer,
       type: listing.disc_type,
       plastic: listing.disc_plastic,

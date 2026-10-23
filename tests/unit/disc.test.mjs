@@ -56,3 +56,19 @@ test('search, bag and weight filters combine without mutating the source collect
   assert.deepEqual(discs.map(disc => disc.id), ['destroyer', 'buz'])
   assert.equal(filterAndSort(discs, bags, { ...filters, search: 'absent' })[0].count, 0)
 })
+
+test('editions and Utility survive conversion, filtering and sorting', () => {
+  const utility = fromDbDisc({ id: 'u', name: 'Origin', edition: 'Midnight Prowl II', disc_type: 'utility' })
+  assert.equal(toDbDisc(utility).edition, 'Midnight Prowl II')
+  assert.equal(toDbDisc(utility).disc_type, 'utility')
+  assert.deepEqual(filterAndSort([buz, utility], [], { ...filters, search: 'midnight', filterType: 'utility' })[0].discs, [utility])
+  assert.deepEqual(filterAndSort([utility, buz], [], { ...filters, sortBy: 'type-asc' })[0].discs, [buz, utility])
+})
+
+test('private photo references use versioned URLs, never image bytes in disc fields', () => {
+  const row = { id: '11111111-1111-4111-8111-111111111111', name: 'Photo disc', photo_version: '22222222-2222-4222-8222-222222222222' }
+  const disc = fromDbDisc(row)
+  assert.equal(disc.photo_url, `/api/v1/discs/${row.id}/photo?v=${row.photo_version}`)
+  assert.equal(toDbDisc(disc).user_photo_url, null)
+  assert.equal(fromDbDisc({ ...row, photo_version: null }).photo_url, null)
+})
