@@ -18,7 +18,7 @@ env:
 jobs:
   build:
     name: Build trusted release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Require main and successful CI for this exact commit
@@ -44,7 +44,7 @@ jobs:
   staging:
     name: Deploy and verify staging
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     environment: staging-infrastructure
     permissions:
@@ -126,7 +126,7 @@ jobs:
             --template-file infra/app.bicep \
             --parameters environmentId="$environment_id" databaseHost="$database_host" \
               image="$IMAGE" registryServer="$REGISTRY_SERVER" pullIdentityId="$PULL_IDENTITY" \
-              sourceSha="$SOURCE_SHA" postgresAppPassword="$PG_APP"
+              sourceSha="$SOURCE_SHA" releaseId="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" postgresAppPassword="$PG_APP"
           url=$(az deployment group show -g "$RESOURCE_GROUP" -n "app-$GITHUB_RUN_ID" \
             --query properties.outputs.url.value -o tsv)
           printf 'STAGING_URL=%s\n' "$url" >> "$GITHUB_ENV"

@@ -19,7 +19,7 @@ concurrency:
 jobs:
   application:
     name: Application checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -43,7 +43,7 @@ jobs:
   browser:
     name: Browser E2E
     needs: application
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -73,7 +73,7 @@ jobs:
 
   api:
     name: PostgreSQL and OCI integration
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     services:
       postgres:
@@ -108,7 +108,7 @@ jobs:
 
   infrastructure:
     name: Infrastructure checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -147,7 +147,7 @@ jobs:
     name: Required CI
     if: ${{ always() }}
     needs: [application, browser, api, infrastructure]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Require all checks to pass
