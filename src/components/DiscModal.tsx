@@ -1,15 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
 import { CatalogDisc } from '../hooks/useDiscCatalog'
 import { ClientDisc, DiscDraft, DISC_TYPES, colorSlug } from '../utils/disc'
-import { prepareDiscPhoto } from '../utils/photo'
+import { CropState } from '../utils/crop'
+import { PhotoSource, checkPhotoFile, openPhoto, releasePhoto } from '../utils/photo'
+import { loadDiscPhoto } from '../lib/data'
 import { DiscSearch } from './DiscSearch'
-import { DiscPhoto } from './DiscPhoto'
+import { DiscImage } from './DiscImage'
+import { PhotoCropper } from './PhotoCropper'
 
 interface DiscModalProps {
   disc?: ClientDisc | null
   onSave: (disc: DiscDraft) => Promise<void>
   onClose: () => void
 }
+
+interface Cropping {
+  source: PhotoSource
+  blob: Blob
+  start?: CropState
+}
+
+const CROP_TITLE_ID = 'disc-crop-title'
 
 const CONDITION_OPTIONS = [
   { value: 'new', label: 'New/Mint' },
@@ -59,25 +70,84 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
   const [isSaving, setIsSaving] = useState(false)
   const [photo, setPhoto] = useState<string | null>()
   const [isPreparingPhoto, setIsPreparingPhoto] = useState(false)
+  const [cropping, setCropping] = useState<Cropping | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [photoError, setPhotoError] = useState<string | null>(null)
   const photoSequence = useRef(0)
   const photoInput = useRef<HTMLInputElement>(null)
+  const dialog = useRef<HTMLDivElement>(null)
+  const opener = useRef<HTMLElement | null>(null)
+  const photoButton = useRef<HTMLButtonElement>(null)
+  const original = useRef<{ blob: Blob; crop: CropState } | null>(null)
+  const photoRequest = useRef<AbortController | null>(null)
+  const wasCropping = useRef(false)
+  const backdropPress = useRef(false)
   const preview = photo === undefined ? disc?.photo_url : photo
-  useEffect(() => () => { photoSequence.current++ }, [])
+  const busy = isSaving || isPreparingPhoto
+  useEffect(() => () => { photoSequence.current++; photoRequest.current?.abort() }, [])
 
-  const choosePhoto = async (file: File) => {
+  useEffect(() => {
+    if (!cropping) return
+    return () => releasePhoto(cropping.source)
+  }, [cropping])
+
+  useEffect(() => {
+    if (cropping) {
+      wasCropping.current = true
+      dialog.current?.scrollTo({ top: 0 })
+    } else if (wasCropping.current) {
+      wasCropping.current = false
+      // A file picked straight from the hidden input (assistive tech) has no button opener to return to.
+      const target = opener.current?.isConnected ? opener.current : photoButton.current
+      target?.focus()
+    }
+  }, [cropping])
+
+  const openCropper = async (load: () => Promise<{ blob: Blob; start?: CropState }>) => {
     const sequence = ++photoSequence.current
     setPhotoError(null)
     setIsPreparingPhoto(true)
     try {
-      const prepared = await prepareDiscPhoto(file)
-      if (sequence === photoSequence.current) setPhoto(prepared)
+      const { blob, start } = await load()
+      const source = await openPhoto(blob)
+      if (sequence !== photoSequence.current) {
+        releasePhoto(source)
+        return
+      }
+      setCropping({ source, blob, start })
     } catch (reason) {
       if (sequence === photoSequence.current) setPhotoError(reason instanceof Error ? reason.message : 'Photo could not be prepared.')
     } finally {
       if (sequence === photoSequence.current) setIsPreparingPhoto(false)
     }
+  }
+
+  const choosePhoto = (file: File) => openCropper(async () => {
+    checkPhotoFile(file)
+    return { blob: file }
+  })
+
+  // A photo that was just cropped re-opens from its original with the same framing;
+  // a stored photo is fetched (usually from the cache) and re-cropped from what we kept.
+  const adjustCrop = () => openCropper(async () => {
+    if (photo && original.current) return { blob: original.current.blob, start: original.current.crop }
+    if (!disc?.photo_url) throw new Error('There is no photo to adjust.')
+    photoRequest.current?.abort()
+    photoRequest.current = new AbortController()
+    return { blob: await loadDiscPhoto(disc.photo_url, photoRequest.current.signal) }
+  })
+
+  const applyCrop = (cropped: string, crop: CropState) => {
+    if (!cropping) return
+    original.current = { blob: cropping.blob, crop }
+    setPhoto(cropped)
+    setCropping(null)
+  }
+
+  const removePhoto = () => {
+    original.current = null
+    setPhoto(null)
+    setPhotoError(null)
   }
 
   const selectSuggestion = (selectedDisc: CatalogDisc) => {
@@ -155,17 +225,20 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
         zIndex: 1000,
         padding: '1rem',
       }}
-      onClick={() => { if (!isSaving) onClose() }}
+      onPointerDown={event => { backdropPress.current = event.target === event.currentTarget }}
+      onClick={event => { if (backdropPress.current && event.target === event.currentTarget && !isSaving && !cropping) onClose() }}
     >
       <div
+        ref={dialog}
         className="disc-form-dialog"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="disc-form-title"
+        aria-labelledby={cropping ? CROP_TITLE_ID : 'disc-form-title'}
         onKeyDown={event => {
           if (event.key === 'Escape' && !event.defaultPrevented && !isSaving) onClose()
           if (event.key === 'Tab') {
-            const fields = event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)')
+            const fields = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button, input, select, textarea, [tabindex]'))
+              .filter(field => !field.matches(':disabled') && field.tabIndex >= 0 && field.getClientRects().length > 0)
             const first = fields[0]
             const last = fields[fields.length - 1]
             if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
@@ -183,11 +256,38 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
         }}
         onClick={e => e.stopPropagation()}
       >
-        <h2 id="disc-form-title" style={{ margin: '0 0 1.5rem 0', color: 'var(--clr-text)' }}>
-          {disc ? 'Edit Disc' : 'Add Disc'}
-        </h2>
+        <div className="disc-form-head" style={{ display: cropping ? 'none' : undefined }}>
+          <div className="disc-form-head-text">
+            <h2 id="disc-form-title" className="disc-form-title">
+              {disc ? 'Edit Disc' : 'Add Disc'}
+            </h2>
+            <div className="disc-photo-actions">
+              <button ref={photoButton} type="button" className="btn btn-secondary btn-sm" disabled={busy}
+                onClick={event => { opener.current = event.currentTarget; photoInput.current?.click() }}>
+                {preview ? 'Change photo' : 'Add photo'}
+              </button>
+              {preview && <button type="button" className="btn btn-secondary btn-sm" disabled={busy}
+                onClick={event => { opener.current = event.currentTarget; void adjustCrop() }}>Adjust crop</button>}
+              {preview && <button type="button" className="btn btn-secondary btn-sm" disabled={busy}
+                onClick={removePhoto}>Remove photo</button>}
+            </div>
+            <input id="disc-photo-upload" ref={photoInput} className="disc-photo-input" type="file"
+              accept="image/jpeg,image/png,image/webp" aria-label="Personal photo" tabIndex={-1} disabled={busy}
+              onChange={event => {
+                const file = event.target.files?.[0]
+                event.target.value = ''
+                if (file) void choosePhoto(file)
+              }} />
+            <small className="disc-photo-hint">JPEG, PNG or WebP, up to 10 MB. You crop it to a square before saving.</small>
+            {isPreparingPhoto && <p role="status">Preparing photo...</p>}
+            {photoError && <p role="alert">{photoError}</p>}
+          </div>
+          <div className="disc-thumb disc-thumb-lg">
+            <DiscImage disc={form} photo={preview} />
+          </div>
+        </div>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <form onSubmit={handleSubmit} style={{ display: cropping ? 'none' : 'flex', flexDirection: 'column', gap: '1rem' }}>
           <DiscSearch value={form.name} onChange={name => setForm(previous => ({ ...previous, name }))}
             onSelect={selectSuggestion} />
           <div className="disc-edition-field">
@@ -195,24 +295,6 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
             <input id="disc-edition" value={form.edition} maxLength={200}
               placeholder="Optional, e.g. Midnight Prowl II"
               onChange={event => setForm(previous => ({ ...previous, edition: event.target.value }))} />
-          </div>
-          <div className="disc-photo-editor">
-            {preview && <div className="disc-photo-preview"><DiscPhoto src={preview} name={form.name || 'Disc'} /></div>}
-            <div className="disc-photo-controls">
-              <label htmlFor="disc-photo-upload">Personal photo</label>
-              <input id="disc-photo-upload" ref={photoInput} type="file" accept="image/jpeg,image/png,image/webp"
-                disabled={isSaving || isPreparingPhoto}
-                onChange={event => {
-                  const file = event.target.files?.[0]
-                  event.target.value = ''
-                  if (file) void choosePhoto(file)
-                }} />
-              <small>JPEG, PNG or WebP, up to 10 MB. Resized before saving.</small>
-              {isPreparingPhoto && <p role="status">Preparing photo...</p>}
-              {preview && <button type="button" className="btn btn-secondary" disabled={isSaving || isPreparingPhoto}
-                onClick={() => { setPhoto(null); setPhotoError(null) }}>Remove photo</button>}
-              {photoError && <p role="alert">{photoError}</p>}
-            </div>
           </div>
           {error && <p role="alert">{error}</p>}
 
@@ -580,6 +662,10 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
             </button>
           </div>
         </form>
+        {cropping && (
+          <PhotoCropper source={cropping.source} initial={cropping.start} titleId={CROP_TITLE_ID}
+            onCancel={() => setCropping(null)} onDone={applyCrop} />
+        )}
       </div>
     </div>
   )

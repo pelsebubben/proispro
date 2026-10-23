@@ -1,15 +1,31 @@
 import { useState, useMemo } from 'react'
 import { useDiscs } from '../hooks/useDiscs'
 import { useBags } from '../hooks/useBags'
-import { ClientDisc, DiscDraft, DISC_TYPES, DiscFilters, filterAndSort, SortOption } from '../utils/disc'
+import { ClientDisc, DiscDraft, DISC_TYPES, DiscFilters, filterAndSort, groupByType, SortOption } from '../utils/disc'
 import { DiscCard } from '../components/DiscCard'
+import { DiscList } from '../components/DiscList'
 import { DiscModal } from '../components/DiscModal'
+
+type InventoryView = 'cards' | 'list'
+
+const VIEW_KEY = 'griplock.inventoryView'
+// Each view starts on the order that suits it: newest first for cards, A-Z within each type for the list.
+const VIEW_SORT: Record<InventoryView, SortOption> = { cards: 'added-desc', list: 'name-asc' }
+
+function loadView(): InventoryView {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'cards'
+  } catch {
+    return 'cards'
+  }
+}
 
 export function InventoryPage() {
   const { discs, isLoading, saveDisc, deleteDisc, setDiscQty } = useDiscs()
   const { bags, toggleDiscInBag } = useBags()
 
-  const [filters, setFilters] = useState<DiscFilters>({
+  const [view, setView] = useState<InventoryView>(loadView)
+  const [filters, setFilters] = useState<DiscFilters>(() => ({
     search: '',
     filterType: '',
     filterBrand: '',
@@ -18,23 +34,39 @@ export function InventoryPage() {
     filterWeightMin: null,
     filterWeightMax: null,
     activeTagFilter: '',
-    sortBy: 'added-desc',
+    sortBy: VIEW_SORT[loadView()],
     groupBy: 'none',
-  })
+  }))
 
   const [modalDisc, setModalDisc] = useState<ClientDisc | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
 
-  // Filter + sort + group (memoized for performance)
+  // Filter + sort + group (memoized for performance). The list groups by type itself.
   const filteredGroups = useMemo(
-    () => filterAndSort(discs, bags, filters),
-    [discs, bags, filters]
+    () => filterAndSort(discs, bags, view === 'list' ? { ...filters, groupBy: 'none' } : filters),
+    [discs, bags, filters, view]
+  )
+  const listGroups = useMemo(
+    () => view === 'list' ? groupByType(filteredGroups[0].discs) : [],
+    [view, filteredGroups]
   )
 
   const totalCount = discs.length
   const filteredCount = filteredGroups.reduce((sum, g) => sum + g.count, 0)
+  const isEmpty = (view === 'list' ? listGroups : filteredGroups).every(g => g.discs.length === 0)
+
+  const changeView = (next: InventoryView) => {
+    if (next === view) return
+    setView(next)
+    try {
+      localStorage.setItem(VIEW_KEY, next)
+    } catch {
+      // Private browsing can block storage; the choice then lasts for this visit only.
+    }
+    setFilters(previous => previous.sortBy === VIEW_SORT[view] ? { ...previous, sortBy: VIEW_SORT[next] } : previous)
+  }
 
   const handleAddDisc = () => {
     setModalDisc(null)
@@ -177,8 +209,15 @@ export function InventoryPage() {
           ))}
         </div>
 
-        {/* Sort + Group controls */}
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+        {/* View + Sort + Group controls */}
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          <div role="group" aria-label="View" className="view-toggle">
+            {(['cards', 'list'] as const).map(option => (
+              <button key={option} type="button" aria-pressed={view === option} onClick={() => changeView(option)}>
+                {option === 'cards' ? 'Cards' : 'List'}
+              </button>
+            ))}
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <label style={{ fontSize: '0.85rem', color: 'var(--clr-muted)' }}>Sort:</label>
             <select
@@ -203,7 +242,8 @@ export function InventoryPage() {
             </select>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          {/* The list is always grouped by type, so it has no Group control */}
+          <div style={{ display: view === 'cards' ? 'flex' : 'none', alignItems: 'center', gap: '0.5rem' }}>
             <label style={{ fontSize: '0.85rem', color: 'var(--clr-muted)' }}>Group:</label>
             <select
               value={filters.groupBy}
@@ -260,8 +300,8 @@ export function InventoryPage() {
         )}
       </div>
 
-      {/* Disc grid */}
-      {filteredGroups.length === 0 || filteredGroups.every(g => g.discs.length === 0) ? (
+      {/* Disc grid or list */}
+      {isEmpty ? (
         <div
           style={{
             textAlign: 'center',
@@ -273,6 +313,8 @@ export function InventoryPage() {
           <p style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>No discs yet</p>
           <p style={{ fontSize: '0.9rem' }}>Click + Add Disc to get started</p>
         </div>
+      ) : view === 'list' ? (
+        <DiscList groups={listGroups} onEdit={handleEditDisc} />
       ) : (
         filteredGroups.map(group => (
           <div key={group.label || 'all'}>

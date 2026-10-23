@@ -46,6 +46,41 @@ async function inventory(page: Page) {
   return { discs, writes, external }
 }
 
+const choosePhoto = (page: Page, buffer: Buffer, name = 'photo.png') =>
+  page.getByLabel('Personal photo', { exact: true }).setInputFiles({ name, mimeType: 'image/png', buffer })
+
+// A chosen photo opens in the crop step; nothing is kept until the player confirms the framing.
+async function useCrop(page: Page) {
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByRole('heading', { name: 'Crop photo' })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Use photo', exact: true }).click()
+  await expect(dialog.getByRole('heading', { name: 'Crop photo' })).toHaveCount(0)
+}
+
+// Red, green and blue thirds make the framing of a crop visible in the saved JPEG.
+async function stripedPhoto() {
+  const stripe = (background: string) => sharp({ create: { width: 600, height: 1200, channels: 3, background } }).png().toBuffer()
+  return sharp({ create: { width: 1800, height: 1200, channels: 3, background: '#000000' } })
+    .composite([
+      { input: await stripe('#ff0000'), left: 0, top: 0 },
+      { input: await stripe('#00ff00'), left: 600, top: 0 },
+      { input: await stripe('#0000ff'), left: 1200, top: 0 },
+    ]).png().toBuffer()
+}
+
+// Size of a saved photo plus its dominant colour in four vertical bands, left to right.
+async function savedPhoto(photo: unknown) {
+  const jpeg = sharp(Buffer.from(String(photo).split(',')[1], 'base64'))
+  const { width, height } = await jpeg.metadata()
+  const { data, info } = await jpeg.resize(4, 1, { fit: 'fill' }).raw().toBuffer({ resolveWithObject: true })
+  const names = ['red', 'green', 'blue']
+  const bands = Array.from({ length: 4 }, (_, band) => {
+    const pixel = [...data.subarray(band * info.channels, band * info.channels + 3)]
+    return names[pixel.indexOf(Math.max(...pixel))]
+  })
+  return { width, height, bands }
+}
+
 test('instant local search finds mold, manufacturer and editions without duplicate results', async ({ page }, info) => {
   const { writes, external } = await inventory(page)
   const input = page.getByRole('combobox', { name: /Disc Name/ })
@@ -132,32 +167,37 @@ test('keyboard selection, rapid query replacement and menu scrolling keep the cu
   expect(await page.locator('body').evaluate(element => element.scrollWidth <= innerWidth)).toBe(true)
 })
 
-test('personal photo is resized, saved, reloaded, replaced and removed without losing disc details', async ({ page }, info) => {
+test('personal photo is cropped, saved, reloaded, replaced and removed without losing disc details', async ({ page }, info) => {
   const { writes, discs } = await inventory(page)
+  const dialog = page.getByRole('dialog')
   await page.getByRole('combobox', { name: /Disc Name/ }).fill('Photo disc')
   await page.getByLabel('Edition / Run').fill('My tournament run')
   await page.getByLabel('Type', { exact: false }).selectOption('utility')
   const photo = await sharp({ create: { width: 1800, height: 1200, channels: 3, background: '#3989b8' } }).png().toBuffer()
-  const upload = page.getByLabel('Personal photo', { exact: true })
-  await upload.setInputFiles({ name: 'personal.png', mimeType: 'image/png', buffer: photo })
-  await expect(page.getByAltText('Photo disc personal photo')).toBeVisible()
+  const chooser = page.waitForEvent('filechooser')
+  await dialog.getByRole('button', { name: 'Add photo', exact: true }).click()
+  await (await chooser).setFiles({ name: 'personal.png', mimeType: 'image/png', buffer: photo })
+  await useCrop(page)
+  await expect(dialog.getByRole('button', { name: 'Change photo', exact: true })).toBeFocused()
+  await expect(dialog.getByAltText('Photo disc personal photo')).toBeVisible()
   await page.getByRole('button', { name: 'Save', exact: true }).click()
-  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(dialog).toHaveCount(0)
   expect(writes[0].photo).toMatch(/^data:image\/jpeg;base64,/)
-  const metadata = await sharp(Buffer.from(String(writes[0].photo).split(',')[1], 'base64')).metadata()
-  expect(metadata.width).toBe(1024)
-  expect(metadata.height).toBeLessThanOrEqual(1024)
+  expect(await savedPhoto(writes[0].photo)).toMatchObject({ width: 1024, height: 1024 })
   await page.reload()
   const image = page.getByAltText('Photo disc personal photo')
   await expect(image).toBeVisible()
   await expect.poll(() => image.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBe(1024)
   await page.screenshot({ path: info.outputPath('personal-photo.png'), scale: 'css' })
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.screenshot({ path: info.outputPath('edit-with-photo.png'), scale: 'css' })
   const replacement = await sharp({ create: { width: 300, height: 300, channels: 3, background: '#ce7744' } }).png().toBuffer()
-  await upload.setInputFiles({ name: 'replacement.png', mimeType: 'image/png', buffer: replacement })
+  await choosePhoto(page, replacement, 'replacement.png')
+  await useCrop(page)
   await page.getByRole('button', { name: 'Save', exact: true }).click()
-  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(dialog).toHaveCount(0)
   expect(writes[1].photo).not.toBe(writes[0].photo)
+  expect(await savedPhoto(writes[1].photo)).toMatchObject({ width: 300, height: 300 })
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await page.getByRole('button', { name: 'Remove photo', exact: true }).click()
   await page.getByRole('button', { name: 'Save', exact: true }).click()
@@ -174,6 +214,7 @@ test('invalid photos report an actionable error and cancelling does not save a d
   await expect(page.getByRole('alert')).toContainText('Choose a JPEG, PNG or WebP photo.')
   await upload.setInputFiles({ name: 'broken.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('invalid') })
   await expect(page.getByRole('alert')).toContainText('could not be opened')
+  await expect(page.getByRole('heading', { name: 'Crop photo' })).toHaveCount(0)
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
   expect(writes).toEqual([])
   await page.getByRole('button', { name: '+ Add Disc', exact: true }).click()
@@ -191,11 +232,85 @@ test('a failed stored photo can be replaced by a fresh local preview', async ({ 
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog.getByRole('button', { name: 'Photo unavailable. Retry' })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Adjust crop', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toHaveText('Photo could not be loaded (503).')
   const photo = await sharp({ create: { width: 300, height: 300, channels: 3, background: '#3989b8' } }).png().toBuffer()
-  await page.getByLabel('Personal photo', { exact: true }).setInputFiles({ name: 'recovery.png', mimeType: 'image/png', buffer: photo })
+  await choosePhoto(page, photo, 'recovery.png')
+  await useCrop(page)
   await expect(dialog.getByAltText('Recovery disc personal photo')).toBeVisible()
+  await expect(dialog.getByRole('alert')).toHaveCount(0)
   await expect(dialog.getByRole('button', { name: 'Photo unavailable. Retry' })).toHaveCount(0)
   await page.screenshot({ path: info.outputPath('photo-recovery.png'), scale: 'css' })
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  expect(writes).toEqual([])
+})
+
+test('the crop keeps the centre square untouched, and Adjust crop re-crops a stored photo without upscaling', async ({ page }) => {
+  const { writes } = await inventory(page)
+  const dialog = page.getByRole('dialog')
+  await page.getByRole('combobox', { name: /Disc Name/ }).fill('Adjusted disc')
+  await page.getByLabel('Type', { exact: false }).selectOption('putter')
+  await choosePhoto(page, await stripedPhoto())
+  await useCrop(page)
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  expect(await savedPhoto(writes[0].photo)).toEqual({ width: 1024, height: 1024, bands: ['red', 'green', 'green', 'blue'] })
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Adjust crop', exact: true }).click()
+  await dialog.getByRole('slider', { name: /^Zoom/ }).fill('2')
+  await expect(dialog.locator('output')).toHaveText('2.0×')
+  await useCrop(page)
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  expect(await savedPhoto(writes[1].photo)).toEqual({ width: 512, height: 512, bands: ['green', 'green', 'green', 'green'] })
+})
+
+test('dragging the photo moves the square window, and what is inside it is what gets saved', async ({ page }, info) => {
+  const { writes } = await inventory(page)
+  const dialog = page.getByRole('dialog')
+  await page.getByRole('combobox', { name: /Disc Name/ }).fill('Dragged disc')
+  await page.getByLabel('Type', { exact: false }).selectOption('putter')
+  await choosePhoto(page, await stripedPhoto())
+  const stage = dialog.getByRole('group', { name: /^Crop area/ })
+  await expect(stage).toBeFocused()
+  const frame = (await stage.boundingBox())!
+  expect(frame.width).toBeGreaterThan(200)
+  expect(Math.abs(frame.width - frame.height)).toBeLessThan(1)
+  await page.screenshot({ path: info.outputPath('cropper.png'), scale: 'css' })
+  const middle = frame.y + frame.height / 2
+  await page.mouse.move(frame.x + frame.width * 0.1, middle)
+  await page.mouse.down()
+  await page.mouse.move(frame.x + frame.width * 0.9, middle, { steps: 8 })
+  await page.mouse.up()
+  await dialog.getByRole('button', { name: 'Use photo', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  expect(await savedPhoto(writes[0].photo)).toEqual({ width: 1024, height: 1024, bands: ['red', 'red', 'green', 'green'] })
+})
+
+test('Escape, Reset and Cancel leave the crop step without closing the form or keeping a photo', async ({ page }) => {
+  const { writes } = await inventory(page)
+  const dialog = page.getByRole('dialog')
+  const stage = dialog.getByRole('group', { name: /^Crop area/ })
+  const picture = stage.locator('img')
+  const photo = await stripedPhoto()
+  await choosePhoto(page, photo)
+  await expect(stage).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(dialog.getByRole('heading', { name: 'Add Disc' })).toBeVisible()
+  // The file came straight from the hidden input, so focus falls back to the photo button instead of the page body.
+  await expect(dialog.getByRole('button', { name: 'Add photo', exact: true })).toBeFocused()
+  await choosePhoto(page, photo)
+  const framing = await picture.getAttribute('style')
+  await page.keyboard.press('+')
+  await expect(dialog.locator('output')).toHaveText('1.1×')
+  await page.keyboard.press('ArrowRight')
+  await expect.poll(() => picture.getAttribute('style')).not.toBe(framing)
+  await dialog.getByRole('button', { name: 'Reset', exact: true }).click()
+  await expect(dialog.locator('output')).toHaveText('1.0×')
+  await expect(picture).toHaveAttribute('style', framing!)
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(dialog.getByRole('heading', { name: 'Add Disc' })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Add photo', exact: true })).toBeFocused()
   expect(writes).toEqual([])
 })
