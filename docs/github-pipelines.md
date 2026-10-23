@@ -56,16 +56,19 @@ data writes. Real Google/Entra sign-in is not claimed by the synthetic JWT tests
 
 ### Staging sizing and cost assumption
 
-Sweden Central, PostgreSQL 16 B1ms (32 GiB, 7-day backups, no HA), ACR Basic,
+Sweden Central, PostgreSQL 16 B2s (32 GiB, 7-day backups, no HA), ACR Basic,
 one warm 0.5-vCPU/1-GiB app replica (maximum three), finite jobs, and capped
 Log Analytics are the low-complexity staging baseline, not a production SLA.
 Azure retail consumption rates queried before workload deployment on 2026-10-23:
-PostgreSQL $0.0199/hour plus $0.1369/GiB-month, registry $0.1666/day,
+PostgreSQL B2s $0.0398/hour plus $0.1369/GiB-month, registry $0.1666/day,
 ACA active CPU $0.000024/vCPU-second and memory $0.000003/GiB-second
 (idle CPU $0.000003/vCPU-second). At 730 hours/month this is approximately
-$36 idle to $63 continuously active for one replica, before free grants,
+$50 idle to $78 continuously active for one replica, before free grants,
 logs, storage, network, requests, extra replicas, taxes and currency conversion.
-This is an estimate, not a spending cap. B1ms and single-region/no-HA are
+The first release attempted B1ms ($0.0199/hour) but Azure returned
+`RegionalAllocationFailed` in Sweden Central. B2s is the next-smallest supported
+burstable size, not an automatic unbounded scaling fallback.
+This is an estimate, not a spending cap. B2s and single-region/no-HA are
 deliberate staging choices; production sizing/recovery need separate approval.
 
 ## Local checks and test evidence

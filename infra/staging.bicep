@@ -53,7 +53,7 @@ resource database 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
   name: dbName
   location: location
   tags: tags
-  sku: { name: 'Standard_B1ms', tier: 'Burstable' }
+  sku: { name: 'Standard_B2s', tier: 'Burstable' }
   properties: {
     version: '16'
     administratorLogin: 'griplock_admin'
