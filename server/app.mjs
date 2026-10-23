@@ -5,15 +5,21 @@ import { resolve, extname, sep } from 'node:path'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
 import { asUser } from './database.mjs'
 import { runtimeConfiguration } from './identity.mjs'
+import { isLoopbackAddress } from './dev-identity.mjs'
 
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
   '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export function createApplication({ pool, issuer, audience, jwksUrl, requiredScope,
-  identity = null, staticRoot = 'dist', sourceSha = 'local' }) {
+  identity = null, devIdentity = null, staticRoot = 'dist', sourceSha = 'local' }) {
   let jwks
-  if (issuer || audience || jwksUrl) {
+  if (devIdentity) {
+    if (process.env.NODE_ENV === 'production') throw new Error('Local dev identity is forbidden in production')
+    if (identity || jwksUrl) throw new Error('Local dev identity cannot be combined with customer identity')
+    ;({ issuer, audience, requiredScope } = devIdentity)
+    jwks = devIdentity.keys
+  } else if (issuer || audience || jwksUrl) {
     const issuerUrl = new URL(issuer)
     const keysUrl = new URL(jwksUrl)
     if (!audience || keysUrl.origin !== issuerUrl.origin) throw new Error('JWKS, issuer and audience must be configured together')
@@ -34,10 +40,32 @@ export function createApplication({ pool, issuer, audience, jwksUrl, requiredSco
     }
     try {
       const url = new URL(req.url, 'http://localhost')
-      if (url.pathname === '/auth/config') return json(200, runtimeConfiguration(identity))
+      const runtime = runtimeConfiguration(identity, { devAuth: Boolean(devIdentity) })
+      if (url.pathname === '/auth/config') return json(200, runtime)
       if (url.pathname === '/runtime-config.js') {
         res.writeHead(200, { 'Content-Type': 'text/javascript', 'Cache-Control': 'no-store' })
-        return res.end(`window.__GRIPLOCK_RUNTIME__ = ${JSON.stringify(runtimeConfiguration(identity))}`)
+        return res.end(`window.__GRIPLOCK_RUNTIME__ = ${JSON.stringify(runtime)}`)
+      }
+      if (url.pathname.startsWith('/dev-auth/')) {
+        if (!devIdentity || !isLoopbackAddress(req.socket.remoteAddress)) return json(404, { error: 'not_found' })
+        if (url.pathname !== '/dev-auth/token') return json(404, { error: 'not_found' })
+        if (req.method !== 'POST') return json(405, { error: 'method_not_allowed' })
+        if (!req.headers['content-type']?.startsWith('application/json')) return json(415, { error: 'json_required' })
+        let raw = ''
+        for await (const chunk of req) {
+          raw += chunk
+          if (raw.length > 1024) return json(413, { error: 'body_too_large' })
+        }
+        let body
+        try { body = JSON.parse(raw) } catch { return json(400, { error: 'invalid_json' }) }
+        try {
+          const issued = await devIdentity.issue({ user: body?.user, ...(body?.scope !== undefined ? { scope: body.scope } : {}) })
+          console.warn(JSON.stringify({ event: 'dev_identity_token_issued', requestId, user: issued.user }))
+          return json(200, issued)
+        } catch (error) {
+          if (error instanceof TypeError) return json(400, { error: error.message })
+          throw error
+        }
       }
       if (url.pathname === '/health/live') return json(200, { status: 'ok', sourceSha })
       if (url.pathname === '/health/ready') {

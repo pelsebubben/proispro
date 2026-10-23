@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { runtime } from '../lib/runtime'
 
 export function LoginPage() {
-  const { signIn, error } = useAuth()
+  const { signIn, devSignIn, error } = useAuth()
+  const [devName, setDevName] = useState('alice')
   return (
     <div style={{
       minHeight: '100vh',
@@ -22,7 +24,18 @@ export function LoginPage() {
       )}
       {error && <p role="alert">{error}</p>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '240px' }}>
-        {runtime.dataBackend === 'api' && runtime.identityReady ? (
+        {runtime.devAuth ? (
+          <form onSubmit={event => { event.preventDefault(); void devSignIn(devName.trim()) }}
+            style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <p role="note" style={{ color: 'var(--clr-muted)', fontSize: '0.85rem' }}>
+              Local development identity. Not available in deployed builds.
+            </p>
+            <label htmlFor="dev-user">Test user</label>
+            <input id="dev-user" value={devName} onChange={event => setDevName(event.target.value)}
+              autoComplete="off" spellCheck={false} />
+            <button type="submit">Sign in locally</button>
+          </form>
+        ) : runtime.dataBackend === 'api' && runtime.identityReady ? (
           <button onClick={() => signIn('google')}>Sign in to Griplock</button>
         ) : <>
         <button

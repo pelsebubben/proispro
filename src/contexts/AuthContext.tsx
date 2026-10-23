@@ -9,6 +9,7 @@ interface AuthContextValue {
   error: string | null
   isLoading: boolean
   signIn: (provider: 'google' | 'github') => Promise<void>
+  devSignIn: (user: string) => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -26,7 +27,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     if (runtime.dataBackend === 'api') {
       let active = true
-      import('../lib/entra').then(auth => auth.entraUser()).then(value => {
+      const load = runtime.devAuth
+        ? import('../lib/devAuth').then(auth => auth.devUser())
+        : import('../lib/entra').then(auth => auth.entraUser())
+      load.then(value => {
         if (active) setUser(value)
       }).catch(err => {
         if (active) setError(err instanceof Error ? err.message : 'Sign-in failed')
@@ -66,10 +70,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const devSignIn = async (name: string) => {
+    setError(null)
+    try {
+      if (!runtime.devAuth) throw new Error('Local sign-in is not available')
+      setUser(await (await import('../lib/devAuth')).devSignIn(name))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign-in failed')
+    }
+  }
+
   const signOut = async () => {
     setError(null)
     try {
-      if (runtime.dataBackend === 'api') await (await import('../lib/entra')).entraSignOut()
+      if (runtime.devAuth) (await import('../lib/devAuth')).devSignOut()
+      else if (runtime.dataBackend === 'api') await (await import('../lib/entra')).entraSignOut()
       else {
         const { error } = await supabase.auth.signOut()
         if (error) throw error
@@ -81,7 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, error, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, isLoading, error, signIn, devSignIn, signOut }}>
       {children}
     </AuthContext.Provider>
   )

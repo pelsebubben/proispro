@@ -89,6 +89,57 @@ runtime configuration; `/runtime-config.js` delivers the same configuration with
 no caching. The release manifest records whether identity is configured, which
 is not evidence that a real person completed Google sign-in.
 
+## Local development and security testing identity
+
+For building, testing and pentesting without Entra, the server has a
+**local-only test identity provider**. It is not an auth bypass: it mints
+short-lived ES256 tokens from an in-memory key, and the API runs the same
+signature, issuer, audience, expiry, `scp` and PostgreSQL RLS checks as for
+real customer tokens. Each test user (`alice`, `bob`, …) maps to its own
+application user under issuer `urn:griplock:local-dev-identity`, so it never
+collides with a real customer account.
+
+```powershell
+$env:PGPASSWORD = '<local admin password>'
+$env:PGAPP_PASSWORD = '<32+ character local app-role password>'
+docker compose up -d postgres     # loopback-only PostgreSQL 16
+npm run build
+npm run dev:server                # migrates, then serves http://127.0.0.1:8080
+```
+
+Open `http://127.0.0.1:8080` and sign in as any test user. For hot reload, also
+run `$env:GRIPLOCK_DEV_API='http://127.0.0.1:8080'; npm run dev`.
+
+`dev:server` migrates with the admin login and then serves as the non-superuser
+`griplock_app` role, so cross-user access tests hit real row-level security.
+
+Tokens for API tools (curl, Burp, ZAP):
+
+```powershell
+$alice = (Invoke-RestMethod -Method Post http://127.0.0.1:8080/dev-auth/token `
+  -ContentType 'application/json' -Body '{"user":"alice"}').access_token
+# Token without the delegated scope, for 403 tests:
+$noScope = (Invoke-RestMethod -Method Post http://127.0.0.1:8080/dev-auth/token `
+  -ContentType 'application/json' -Body '{"user":"alice","scope":""}').access_token
+Invoke-RestMethod http://127.0.0.1:8080/api/v1/discs -Headers @{ Authorization = "Bearer $alice" }
+```
+
+Activation requires `GRIPLOCK_DEV_AUTH=local-only` exactly. The server refuses
+to start if:
+
+- `NODE_ENV=production` (always set in the shipped container image);
+- it detects Azure Container Apps, App Service or Kubernetes;
+- real customer identity variables are also configured;
+- it would listen on a non-loopback address.
+
+`/dev-auth/token` also returns 404 for non-loopback clients, and deployments
+never set the flag. Unit tests check these guards and confirm dev tokens are
+rejected by servers configured for customer identity.
+
+Pentesting the **deployed** app still requires real customer-tenant test
+accounts; never enable the dev identity on a hosted environment to make that
+easier.
+
 ## Evidence and final acceptance
 
 Local/browser fixtures exercise the real MSAL authorization redirect, code flow,
