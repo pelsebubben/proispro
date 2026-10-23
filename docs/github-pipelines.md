@@ -74,7 +74,7 @@ and migration of the existing frontend/data are separate, unfinished milestones.
   backs up live data when schema code changed, migrates the live and dev databases,
   deploys the digest to live, resets the dev app to the same digest, and runs real deployed browser
   checks. It shares a non-cancelling concurrency group with `infra.yml`.
-- `dev.yml`: deploys every same-repository PR push (or a manual dispatch from any
+- `dev.yml`: deploys non-draft same-repository PRs (or a manual dispatch from any
   branch) to the shared dev app `app-griplock-dev` on database `griplock_dev`. See
   [Shared dev environment](#shared-dev-environment).
 - `infra.yml`: explicit main-branch dispatch for staging `plan` or `apply`, using
@@ -341,11 +341,13 @@ az postgres flexible-server restore -g rg-griplock-staging -n pg-griplock-restor
 One shared dev app (`app-griplock-dev`, scales to zero) runs on the same
 PostgreSQL server as live, in its own database `griplock_dev` with its own runtime
 role `griplock_dev_app`. That role has no grants on live tables. Every push to a
-same-repository PR runs `dev.yml`: build, push `griplock:dev-<sha>`, migrate
+non-draft same-repository PR runs `dev.yml`: build, push `griplock:dev-<sha>`, migrate
 `griplock_dev` with the branch code, update the dev app, and wait until
 `/health/ready` reports the branch SHA. The newest push wins (in-progress dev
-deploys are cancelled). Fork PRs never deploy. Each live release resets the dev
-app to main.
+deploys are cancelled). Draft PRs still run CI but do not deploy or cancel an
+active deployment. Marking a draft ready for review starts its dev deployment.
+Fork PRs never deploy. Explicit manual dispatch remains available for any branch.
+Each live release resets the dev app to main.
 
 ```powershell
 gh workflow run dev.yml --repo pelsebubben/proispro --ref BRANCH

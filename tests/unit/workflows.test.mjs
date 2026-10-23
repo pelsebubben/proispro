@@ -98,10 +98,13 @@ function checkTrustBoundary(files) {
   assert.match(staging.jobs.staging.steps[deployIndex].run, /--parameters stage=dev .*postgresAppPassword="\$PG_DEV_APP"/s)
   const dev = workflows['dev.yml']
   assert.deepEqual(Object.keys(dev.on), ['pull_request', 'workflow_dispatch'])
-  assert.deepEqual(dev.concurrency, { group: 'griplock-dev', 'cancel-in-progress': true })
+  assert.deepEqual(dev.on.pull_request.types, ['opened', 'synchronize', 'reopened', 'ready_for_review'],
+    'making a draft ready starts its dev deployment')
+  assert.equal(dev.concurrency, undefined, 'skipped draft jobs must not cancel active deployments')
+  assert.deepEqual(dev.jobs.dev.concurrency, { group: 'griplock-dev', 'cancel-in-progress': true })
   assert.deepEqual(Object.keys(dev.jobs), ['dev'])
-  assert.equal(dev.jobs.dev.if, "${{ vars.DEV_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}",
-    'fork PRs never receive the dev cloud identity')
+  assert.equal(dev.jobs.dev.if, "${{ vars.DEV_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository)) }}",
+    'draft and fork PRs never receive the dev cloud identity; manual dispatch remains available')
   assert.equal(dev.jobs.dev.environment.name, 'dev')
   assert.equal(dev.jobs.dev.permissions['id-token'], 'write')
   assert.equal(dev.jobs.dev['runs-on'], 'ubuntu-24.04')
@@ -142,6 +145,9 @@ test('gates reject real workflow mutations that grant PR OIDC or remove apply pr
     ['prod.yml', 'identityConfiguration(process.env)', 'console.log("validation-skipped")'],
     ['ci.yml', '          .github/workflows/dev.yml', '          .github/workflows/deploy.yml'],
     ['dev.yml', ' && (github.event_name', ' || (github.event_name'],
+    ['dev.yml', 'github.event.pull_request.draft == false && ', ''],
+    ['dev.yml', ', ready_for_review', ''],
+    ['dev.yml', '    concurrency:', '    ignored-concurrency:'],
     ['dev.yml', 'DEV_MIGRATION: job-griplock-migrate-dev', 'DEV_MIGRATION: job-griplock-migrate'],
     ['prod.yml', "github.event.workflow_run.conclusion == 'success'", "github.event.workflow_run.conclusion != 'cancelled'"],
     ['prod.yml', '          bash scripts/backup-live-database.sh', '          echo backup-skipped'],

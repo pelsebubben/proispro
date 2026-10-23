@@ -72,7 +72,9 @@ API tests require a disposable PostgreSQL database and `PGHOST`, `PGPORT`,
 `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGAPP_PASSWORD` (and `PGSSLMODE=disable` for
 local PostgreSQL). Never point them at dev or production application data.
 
-PRs deploy to shared dev. Successful main CI triggers the production release.
+Non-draft PRs deploy to shared dev; drafts run CI without replacing the dev app.
+Marking a draft ready for review starts its deployment.
+Successful main CI triggers the production release.
 Azure dev/prod are the only supported deployments; standalone GitHub Pages
 publishing is retired because it cannot serve the same-origin application API.
 See [the delivery runbook](docs/github-pipelines.md) and
