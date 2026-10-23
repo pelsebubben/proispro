@@ -6,6 +6,13 @@
 
 web
 
+## Name and Domains
+
+Griplock is the chosen product name. The repository remains `pelsebubben/proispro`
+until separately renamed. The agreed hostname plan is `griplock.no` for production
+and `staging.griplock.no` for staging; DNS cutover is a separate deployment step.
+Do not move existing tenant domains or email services as part of the rebrand.
+
 ## Users
 
 Individual disc golf players managing their owned discs and preparing a bag
@@ -35,7 +42,16 @@ coverage requirement.
 - Course data should come from official sources or an authorized provider such
   as UDisc if suitable access exists. Provider selection is unresolved.
 - The repository currently uses React, TypeScript, Vite, and Supabase. Whether
-  architecture changes are needed remains open.
+  frontend architecture changes are needed remains open.
+- The infrastructure target is fully Azure-hosted, reached through a staged
+  migration away from Supabase, with GitHub Actions managing delivery.
+- Keep operations simple, preserve portability, and support a future mobile
+  client through the same backend. Kubernetes is available for testing but is
+  not a confirmed production requirement.
+- PostgreSQL is the preferred database direction. Exact Azure sizing, identity
+  provider, and availability requirements remain open.
+- Approved agents may deploy and iterate in staging. Production deployment
+  requires the owner's approval. Untrusted PRs receive checks, not cloud access.
 - The broader refactor covers product, UX, and architecture, with implementation
   to follow requirements work.
 
@@ -57,3 +73,7 @@ coverage requirement.
   stack description does not reflect that manifest.
 - `docs/prd-course-bag-configurations.md` records the MVP draft, source research,
   and unresolved decisions.
+- `docs/infrastructure-lifecycle-plan.md` records the infrastructure discovery,
+  recommended target, migration phases, and approval gates.
+- `docs/pipeline-agent-delivery-plan.md` specifies the proposed delivery,
+  end-to-end testing, and agent iteration lifecycle.

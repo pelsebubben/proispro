@@ -1,0 +1,8 @@
+# These boundaries require explicit owner review when enabled in the main ruleset.
+/.github/ @pelsebubben
+/infra/ @pelsebubben
+/tests/ @pelsebubben
+/playwright.config.ts @pelsebubben
+/tsconfig.tests.json @pelsebubben
+/package.json @pelsebubben
+/package-lock.json @pelsebubben
