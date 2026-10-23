@@ -41,10 +41,11 @@ coverage requirement.
 - MVP course matching is manual; automatic disc recommendations are excluded.
 - Course data should come from official sources or an authorized provider such
   as UDisc if suitable access exists. Provider selection is unresolved.
-- The repository currently uses React, TypeScript, Vite, and Supabase. Whether
-  frontend architecture changes are needed remains open.
-- The infrastructure target is fully Azure-hosted, reached through a staged
-  migration away from Supabase, with GitHub Actions managing delivery.
+- The application uses React, TypeScript and Vite with a plain Node API and
+  Azure PostgreSQL. GitHub Actions manages Azure Container Apps delivery.
+- The owner approved a fresh Azure dataset: no legacy data import or identity
+  mapping. Keep one dev and one production environment; old remote resources
+  are not deleted by application cleanup.
 - Keep operations simple, preserve portability, and support a future mobile
   client through the same backend. Kubernetes is available for testing but is
   not a confirmed production requirement.

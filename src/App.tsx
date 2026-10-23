@@ -1,10 +1,9 @@
-import { useState, lazy, Suspense } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { useDiscs } from './hooks/useDiscs'
 import { useBags } from './hooks/useBags'
 import { LoginPage } from './pages/LoginPage'
 import { Layout } from './components/Layout'
-import { runtime } from './lib/runtime'
 
 const InventoryPage = lazy(() => import('./pages/InventoryPage').then(m => ({ default: m.InventoryPage })))
 const BagsPage = lazy(() => import('./pages/BagsPage').then(m => ({ default: m.BagsPage })))
@@ -16,13 +15,24 @@ const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage').then(m => ({ de
 
 type Tab = 'inventory' | 'bags' | 'courses' | 'collections' | 'wishlist' | 'forsale' | 'analytics'
 
-function LegacyAppShell() {
+function FeatureAppShell() {
+  const { error: authError } = useAuth()
   const { discs } = useDiscs()
   const { bags } = useBags()
   const [activeTab, setActiveTab] = useState<Tab>('inventory')
+  const [dataError, setDataError] = useState('')
+  useEffect(() => {
+    const listener = (event: Event) => setDataError((event as CustomEvent<string>).detail)
+    window.addEventListener('griplock-data-error', listener)
+    return () => window.removeEventListener('griplock-data-error', listener)
+  }, [])
 
   return (
     <Layout activeTab={activeTab} onTabChange={setActiveTab}>
+      {authError && <p role="alert">{authError}</p>}
+      {dataError && <div role="alert" style={{ padding: '1rem' }}>
+        {dataError} <button onClick={() => setDataError('')}>Dismiss</button>
+      </div>}
       <Suspense fallback={<div style={{ padding: '2rem', color: 'var(--clr-muted)', textAlign: 'center' }}>Loading…</div>}>
         {activeTab === 'inventory' && <InventoryPage />}
         {activeTab === 'bags' && <BagsPage />}
@@ -37,7 +47,7 @@ function LegacyAppShell() {
 }
 
 function AppShell() {
-  const { user, isLoading, error, signOut } = useAuth()
+  const { user, isLoading } = useAuth()
   if (isLoading) {
     return (
       <div style={{
@@ -55,19 +65,7 @@ function AppShell() {
 
   if (!user) return <LoginPage />
 
-  if (runtime.dataBackend === 'api') {
-    return (
-      <main style={{ maxWidth: '640px', margin: '3rem auto', padding: '1rem' }}>
-        <h1>Signed in to Griplock</h1>
-        <p>{user.email}</p>
-        <p role="status">Your identity is connected to Azure. Collection and bag migration is not complete;
-          the Supabase-backed screens are not connected in this environment.</p>
-        {error && <p role="alert">{error}</p>}
-        <button onClick={signOut}>Sign out</button>
-      </main>
-    )
-  }
-  return <LegacyAppShell />
+  return <FeatureAppShell />
 }
 
 export default function App() {

@@ -71,6 +71,8 @@ export interface DbDiscInsert {
   fade: number | null
   notes: string | null
   quantity: number
+  tags: string[]
+  user_photo_url: string | null
   user_id?: string
 }
 
@@ -107,7 +109,7 @@ export function toDbDisc(disc: ClientDisc): DbDiscInsert {
   return {
     id: disc.id,
     name: disc.name,
-    manufacturer: disc.manufacturer || null,
+    manufacturer: disc.manufacturer || '',
     disc_type: disc.type || null, // type → disc_type
     plastic: disc.plastic || null,
     weight: disc.weight !== '' && disc.weight != null ? parseFloat(disc.weight) : null,
@@ -119,6 +121,8 @@ export function toDbDisc(disc: ClientDisc): DbDiscInsert {
     fade: disc.fade !== '' && disc.fade != null ? Number(disc.fade) : null,
     notes: disc.notes || null,
     quantity: disc.quantity != null ? Math.max(1, Number(disc.quantity)) : 1,
+    tags: disc.tags,
+    user_photo_url: disc.photo_url,
   }
 }
 

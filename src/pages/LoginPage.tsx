@@ -21,7 +21,7 @@ export function LoginPage() {
       <h1 style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--clr-accent)' }}>ProIsPro</h1>
       <p style={{ color: 'var(--clr-muted)', marginBottom: '1rem' }}>Your personal disc golf bag tracker</p>
       {!runtime.identityReady && !runtime.devAuth && (
-        <p role="status">Customer sign-in is not configured. Supabase data is not connected.</p>
+        <p role="status">Customer sign-in is not configured.</p>
       )}
       {error && <p role="alert">{error}</p>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '240px' }}>
@@ -43,42 +43,9 @@ export function LoginPage() {
             </>}
             <button type="submit">{runtime.devPasscode ? 'Sign in to dev' : 'Sign in locally'}</button>
           </form>
-        ) : runtime.dataBackend === 'api' && runtime.identityReady ? (
-          <button onClick={() => signIn('google')}>Sign in to Griplock</button>
-        ) : <>
-        <button
-          disabled={!runtime.identityReady}
-          onClick={() => signIn('google')}
-          style={{
-            padding: '0.75rem 1.5rem',
-            background: 'var(--clr-accent)',
-            color: 'oklch(0.16 0.03 264)',
-            border: 'none',
-            borderRadius: 'var(--radius)',
-            fontWeight: 600,
-            cursor: 'pointer',
-            fontSize: '0.95rem',
-          }}
-        >
-          🔑 Sign in with Google
-        </button>
-        <button
-          disabled={!runtime.identityReady}
-          onClick={() => signIn('github')}
-          style={{
-            padding: '0.75rem 1.5rem',
-            background: 'var(--clr-surface2)',
-            color: 'var(--clr-text)',
-            border: '1px solid var(--clr-border)',
-            borderRadius: 'var(--radius)',
-            fontWeight: 600,
-            cursor: 'pointer',
-            fontSize: '0.95rem',
-          }}
-        >
-          🐙 Sign in with GitHub
-        </button>
-        </>}
+        ) : (
+          <button disabled={!runtime.identityReady} onClick={() => signIn()}>Sign in to Griplock</button>
+        )}
       </div>
     </div>
   )
