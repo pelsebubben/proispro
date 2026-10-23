@@ -1,0 +1,98 @@
+name: Griplock staging infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Preview changes or apply the staging resource-group foundation
+        required: true
+        type: choice
+        options: [plan, apply]
+        default: plan
+
+permissions:
+  contents: read
+
+concurrency:
+  group: griplock-staging-infrastructure
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    name: Plan or apply staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging-infrastructure
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      BICEP_VERSION: v0.48.1
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      OPERATION: ${{ inputs.operation }}
+    steps:
+      - name: Validate trusted dispatch and configuration
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          ENABLED: ${{ vars.INFRA_ENABLED }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$ENABLED" = true
+          test "$OPERATION" = plan || test "$OPERATION" = apply
+          for key in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_LOCATION AZURE_RESOURCE_GROUP; do
+            if [ -z "${!key}" ]; then
+              echo "::error::Missing environment variable $key"
+              exit 1
+            fi
+          done
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Compile infrastructure
+        run: |
+          az bicep install --version "$BICEP_VERSION"
+          az bicep build --file infra/main.bicep --stdout > /dev/null
+      - name: Sign in through GitHub OIDC
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Preview staging changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          az deployment sub validate \
+            --name "griplock-staging-$GITHUB_RUN_ID" \
+            --location "$AZURE_LOCATION" \
+            --template-file infra/main.bicep \
+            --parameters location="$AZURE_LOCATION" resourceGroupName="$AZURE_RESOURCE_GROUP" \
+            --output none
+          az deployment sub what-if \
+            --name "griplock-staging-$GITHUB_RUN_ID" \
+            --location "$AZURE_LOCATION" \
+            --template-file infra/main.bicep \
+            --parameters location="$AZURE_LOCATION" resourceGroupName="$AZURE_RESOURCE_GROUP"
+      - name: Apply staging foundation
+        if: ${{ inputs.operation == 'apply' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          az deployment sub create \
+            --name "griplock-staging-$GITHUB_RUN_ID" \
+            --location "$AZURE_LOCATION" \
+            --template-file infra/main.bicep \
+            --parameters location="$AZURE_LOCATION" resourceGroupName="$AZURE_RESOURCE_GROUP" \
+            --query properties.outputs --output json
+      - name: Record operation
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          printf '## Griplock staging infrastructure\n\nOperation: `%s`\n\nCommit: `%s`\n' \
+            "$OPERATION" "$SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"

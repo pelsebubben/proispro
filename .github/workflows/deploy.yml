@@ -15,53 +15,99 @@
 name: Deploy to GitHub Pages
 
 on:
-  push:
-    branches:
-      - main
-
-# Manual trigger
+  # The repository owner explicitly approves each current production release.
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
+  checks:
+    name: Verify production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Require owner approval on main
+        env:
+          ACTOR: ${{ github.actor }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          test "$ACTOR" = "$OWNER"
+      - name: Require native owner review protection
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          protected=$(gh api "repos/$GITHUB_REPOSITORY/environments/github-pages" \
+            --jq '[.protection_rules[] | select(.type == "required_reviewers") | .reviewers[]] |
+              length == 1 and .[0].type == "User" and .[0].reviewer.login == env.OWNER')
+          if [ "$protected" != true ]; then
+            echo "::error::Configure github-pages with the repository owner as its sole required reviewer before publishing."
+            exit 1
+          fi
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run test:unit
+      - run: npm run build
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: verified-pages-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+      - name: Preserve browser evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pages-browser-evidence-${{ github.sha }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: error
+          retention-days: 7
+
   deploy:
+    needs: checks
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Download verified build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build with Vite
-        run: npm run build
+          name: verified-pages-${{ github.sha }}
+          path: dist/
 
       - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
 
       - name: Upload site artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           # Upload Vite build output
           path: './dist'
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

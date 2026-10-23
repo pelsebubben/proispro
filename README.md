@@ -4,6 +4,14 @@ A personal disc golf bag tracker with **cloud sync** via Supabase, GitHub OAuth 
 
 Hosted on **GitHub Pages** at **proispro.com**.
 
+The product is being prepared for the **Griplock** name and a staged Azure
+migration. The running frontend now uses React, TypeScript, and Vite; the
+Alpine.js/no-build descriptions below are historical.
+
+For current local checks, GitHub Actions, test evidence, and Azure OIDC bootstrap,
+see [GitHub delivery foundation](docs/github-pipelines.md). Production Pages
+publishing is now owner-dispatched, not automatic on every main push.
+
 ## Features
 
 - 📦 **Add / Edit / Remove** discs from your bag

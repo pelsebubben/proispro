@@ -155,9 +155,14 @@ No existing feature removal is authorized by this draft.
 The current manifest uses React, TypeScript, Vite, and Supabase. The README's
 Alpine.js architecture description is outdated relative to that manifest.
 
-The scope includes architecture, but no framework replacement, schema design,
-or migration strategy has been selected. Review those after the configuration
-and course relationship rules are settled.
+Infrastructure lifecycle planning is a prerequisite to the product refactor.
+The confirmed target is fully Azure-hosted infrastructure, delivered through
+GitHub Actions and migrated in stages, with PostgreSQL as the preferred database.
+See [the infrastructure lifecycle plan](infrastructure-lifecycle-plan.md).
+
+No frontend framework replacement or product schema design has been selected.
+Keep infrastructure migration separate from changes to configuration and course
+relationship rules.
 
 Proposed implementation guardrail: preserve existing owned discs, configurations,
 and course associations through any migration, with explicit handling of records

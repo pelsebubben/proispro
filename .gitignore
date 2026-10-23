@@ -15,5 +15,8 @@ node_modules/
 # Vite build output
 dist/
 dist-ssr/
+playwright-report/
+test-results/
+infra/main.json
 *.local
 .squad/.cache/
