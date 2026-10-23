@@ -3,8 +3,10 @@
 Status: Architecture proposal, 2026-10-23. Confirmed constraints are distinguished
 from recommendations. Initial GitHub pipeline definitions and a staging
 resource-group template are now implemented; see
-[the pipeline runbook](github-pipelines.md). No Azure resources, credentials,
-or deployments have been created.
+[the pipeline runbook](github-pipelines.md). The staging OIDC bootstrap and
+private registry exist. The portable API/runtime, private PostgreSQL and
+Container Apps templates, and staged release workflow are implemented; consult
+the runbook for verified deployment state, not this architecture proposal.
 
 ## Outcome and confirmed constraints
 

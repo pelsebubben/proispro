@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { runtime } from './runtime'
 
 const SUPABASE_URL = 'https://odqhusmmqgipvazusrxs.supabase.co'
 const SUPABASE_ANON = 'sb_publishable_p0KpjMepMloZb6SI-y6ang_2uzbdQ9U'
@@ -40,5 +41,11 @@ const authLock = (() => {
 })()
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
-  auth: { storage: authStorage, lock: authLock },
+  auth: {
+    storage: authStorage,
+    lock: authLock,
+    autoRefreshToken: runtime.identityReady,
+    persistSession: runtime.identityReady,
+    detectSessionInUrl: runtime.identityReady,
+  },
 })

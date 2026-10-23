@@ -1,0 +1,15 @@
+.git
+.github
+.env*
+node_modules
+dist
+playwright-report
+test-results
+staging-results
+staging-report
+.squad
+.copilot
+.agents
+supabase
+app.js
+legacy-index.html

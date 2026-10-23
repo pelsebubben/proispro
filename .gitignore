@@ -17,6 +17,8 @@ dist/
 dist-ssr/
 playwright-report/
 test-results/
+staging-results/
+staging-report/
 infra/main.json
 *.local
 .squad/.cache/

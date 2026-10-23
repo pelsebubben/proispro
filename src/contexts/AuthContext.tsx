@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { runtime } from '../lib/runtime'
 
 interface AuthContextValue {
   user: User | null
@@ -16,6 +17,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
+    if (!runtime.identityReady) {
+      setIsLoading(false)
+      return
+    }
     // Get initial session
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUser(user)
@@ -31,6 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signIn = async (provider: 'google' | 'github') => {
+    if (!runtime.identityReady) throw new Error('Staging identity is not configured')
     await supabase.auth.signInWithOAuth({
       provider,
       options: { redirectTo: window.location.origin },

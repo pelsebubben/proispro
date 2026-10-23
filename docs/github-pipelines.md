@@ -7,13 +7,19 @@ both infrastructure and the application, not infrastructure provisioning alone.
 Both tracks require reviewed changes, automated validation, staging verification,
 traceable releases, owner-approved production deployment, and recovery.
 Agents must be able to inspect evidence and iterate within non-production.
-The foundation below is the first implementation slice; it does not complete
-the Azure application release or infrastructure promotion lifecycle.
+Staging delivery is implemented below. Production promotion, customer identity,
+and migration of the existing frontend/data are separate, unfinished milestones.
 
 ## Implemented
 
 - `ci.yml`: every PR, main push, or manual run gets application checks, browser
-  tests, offline infrastructure validation, and a single `Required CI` result.
+  tests, the built OCI runtime tested against PostgreSQL 16, offline infrastructure
+  validation, and a single `Required CI` result.
+- `staging.yml`: explicit main-only release, requiring green push CI for that exact
+  SHA. Builds once without cloud credentials, publishes to private ACR, validates/
+  previews/applies staging infrastructure, verifies a separate private database,
+  migrates the app database, deploys the digest, and runs real deployed browser
+  checks. It shares a non-cancelling concurrency group with `infra.yml`.
 - `infra.yml`: explicit main-branch dispatch for staging `plan` or `apply`, using
   environment-scoped OIDC. Disabled until `INFRA_ENABLED=true` is configured.
 - `deploy.yml`: preserves existing GitHub Pages hosting, but publishing now
@@ -29,11 +35,38 @@ Bicep compilation, pinned Bicep, OIDC variables, preflight validation and what-i
 Its Azure identifiers, network settings, secrets, and Kubernetes setup were not
 copied.
 
-This is a foundation, not the complete delivery platform. The Bicep template
-creates only a tagged staging resource group. Container Apps, registry,
-PostgreSQL, private networking, customer identity, preview deployments and
-same-image production promotion will be added in subsequent infrastructure work.
-No application container or backend API exists yet.
+`infra/main.bicep` remains the subscription-level group foundation.
+`infra/bootstrap.bicep` is an administrator-only registry/pull-identity bootstrap;
+the pipeline cannot assign RBAC or authorize itself.
+`infra/staging.bicep` creates the VNet, private PostgreSQL, private DNS, logging,
+locked storage foundation and finite migration/test jobs. `infra/app.bicep`
+releases the app only after database verification/migration. No Kubernetes is
+required. Customer identity, PR-isolated previews, object upload access, restore
+rehearsals and same-image production promotion remain unfinished.
+
+The Node 22 OCI image serves React and `/api/v1` together. The initial owned-disc
+API verifies asymmetric issuer/audience JWTs and uses a non-owner, non-BYPASSRLS
+PostgreSQL role with transaction-local user context. It implements session ID
+mapping and owned-disc CRUD, not the complete legacy application schema.
+The existing frontend still uses Supabase on GitHub Pages. Azure staging serves
+a no-cache runtime configuration that disables real sign-in, session persistence,
+and automatic token refresh until customer identity/data migration is ready.
+This is an isolation gate, not a test-login bypass. Staging makes no production
+data writes. Real Google/Entra sign-in is not claimed by the synthetic JWT tests.
+
+### Staging sizing and cost assumption
+
+Sweden Central, PostgreSQL 16 B1ms (32 GiB, 7-day backups, no HA), ACR Basic,
+one warm 0.5-vCPU/1-GiB app replica (maximum three), finite jobs, and capped
+Log Analytics are the low-complexity staging baseline, not a production SLA.
+Azure retail consumption rates queried before workload deployment on 2026-10-23:
+PostgreSQL $0.0199/hour plus $0.1369/GiB-month, registry $0.1666/day,
+ACA active CPU $0.000024/vCPU-second and memory $0.000003/GiB-second
+(idle CPU $0.000003/vCPU-second). At 730 hours/month this is approximately
+$36 idle to $63 continuously active for one replica, before free grants,
+logs, storage, network, requests, extra replicas, taxes and currency conversion.
+This is an estimate, not a spending cap. B1ms and single-region/no-HA are
+deliberate staging choices; production sizing/recovery need separate approval.
 
 ## Local checks and test evidence
 
@@ -48,6 +81,9 @@ npx --no-install playwright install chromium
 npm run test:e2e
 az bicep install --version v0.48.1
 az bicep build --file infra\main.bicep --stdout
+az bicep build --file infra\bootstrap.bicep --stdout
+az bicep build --file infra\staging.bicep --stdout
+az bicep build --file infra\app.bicep --stdout
 ```
 
 `npm test` runs unit and browser tests; build first. Playwright serves `dist/`
@@ -59,6 +95,14 @@ behavior on desktop Chromium and a mobile Chromium viewport. It intercepts
 Supabase responses in the test browser, blocks unexpected external traffic,
 and uses synthetic users/discs. It adds no auth bypass to application code.
 It does not prove real OAuth, RLS, live backend persistence, or mobile Safari.
+
+The separate `api` job builds the real Docker image and runs `npm run test:api`
+inside it against PostgreSQL 16, including idempotent migrations, signed JWT
+validation, CRUD, cross-user denial, RLS with an omitted ownership predicate,
+and pooled-connection context isolation. It fails if PostgreSQL is unavailable.
+The Azure verification job repeats these assertions in `griplock_verify` over
+the actual private VNet before touching the `griplock` application schema.
+Never point the integration suite at production.
 
 Unit tests exercise actual disc conversion/filtering/configuration logic and
 the parsed workflow sources. Workflow mutation tests prove that removing apply,
@@ -125,8 +169,63 @@ DNS changes, or deletion operations in the initial template. Existing resource
 groups must not be adopted without verifying ownership and tags.
 
 OIDC provisioning, environment settings and Azure permissions require an
-administrator bootstrap; the workflow cannot safely authorize itself. These
-have not been configured by this implementation.
+administrator bootstrap; the workflow cannot safely authorize itself.
+
+### Verified staging bootstrap
+
+Configured with owner approval on 2026-10-23:
+
+| Setting | Value |
+|---------|-------|
+| Subscription | `70a423f9-c285-4d8b-b264-e0b3ff5f787f` |
+| Tenant | `07d87066-942e-4072-8596-36dd123efc1b` |
+| Region | `swedencentral` |
+| Workload resource group | `rg-griplock-staging` |
+| Identity resource group | `rg-griplock-pipeline-identities` |
+| Managed identity | `id-griplock-staging-github` |
+| Client ID | `ba8e7edf-b1ac-4adc-b5a4-73e40b470ce0` |
+| Principal ID | `a4bf9172-2287-4d26-a5a7-ec6bd0bc76f6` |
+| GitHub environment | `staging-infrastructure`, main branch only |
+| Enabled | `INFRA_ENABLED=true` |
+
+GitHub issued an ID-qualified subject in the actual run. The configured trust
+matches it exactly, rather than the legacy name-only example above:
+
+```text
+repo:pelsebubben@218121150/proispro@1209640240:environment:staging-infrastructure
+```
+
+The issuer and audience are unchanged. When changing repository ownership/name
+or OIDC configuration, inspect the actual emitted subject before changing trust.
+No additional branch, pull-request, or wildcard trust was created.
+
+The identity has Contributor only on `rg-griplock-staging` and the custom role
+in `infra/roles/staging-deployment.json` at subscription scope. That custom role
+allows deployment-record operations and subscription/resource-group metadata
+reads; it grants no general resource writes, data access, or RBAC changes.
+The identity is outside its writable staging group so staging Contributor
+cannot modify its own federated credential. No client secret was created.
+
+[Plan run 39930794831](https://github.com/pelsebubben/proispro/actions/runs/39930794831)
+passed GitHub OIDC login, ARM validation, and what-if; apply was skipped.
+The two groups and identity were administrator-bootstrapped. No paid workload,
+production resource, DNS record, or production environment protection was changed.
+
+The subsequent registry bootstrap creates `crgripgmfarjpxlkg2e` (Basic,
+admin credentials disabled), `id-griplock-staging-pull` (AcrPull only on that
+registry), and gives the pipeline AcrPush only on the same registry. No
+subscription-wide registry permission or RBAC-write permission is granted.
+`Microsoft.App`, `Microsoft.DBforPostgreSQL`, and `Microsoft.ContainerRegistry`
+are registered in the target subscription.
+
+Additional staging environment variables: `AZURE_REGISTRY_NAME`,
+`AZURE_REGISTRY_SERVER`, and `AZURE_PULL_IDENTITY_ID`. Two independently generated
+environment secrets, `STAGING_PG_ADMIN_PASSWORD` and `STAGING_PG_APP_PASSWORD`,
+persist database credentials between runs; no values belong in source/logs.
+App containers receive only the runtime password, while finite migration/test
+jobs receive administrator credentials. Do not regenerate the secrets on every
+release. Planned credential rotation must update database roles and revisions
+together; older revisions may require the previous runtime password.
 
 ## Native GitHub agent/operator loop
 
@@ -155,6 +254,29 @@ Review what-if for the exact SHA. When authorized, dispatch `operation=apply`
 on main. Apply repeats preflight and what-if; it is serialized with plan runs
 and is never cancelled midway by a newer run. A new commit requires reviewing
 the new plan. Ordinary main pushes never apply infrastructure.
+
+After green main CI, release the staging app and infrastructure together:
+
+```powershell
+gh workflow run staging.yml --repo pelsebubben/proispro --ref main
+gh run list --repo pelsebubben/proispro --workflow staging.yml --limit 5
+gh run watch RUN_ID --repo pelsebubben/proispro --exit-status
+```
+
+The release artifact contains source SHA, immutable ACR digest, schema version,
+Azure URL, run link, and identity limitation. Deployed desktop/mobile tests make
+real HTTPS requests without intercepting API responses. They assert schema/SHA
+readiness, anonymous API rejection, disabled login and no external data requests.
+Inspect a failed execution with `az containerapp job execution show`; identify
+its replica before using `az containerapp job logs show`. Never print environment
+secrets while debugging. Failed migrations/browser checks fail the release; the
+workflow never substitutes a success page or silently skips verification.
+
+Schema changes must be backwards-compatible expand/contract changes. No destructive
+down-migration or automatic database rollback is implemented. A failed app revision
+must be diagnosed against the previous known-good digest before an explicit
+rollback; rerunning a release preserves credentials and reruns checksum-guarded
+migrations. Production and DNS are untouched by these workflows.
 
 Production Pages publishing remains separate:
 

@@ -6,6 +6,10 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "start": "node server/index.mjs",
+    "migrate": "node server/migrate.mjs",
+    "test:api": "node --test tests/api/*.test.mjs",
+    "test:staging": "playwright test --config playwright.staging.config.ts",
     "check": "tsc --noEmit && tsc --project tsconfig.tests.json",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "node --test tests/unit/*.test.mjs",
@@ -16,6 +20,8 @@
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
     "@supabase/supabase-js": "^2.48.0",
+    "jose": "^6.1.0",
+    "pg": "^8.16.3",
     "recharts": "^2.15.0"
   },
   "devDependencies": {

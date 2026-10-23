@@ -4,5 +4,11 @@
 /tests/ @pelsebubben
 /playwright.config.ts @pelsebubben
 /tsconfig.tests.json @pelsebubben
+/playwright.staging.config.ts @pelsebubben
+/server/ @pelsebubben
+/scripts/run-staging-job.sh @pelsebubben
+/Dockerfile @pelsebubben
+/src/lib/runtime.ts @pelsebubben
+/public/runtime-config.js @pelsebubben
 /package.json @pelsebubben
 /package-lock.json @pelsebubben
