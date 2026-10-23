@@ -271,6 +271,9 @@ Inspect a failed execution with `az containerapp job execution show`; identify
 its replica before using `az containerapp job logs show`. Never print environment
 secrets while debugging. Failed migrations/browser checks fail the release; the
 workflow never substitutes a success page or silently skips verification.
+CI and staging pin the supported Ubuntu 24.04 image rather than tracking
+`ubuntu-latest` during OS migrations. Each release attempt gets a distinct
+revision suffix, including repeated releases of the same source SHA.
 
 Schema changes must be backwards-compatible expand/contract changes. No destructive
 down-migration or automatic database rollback is implemented. A failed app revision

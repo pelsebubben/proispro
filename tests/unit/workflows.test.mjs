@@ -27,6 +27,7 @@ function checkTrustBoundary(files) {
   }
   const ci = workflows['ci.yml']
   assert.deepEqual(ci.permissions, { contents: 'read' })
+  for (const job of Object.values(ci.jobs)) assert.equal(job['runs-on'], 'ubuntu-24.04')
   assert.ok(Object.hasOwn(ci.on, 'pull_request'))
   assert.equal(ci.on.pull_request, null, 'all PR changes get the same required check')
   assert.deepEqual(ci.jobs.required.needs, ['application', 'browser', 'api', 'infrastructure'])
@@ -61,12 +62,14 @@ function checkTrustBoundary(files) {
   assert.equal(staging.jobs.staging.needs, 'build')
   assert.equal(staging.jobs.staging.environment, 'staging-infrastructure')
   assert.equal(staging.jobs.staging.permissions['id-token'], 'write')
+  for (const job of Object.values(staging.jobs)) assert.equal(job['runs-on'], 'ubuntu-24.04')
   assert.match(staging.jobs.staging.steps[0].run, /test "\$ENABLED" = true/)
   const publish = staging.jobs.staging.steps.find(step => step.name === 'Publish exact image to private ACR')
   assert.match(publish.run, /griplock@%s/)
   const migrationIndex = staging.jobs.staging.steps.findIndex(step => step.name === 'Verify private database and apply schema')
   const deployIndex = staging.jobs.staging.steps.findIndex(step => step.name === 'Release immutable app revision')
   assert.ok(migrationIndex > 0 && deployIndex > migrationIndex, 'verify and migrate before releasing app')
+  assert.match(staging.jobs.staging.steps[deployIndex].run, /releaseId="\$GITHUB_RUN_ID-\$GITHUB_RUN_ATTEMPT"/)
   assert.ok(staging.jobs.staging.steps.some(step => step.run === 'npm run test:staging'))
   const deploy = workflows['deploy.yml']
   assert.deepEqual(Object.keys(deploy.on), ['workflow_dispatch'], 'production never deploys on push')
@@ -94,6 +97,7 @@ test('gates reject real workflow mutations that grant PR OIDC or remove apply pr
     ['ci.yml', 'test "$API" = success', 'echo api-skipped'],
     ['staging.yml', '.conclusion == "success"', '.conclusion != "success"'],
     ['staging.yml', 'test "$ENABLED" = true', 'echo enabled'],
+    ['staging.yml', 'releaseId="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"', 'releaseId="constant"'],
     ['deploy.yml', 'if [ "$protected" != true ]', 'if [ false = true ]'],
   ]) {
     assert.ok(sources[file].includes(before), `${file}: mutation must affect actual source`)

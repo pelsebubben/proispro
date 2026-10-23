@@ -5,6 +5,7 @@ param image string
 param registryServer string
 param pullIdentityId string
 param sourceSha string
+param releaseId string
 @secure()
 param postgresAppPassword string
 
@@ -28,7 +29,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
       secrets: [{ name: 'pg-app', value: postgresAppPassword }]
     }
     template: {
-      revisionSuffix: 'r-${take(sourceSha, 12)}'
+      revisionSuffix: 'r-${take(sourceSha, 12)}-${releaseId}'
       scale: { minReplicas: 1, maxReplicas: 3 }
       containers: [{
         name: 'app'
