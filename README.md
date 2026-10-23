@@ -88,11 +88,9 @@ wishlist items, sale listings/tokens, course pins and hole assignments. Version 
 adds a free-text `edition` to `owned_discs` and a private `disc_photos` table. The
 API normalizes an uploaded photo to a metadata-free JPEG of at most 1024px and
 256 KiB, stores it in PostgreSQL, and serves it only to the signed-in owner through
-`GET /api/v1/discs/:id/photo`. Runtime
-roles never own tables or bypass RLS. Child relationships use owner-scoped
+`GET /api/v1/discs/:id/photo`. Deleting a disc also deletes its photo.
+Runtime roles never own tables or bypass RLS. Child relationships use owner-scoped
 foreign keys; bag membership/history updates are transactional.
-Version 3 adds edition names and private, owner-scoped disc photos. Deleting a
-disc also deletes its photo.
 
 This deployment starts with a fresh Azure dataset. No old records, identities
 or objects are imported. The retired provider's remote resources remain
