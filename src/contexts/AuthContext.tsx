@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { runtime } from '../lib/runtime'
+import { clearPhotoCache } from '../lib/data'
 
 interface AppUser { id: string; email?: string }
 
@@ -72,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       if (runtime.devAuth) (await import('../lib/devAuth')).devSignOut()
       else await (await import('../lib/entra')).entraSignOut()
+      clearPhotoCache()
       setUser(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign-out failed')

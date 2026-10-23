@@ -26,12 +26,26 @@ dismiss the list. [Catalogue sources and refresh instructions](docs/disc-catalog
 describe the bundled data and its deliberately limited special-edition coverage.
 
 The Type selector and inventory filters include Utility. A personal JPEG, PNG
-or WebP photo can be added, replaced or removed in Add/Edit Disc. Files up to
-10 MB are resized in the browser before upload. The server validates and
-re-encodes them to metadata-free JPEGs, at most 1024 pixels and 256 KiB.
+or WebP photo can be added, replaced or removed in Add/Edit Disc. Choosing a
+file opens a square crop step: drag to move, zoom with the slider, mouse wheel,
+pinch or arrow keys, then Use photo. Adjust crop reopens it later. Files up to
+10 MB are cropped and resized in the browser before upload. The server validates
+and re-encodes them to metadata-free JPEGs, at most 1024 pixels and 256 KiB.
 Photos are private to their owner and stored in PostgreSQL, not a new cloud
 service. Cancelling the form does not upload or save changes. Metadata and
 photos save together; inventory responses contain photo references, not images.
+
+## Inventory views
+
+The Cards/List toggle is remembered on each device. Cards is the default and
+shows a small photo in the top-right corner of every disc. List is a compact,
+Moxfield-style view grouped by type (Putter, Midrange, Fairway Driver, Distance
+Driver, Utility, No type), each with its number of inventory entries and sorted
+by name unless you pick another sort. Hovering, focusing or tapping a row shows
+that disc's own photo in the preview beside the list (above it on phones); the
+pencil button opens Edit Disc.
+Discs without a photo show a generated stock illustration, not a manufacturer
+photograph. [Catalogue sources](docs/disc-catalog.md) explains why.
 
 ## Local development
 

@@ -583,6 +583,15 @@ test('a schema-2 database upgrades to the current schema and keeps its discs', a
   const admin = createPool()
   const scratch = `griplock_upgrade_${randomBytes(6).toString('hex')}`
   const pools = []
+  // pool.end() resolves before the server has closed its backends, so DROP DATABASE ... WITH (FORCE)
+  // can still terminate one. Without a listener that late "terminating connection" notice
+  // surfaces as an uncaught exception in whichever test is running.
+  const scratchPool = options => {
+    const pool = createPool(options)
+    pool.on('error', () => {})
+    pools.push(pool)
+    return pool
+  }
   t.after(async () => {
     const failures = []
     for (const pool of pools.toReversed()) {
@@ -599,8 +608,7 @@ test('a schema-2 database upgrades to the current schema and keeps its discs', a
     t.skip('the database role may not create the scratch database this upgrade test needs')
     return
   }
-  const legacy = createPool({ ...process.env, PGDATABASE: scratch })
-  pools.push(legacy)
+  const legacy = scratchPool({ ...process.env, PGDATABASE: scratch })
   await legacy.query(`CREATE TABLE schema_migrations (
     version integer PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`)
   for (const [index, file] of ['001_initial.sql', '002_features.sql'].entries()) {
@@ -631,8 +639,7 @@ test('a schema-2 database upgrades to the current schema and keeps its discs', a
   const flags = await legacy.query("SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid = 'public.disc_photos'::regclass")
   assert.deepEqual(flags.rows, [{ relrowsecurity: true, relforcerowsecurity: true }])
 
-  const runtime = createPool({ ...process.env, PGDATABASE: scratch, PGUSER: 'griplock_app', PGPASSWORD: password })
-  pools.push(runtime)
+  const runtime = scratchPool({ ...process.env, PGDATABASE: scratch, PGUSER: 'griplock_app', PGPASSWORD: password })
   const image = Buffer.from('upgraded photo')
   await asUser(runtime, userId, client => client.query(
     'INSERT INTO disc_photos (disc_id, user_id, image) VALUES ($1, $2, $3)', [discId, userId, image]))

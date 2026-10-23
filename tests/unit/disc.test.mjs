@@ -8,7 +8,7 @@ const source = await readFile(new URL('../../src/utils/disc.ts', import.meta.url
 const { outputText } = ts.transpileModule(source, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
 })
-const { fromDbDisc, toDbDisc, filterAndSort, getBagsForDisc } =
+const { fromDbDisc, toDbDisc, filterAndSort, getBagsForDisc, groupByType } =
   await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`)
 
 const filters = {
@@ -71,4 +71,30 @@ test('private photo references use versioned URLs, never image bytes in disc fie
   assert.equal(disc.photo_url, `/api/v1/discs/${row.id}/photo?v=${row.photo_version}`)
   assert.equal(toDbDisc(disc).user_photo_url, null)
   assert.equal(fromDbDisc({ ...row, photo_version: null }).photo_url, null)
+})
+
+test('the list groups discs from putter up to utility, then those without a type, keeping each group in incoming order', () => {
+  const putter = fromDbDisc({ id: 'putter', name: 'Aviar', disc_type: 'putter', quantity: 3 })
+  const fairway = fromDbDisc({ id: 'fairway', name: 'Leopard', disc_type: 'fairway' })
+  const utility = fromDbDisc({ id: 'utility', name: 'Origin', disc_type: 'utility' })
+  const untyped = fromDbDisc({ id: 'untyped', name: 'Mystery' })
+  const unknown = fromDbDisc({ id: 'unknown', name: 'Odd', disc_type: 'frisbee' })
+  const second = { ...buz, id: 'second-mid', name: 'Zone' }
+  const incoming = [untyped, destroyer, utility, buz, unknown, fairway, putter, second]
+  const groups = groupByType(incoming)
+  assert.deepEqual(groups.map(group => [group.type, group.label, group.discs.map(disc => disc.id)]), [
+    ['putter', 'Putter', ['putter']],
+    ['midrange', 'Midrange', ['buz', 'second-mid']],
+    ['fairway', 'Fairway Driver', ['fairway']],
+    ['distance', 'Distance Driver', ['destroyer']],
+    ['utility', 'Utility', ['utility']],
+    ['', 'No type', ['untyped', 'unknown']],
+  ])
+  assert.equal(groups.flatMap(group => group.discs).length, incoming.length, 'no disc is dropped or repeated')
+  assert.deepEqual(incoming.map(disc => disc.id), ['untyped', 'destroyer', 'utility', 'buz', 'unknown', 'fairway', 'putter', 'second-mid'])
+})
+
+test('empty type groups are left out and no discs means no groups', () => {
+  assert.deepEqual(groupByType([]), [])
+  assert.deepEqual(groupByType([destroyer]).map(group => group.type), ['distance'])
 })

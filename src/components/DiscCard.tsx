@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { DiscPhoto } from './DiscPhoto'
+import { DiscImage } from './DiscImage'
 import {
   ClientDisc,
   ClientBag,
@@ -39,11 +39,6 @@ export function DiscCard({
   const [showBagMenu, setShowBagMenu] = useState(false)
   const discBags = getBagsForDisc(disc.id, bags)
 
-  // Avatar: photo or colored circle
-  const avatarBg = disc.color
-    ? `var(--disc-${colorSlug(disc.color)})`
-    : `var(--${disc.type || 'putter'})`
-
   return (
     <div
       style={{
@@ -56,30 +51,8 @@ export function DiscCard({
         gap: '0.75rem',
       }}
     >
-      {disc.photo_url && <div className="disc-card-photo"><DiscPhoto src={disc.photo_url} name={disc.name} /></div>}
-      {/* Header: avatar + name + badge */}
+      {/* Header: name + badge, photo (or stock art) in the top-right corner */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-        {/* Avatar */}
-        {!disc.photo_url && <div
-          style={{
-            width: '48px',
-            height: '48px',
-            borderRadius: '50%',
-            flexShrink: 0,
-            background: avatarBg,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#fff',
-            fontWeight: 700,
-            fontSize: '1.25rem',
-          }}
-        >
-          {disc.name.charAt(0).toUpperCase()}
-        </div>}
-
         {/* Name + manufacturer */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--clr-text)' }}>
@@ -109,6 +82,7 @@ export function DiscCard({
             </span>
           )}
         </div>
+        <div className="disc-thumb"><DiscImage disc={disc} photo={disc.photo_url} /></div>
       </div>
 
       {/* Details row: weight, plastic, color dot, condition */}

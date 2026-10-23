@@ -26,5 +26,5 @@ export function DiscPhoto({ src, name }: { src: string; name: string }) {
   </button>
   const url = privatePhoto ? image?.src === src ? image.url : null : src
   return url ? <img className="disc-photo" src={url} alt={`${name} personal photo`}
-    onError={() => setError('Photo could not be displayed.')} /> : <span role="status">Loading photo...</span>
+    onError={() => setError('Photo could not be displayed.')} /> : <span role="status" className="disc-photo-loading">Loading photo...</span>
 }

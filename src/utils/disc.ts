@@ -371,3 +371,19 @@ export function filterAndSort(
     }))
     .sort((a, b) => a.label.localeCompare(b.label))
 }
+
+export interface TypeGroup {
+  type: string // a DISC_TYPES value, or '' for discs without a recognised type
+  label: string
+  discs: ClientDisc[]
+}
+
+// Putters first, then up the bag; each group keeps the order the discs came in.
+export function groupByType(discs: ClientDisc[]): TypeGroup[] {
+  const groups: TypeGroup[] = [...DISC_TYPES, { value: '', label: 'No type' }]
+    .map(({ value, label }) => ({ type: value, label, discs: [] }))
+  for (const disc of discs) {
+    (groups.find(group => group.type === disc.type) ?? groups[groups.length - 1]).discs.push(disc)
+  }
+  return groups.filter(group => group.discs.length > 0)
+}

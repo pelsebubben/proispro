@@ -17,6 +17,13 @@ are explicit, not an additional scheduled pipeline. The source is
 Marshall Street flight guide. No third-party photographs or descriptions are
 bundled. The snapshot was retrieved on 2026-10-23.
 
+The stock picture shown for a disc without a personal photo is a generated
+illustration (`src/components/DiscArt.tsx`), tinted with the disc's colour (or its
+type colour) and labelled with the mold name. It is not a photograph of that
+mold. Showing real manufacturer photos would need a source whose licence allows
+redistribution, and the end-to-end tests assert that Inventory makes no requests
+to outside origins.
+
 Edition coverage is deliberately curated, not a claim to list every release.
 Players can enter any missing edition themselves. Origin's Midnight Prowl
 editions are sourced from Discmania's
