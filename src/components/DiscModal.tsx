@@ -77,6 +77,7 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
   const photoInput = useRef<HTMLInputElement>(null)
   const dialog = useRef<HTMLDivElement>(null)
   const opener = useRef<HTMLElement | null>(null)
+  const photoButton = useRef<HTMLButtonElement>(null)
   const original = useRef<{ blob: Blob; crop: CropState } | null>(null)
   const photoRequest = useRef<AbortController | null>(null)
   const wasCropping = useRef(false)
@@ -96,7 +97,9 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
       dialog.current?.scrollTo({ top: 0 })
     } else if (wasCropping.current) {
       wasCropping.current = false
-      opener.current?.focus()
+      // A file picked straight from the hidden input (assistive tech) has no button opener to return to.
+      const target = opener.current?.isConnected ? opener.current : photoButton.current
+      target?.focus()
     }
   }, [cropping])
 
@@ -259,7 +262,7 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
               {disc ? 'Edit Disc' : 'Add Disc'}
             </h2>
             <div className="disc-photo-actions">
-              <button type="button" className="btn btn-secondary btn-sm" disabled={busy}
+              <button ref={photoButton} type="button" className="btn btn-secondary btn-sm" disabled={busy}
                 onClick={event => { opener.current = event.currentTarget; photoInput.current?.click() }}>
                 {preview ? 'Change photo' : 'Add photo'}
               </button>

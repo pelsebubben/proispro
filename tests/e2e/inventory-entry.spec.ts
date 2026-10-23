@@ -298,7 +298,8 @@ test('Escape, Reset and Cancel leave the crop step without closing the form or k
   await expect(stage).toBeFocused()
   await page.keyboard.press('Escape')
   await expect(dialog.getByRole('heading', { name: 'Add Disc' })).toBeVisible()
-  await expect(dialog.getByRole('button', { name: 'Add photo', exact: true })).toBeVisible()
+  // The file came straight from the hidden input, so focus falls back to the photo button instead of the page body.
+  await expect(dialog.getByRole('button', { name: 'Add photo', exact: true })).toBeFocused()
   await choosePhoto(page, photo)
   const framing = await picture.getAttribute('style')
   await page.keyboard.press('+')
@@ -310,6 +311,6 @@ test('Escape, Reset and Cancel leave the crop step without closing the form or k
   await expect(picture).toHaveAttribute('style', framing!)
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
   await expect(dialog.getByRole('heading', { name: 'Add Disc' })).toBeVisible()
-  await expect(dialog.getByRole('button', { name: 'Add photo', exact: true })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Add photo', exact: true })).toBeFocused()
   expect(writes).toEqual([])
 })
