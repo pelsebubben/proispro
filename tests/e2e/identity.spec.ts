@@ -5,7 +5,7 @@ const clientId = '22222222-2222-4222-8222-222222222222'
 const scope = 'api://33333333-3333-4333-8333-333333333333/access_as_user'
 const base = 'http://127.0.0.1:4173'
 
-test('External ID uses the Microsoft SDK authorization-code flow with PKCE, not Supabase', async ({ page }) => {
+test('External ID uses the Microsoft SDK authorization-code flow with PKCE', async ({ page }) => {
   const unexpected: string[] = []
   let authorization: URL | undefined
   await page.route('**/*', async route => {
@@ -64,10 +64,10 @@ test('External ID uses the Microsoft SDK authorization-code flow with PKCE, not 
   expect(unexpected).toEqual([])
 })
 
-test('live environment never reads an existing Supabase session when identity is disabled', async ({ page }) => {
+test('live environment never trusts stale browser storage when identity is disabled', async ({ page }) => {
   const external: string[] = []
   await page.addInitScript(() => {
-    localStorage.setItem('sb-odqhusmmqgipvazusrxs-auth-token', JSON.stringify({
+    localStorage.setItem('retired-auth-token', JSON.stringify({
       access_token: 'synthetic-stale-token', refresh_token: 'synthetic-stale-refresh',
       expires_at: 1, user: { id: 'synthetic-user' },
     }))
@@ -85,7 +85,7 @@ test('live environment never reads an existing Supabase session when identity is
     return route.continue()
   })
   await page.goto('/')
-  await expect(page.getByRole('status')).toContainText('Supabase data is not connected')
-  await expect(page.getByRole('button', { name: /Sign in with Google/ })).toBeDisabled()
+  await expect(page.getByRole('status')).toContainText('Customer sign-in is not configured')
+  await expect(page.getByRole('button', { name: 'Sign in to Griplock' })).toBeDisabled()
   expect(external).toEqual([])
 })

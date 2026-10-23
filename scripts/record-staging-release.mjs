@@ -1,4 +1,5 @@
 import { appendFileSync, writeFileSync } from 'node:fs'
+import { schemaVersion } from '../server/migrate.mjs'
 
 const { SOURCE_SHA, IMAGE, STAGING_URL, GITHUB_SERVER_URL, GITHUB_REPOSITORY,
   GITHUB_RUN_ID, GITHUB_STEP_SUMMARY, IDENTITY_READY } = process.env
@@ -11,7 +12,7 @@ if (!GITHUB_SERVER_URL || !GITHUB_REPOSITORY || !GITHUB_RUN_ID || !GITHUB_STEP_S
 }
 const release = { sourceSha: SOURCE_SHA, image: IMAGE, url: STAGING_URL,
   run: `${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}`,
-  schemaVersion: 1, environment: 'live', identityReady: IDENTITY_READY === 'true' }
+  schemaVersion, environment: 'live', identityReady: IDENTITY_READY === 'true' }
 writeFileSync('staging-release.json', JSON.stringify(release, null, 2) + '\n')
 appendFileSync(GITHUB_STEP_SUMMARY,
   `### Verified live release\n\nSHA: ${SOURCE_SHA}\n\nImage: ${IMAGE}\n\nURL: ${STAGING_URL}\n\nCustomer identity configured: ${IDENTITY_READY}. Real provider sign-in requires separate verification.\n`)

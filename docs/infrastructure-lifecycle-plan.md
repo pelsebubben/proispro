@@ -1,5 +1,10 @@
 # Griplock infrastructure and application lifecycle plan
 
+> Historical proposal. Current implementation and owner scope supersede the
+> migration/copy phases below: one dev and one production app, plain Node API,
+> native PostgreSQL schema, fresh data and no legacy provider SDK or imports.
+> See README.md and the delivery runbook for active setup.
+
 Status: Architecture proposal, 2026-10-23. Confirmed constraints are distinguished
 from recommendations. Initial GitHub pipeline definitions and a staging
 resource-group template are now implemented; see

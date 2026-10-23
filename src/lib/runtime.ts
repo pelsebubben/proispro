@@ -13,4 +13,4 @@ declare global {
   }
 }
 
-export const runtime: RuntimeConfiguration = window.__GRIPLOCK_RUNTIME__ ?? { environment: 'legacy', identityReady: true }
+export const runtime: RuntimeConfiguration = window.__GRIPLOCK_RUNTIME__ ?? { environment: 'unconfigured', dataBackend: 'api', identityReady: false }

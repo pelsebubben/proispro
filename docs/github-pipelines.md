@@ -101,15 +101,15 @@ releases the app only after database verification/migration. No Kubernetes is
 required. Customer identity, PR-isolated previews, object upload access, restore
 rehearsals and same-image production promotion remain unfinished.
 
-The Node 22 OCI image serves React and `/api/v1` together. The initial owned-disc
-API verifies asymmetric issuer/audience JWTs and uses a non-owner, non-BYPASSRLS
-PostgreSQL role with transaction-local user context. It implements session ID
-mapping and owned-disc CRUD, not the complete legacy application schema.
-The existing frontend still uses Supabase on GitHub Pages. Azure staging serves
-a no-cache runtime configuration that disables real sign-in, session persistence,
-and automatic token refresh until customer identity/data migration is ready.
-This is an isolation gate, not a test-login bypass. Staging makes no production
-data writes. Real Google/Entra sign-in is not claimed by the synthetic JWT tests.
+The Node 22 OCI image serves React and `/api/v1` together. The API verifies
+asymmetric issuer/audience JWTs and uses a non-owner, non-BYPASSRLS PostgreSQL role
+with transaction-local user context. Schema version 2 supports the complete
+inventory, bags/history, collections, wishlist, sale, course pin and hole
+assignment data layer. All frontend data hooks use the API. Public sale links
+require an exact enabled token and disclose available listing snapshots only.
+The owner approved a fresh dataset, with no legacy data import. Customer sign-in
+remains disabled until Entra is configured; the dev app has its own passcode login.
+Real Google/Entra sign-in is not claimed by synthetic JWT tests.
 
 ### Staging sizing and cost assumption
 
@@ -153,7 +153,7 @@ testing an unrelated server.
 
 The browser suite covers signed-out login options and collection load/filter
 behavior on desktop Chromium and a mobile Chromium viewport. It intercepts
-Supabase responses in the test browser, blocks unexpected external traffic,
+API responses in the test browser, blocks unexpected external traffic,
 and uses synthetic users/discs. It adds no auth bypass to application code.
 It does not prove real OAuth, RLS, live backend persistence, or mobile Safari.
 

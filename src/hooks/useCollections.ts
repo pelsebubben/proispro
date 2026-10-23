@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
+import { createRow, deleteRows, listRows, updateRow } from '../lib/data'
 import { useAuth } from '../contexts/AuthContext'
 import { ClientDisc } from '../utils/disc'
 
@@ -21,10 +21,7 @@ export function useCollections() {
 
   const loadCollections = useCallback(async () => {
     if (!user) return
-    const { data: colData } = await supabase
-      .from('collections')
-      .select('*')
-      .order('created_at', { ascending: false })
+    const colData = await listRows<ClientCollection>('collections')
     setCollections(
       (colData || []).map(c => ({
         id: c.id,
@@ -33,7 +30,7 @@ export function useCollections() {
       }))
     )
 
-    const { data: cdData } = await supabase.from('collection_discs').select('collection_id, disc_id')
+    const cdData = await listRows<CollectionDisc>('collection_discs')
     setCollectionDiscs(
       (cdData || []).map(cd => ({
         collection_id: cd.collection_id,
@@ -43,23 +40,22 @@ export function useCollections() {
   }, [user])
 
   useEffect(() => {
-    loadCollections()
+    void loadCollections().catch(console.error)
   }, [loadCollections])
 
   const createCollection = async (name: string, description: string) => {
     if (!user) return
-    await supabase.from('collections').insert({ name, description })
+    await createRow('collections', { name, description })
     await loadCollections()
   }
 
   const updateCollection = async (id: string, name: string, description: string) => {
-    await supabase.from('collections').update({ name, description }).eq('id', id)
+    await updateRow('collections', id, { name, description })
     await loadCollections()
   }
 
   const deleteCollection = async (id: string) => {
-    await supabase.from('collection_discs').delete().eq('collection_id', id)
-    await supabase.from('collections').delete().eq('id', id)
+    await deleteRows('collections', id)
     await loadCollections()
   }
 
@@ -68,13 +64,9 @@ export function useCollections() {
       cd => cd.collection_id === collectionId && cd.disc_id === discId
     )
     if (existing) {
-      await supabase
-        .from('collection_discs')
-        .delete()
-        .eq('collection_id', collectionId)
-        .eq('disc_id', discId)
+      await deleteRows('collection_discs', { collection_id: collectionId, disc_id: discId })
     } else {
-      await supabase.from('collection_discs').insert({ collection_id: collectionId, disc_id: discId })
+      await createRow('collection_discs', { collection_id: collectionId, disc_id: discId })
     }
     await loadCollections()
   }

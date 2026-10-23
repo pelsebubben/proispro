@@ -1,12 +1,11 @@
 {
-  "name": "proispro – Static Site Dev",
+  "name": "Griplock development",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
 
-  // Forward Live Server port so the preview auto-opens in the browser
-  "forwardPorts": [5500],
+  "forwardPorts": [5173, 8080],
   "portsAttributes": {
-    "5500": {
-      "label": "Live Server",
+    "5173": {
+      "label": "Vite",
       "onAutoForward": "openPreview"
     }
   },
@@ -14,20 +13,15 @@
   "customizations": {
     "vscode": {
       "extensions": [
-        "ritwickdey.LiveServer",
         "esbenp.prettier-vscode",
-        "Supabase.supabase-vscode",
         "GitHub.vscode-pull-request-github"
       ],
       "settings": {
-        "liveServer.settings.port": 5500,
-        "liveServer.settings.donotShowInfoMsg": true,
         "editor.formatOnSave": true,
         "editor.defaultFormatter": "esbenp.prettier-vscode"
       }
     }
   }
 
-  // No postCreateCommand — this is a zero-build-step static site.
-  // Open index.html then click "Go Live" in the status bar to start Live Server.
+  // See docs/customer-login.md for the local PostgreSQL and API setup.
 }
