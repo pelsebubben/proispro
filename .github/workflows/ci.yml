@@ -44,6 +44,8 @@ jobs:
     name: Browser E2E
     needs: application
     runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -58,7 +60,6 @@ jobs:
         with:
           name: web-dist-${{ github.sha }}
           path: dist/
-      - run: npx --no-install playwright install --with-deps chromium
       - run: npm run test:e2e
       - name: Preserve synthetic test evidence
         if: ${{ !cancelled() }}

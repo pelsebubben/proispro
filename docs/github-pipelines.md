@@ -274,6 +274,10 @@ workflow never substitutes a success page or silently skips verification.
 CI and staging pin the supported Ubuntu 24.04 image rather than tracking
 `ubuntu-latest` during OS migrations. Each release attempt gets a distinct
 revision suffix, including repeated releases of the same source SHA.
+Browser jobs use the digest-pinned official Playwright image matching the
+lockfile, avoiding repeated slow OS/browser downloads. The deployed-browser job
+has no OIDC permission or environment secrets; deployment passes only the public
+URL and immutable digest to it. Update the image and package lock together.
 
 Schema changes must be backwards-compatible expand/contract changes. No destructive
 down-migration or automatic database rollback is implemented. A failed app revision
