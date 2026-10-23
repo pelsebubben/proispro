@@ -32,7 +32,7 @@ test('dev identity refuses every non-local configuration', () => {
 test('shipped image and deployment cannot enable dev identity', async () => {
   const read = path => readFile(new URL(`../../${path}`, import.meta.url), 'utf8')
   assert.match(await read('Dockerfile'), /^ENV NODE_ENV=production\b/m)
-  for (const path of ['infra/app.bicep', 'infra/staging.bicep', '.github/workflows/staging.yml', 'Dockerfile']) {
+  for (const path of ['infra/app.bicep', 'infra/staging.bicep', '.github/workflows/staging.yml', '.github/workflows/dev.yml', 'Dockerfile']) {
     assert.doesNotMatch(await read(path), /GRIPLOCK_DEV_AUTH|dev-server/, path)
   }
   const previous = process.env.NODE_ENV
