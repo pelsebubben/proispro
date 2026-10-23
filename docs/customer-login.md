@@ -66,8 +66,8 @@ Continue the previously agreed Entra External ID customer-tenant approach:
 5. Obtain issuer and JWKS URL from that tenant's OpenID discovery document.
    Do not guess them or use Microsoft Graph access tokens as app API tokens.
 
-Configure these nonsecret variables in the current GitHub release environment
-`staging-infrastructure`; the name is a deployment boundary, not another app:
+Configure these nonsecret variables in the GitHub environment `prod`. The live
+release passes the same values to the dev app:
 
 | Variable | Value |
 |----------|-------|

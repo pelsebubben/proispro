@@ -22,7 +22,7 @@ jobs:
     name: Plan or apply staging
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: staging-infrastructure
+    environment: prod
     permissions:
       contents: read
       id-token: write
