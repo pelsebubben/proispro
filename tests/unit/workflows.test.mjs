@@ -7,6 +7,8 @@ const names = ['ci.yml', 'infra.yml', 'staging.yml', 'deploy.yml', 'squad-ci.yml
 const sources = Object.fromEntries(await Promise.all(names.map(async name => [
   name, await readFile(new URL(`../../.github/workflows/${name}`, import.meta.url), 'utf8'),
 ])))
+const lock = JSON.parse(await readFile(new URL('../../package-lock.json', import.meta.url), 'utf8'))
+const playwrightVersion = lock.packages['node_modules/@playwright/test'].version
 
 function checkTrustBoundary(files) {
   const workflows = Object.fromEntries(Object.entries(files).map(([name, text]) => [name, parse(text)]))
@@ -27,6 +29,11 @@ function checkTrustBoundary(files) {
   }
   const ci = workflows['ci.yml']
   assert.deepEqual(ci.permissions, { contents: 'read' })
+  for (const browser of [ci.jobs.browser, workflows['staging.yml'].jobs.browser]) {
+    assert.match(browser.container.image, new RegExp(`^mcr.microsoft.com/playwright:v${playwrightVersion.replaceAll('.', '\\.')}-noble@sha256:[a-f0-9]{64}$`))
+    assert.equal(browser.permissions?.['id-token'], undefined, 'browser gets no cloud identity')
+    assert.equal(browser.environment, undefined, 'browser gets no environment secrets')
+  }
   for (const job of Object.values(ci.jobs)) assert.equal(job['runs-on'], 'ubuntu-24.04')
   assert.ok(Object.hasOwn(ci.on, 'pull_request'))
   assert.equal(ci.on.pull_request, null, 'all PR changes get the same required check')
@@ -70,7 +77,8 @@ function checkTrustBoundary(files) {
   const deployIndex = staging.jobs.staging.steps.findIndex(step => step.name === 'Release immutable app revision')
   assert.ok(migrationIndex > 0 && deployIndex > migrationIndex, 'verify and migrate before releasing app')
   assert.match(staging.jobs.staging.steps[deployIndex].run, /releaseId="\$GITHUB_RUN_ID-\$GITHUB_RUN_ATTEMPT"/)
-  assert.ok(staging.jobs.staging.steps.some(step => step.run === 'npm run test:staging'))
+  assert.equal(staging.jobs.browser.needs, 'staging')
+  assert.ok(staging.jobs.browser.steps.some(step => step.run === 'npm run test:staging'))
   const deploy = workflows['deploy.yml']
   assert.deepEqual(Object.keys(deploy.on), ['workflow_dispatch'], 'production never deploys on push')
   assert.equal(deploy.jobs.deploy.needs, 'checks')
@@ -98,6 +106,7 @@ test('gates reject real workflow mutations that grant PR OIDC or remove apply pr
     ['staging.yml', '.conclusion == "success"', '.conclusion != "success"'],
     ['staging.yml', 'test "$ENABLED" = true', 'echo enabled'],
     ['staging.yml', 'releaseId="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"', 'releaseId="constant"'],
+    ['ci.yml', 'playwright:v1.60.0-noble', 'playwright:v1.59.0-noble'],
     ['deploy.yml', 'if [ "$protected" != true ]', 'if [ false = true ]'],
   ]) {
     assert.ok(sources[file].includes(before), `${file}: mutation must affect actual source`)

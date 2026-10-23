@@ -42,11 +42,14 @@ jobs:
           retention-days: 1
 
   staging:
-    name: Deploy and verify staging
+    name: Deploy and verify private database
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     environment: staging-infrastructure
+    outputs:
+      url: ${{ steps.release.outputs.url }}
+      image: ${{ steps.release.outputs.image }}
     permissions:
       contents: read
       id-token: write
@@ -116,6 +119,7 @@ jobs:
           bash scripts/run-staging-job.sh job-griplock-verify
           bash scripts/run-staging-job.sh job-griplock-migrate
       - name: Release immutable app revision
+        id: release
         run: |
           set -euo pipefail
           environment_id=$(az deployment group show -g "$RESOURCE_GROUP" -n "core-$GITHUB_RUN_ID" \
@@ -129,7 +133,7 @@ jobs:
               sourceSha="$SOURCE_SHA" releaseId="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" postgresAppPassword="$PG_APP"
           url=$(az deployment group show -g "$RESOURCE_GROUP" -n "app-$GITHUB_RUN_ID" \
             --query properties.outputs.url.value -o tsv)
-          printf 'STAGING_URL=%s\n' "$url" >> "$GITHUB_ENV"
+          printf 'url=%s\nimage=%s\n' "$url" "$IMAGE" >> "$GITHUB_OUTPUT"
           for ((attempt=0; attempt<30; attempt++)); do
             if curl --fail --silent --max-time 15 "$url/health/ready" \
               | jq -e --arg sha "$SOURCE_SHA" '.status == "ready" and .sourceSha == $sha and .schemaVersion == 1'; then
@@ -139,12 +143,26 @@ jobs:
           done
           echo "::error::Staging did not serve the expected release and schema"
           exit 1
+
+  browser:
+    name: Verify deployed desktop and mobile
+    needs: staging
+    runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948
+    timeout-minutes: 15
+    env:
+      STAGING_URL: ${{ needs.staging.outputs.url }}
+      IMAGE: ${{ needs.staging.outputs.image }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npx --no-install playwright install --with-deps chromium
       - run: npm run test:staging
       - name: Record verified release
         run: |
