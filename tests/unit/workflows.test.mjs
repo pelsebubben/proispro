@@ -79,6 +79,10 @@ function checkTrustBoundary(files) {
   assert.match(staging.jobs.staging.steps[deployIndex].run, /releaseId="\$GITHUB_RUN_ID-\$GITHUB_RUN_ATTEMPT"/)
   assert.equal(staging.jobs.browser.needs, 'staging')
   assert.ok(staging.jobs.browser.steps.some(step => step.run === 'npm run test:staging'))
+  const recording = staging.jobs.browser.steps.findIndex(step => step.name === 'Record verified release')
+  const verification = staging.jobs.browser.steps.findIndex(step => step.run === 'npm run test:staging')
+  assert.ok(recording > verification && verification >= 0, 'record only after deployed tests pass')
+  assert.equal(staging.jobs.browser.steps[recording].run, 'node scripts/record-staging-release.mjs')
   const deploy = workflows['deploy.yml']
   assert.deepEqual(Object.keys(deploy.on), ['workflow_dispatch'], 'production never deploys on push')
   assert.equal(deploy.jobs.deploy.needs, 'checks')
@@ -107,6 +111,7 @@ test('gates reject real workflow mutations that grant PR OIDC or remove apply pr
     ['staging.yml', 'test "$ENABLED" = true', 'echo enabled'],
     ['staging.yml', 'releaseId="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"', 'releaseId="constant"'],
     ['ci.yml', 'playwright:v1.60.0-noble', 'playwright:v1.59.0-noble'],
+    ['staging.yml', 'run: node scripts/record-staging-release.mjs', 'run: echo release-skipped'],
     ['deploy.yml', 'if [ "$protected" != true ]', 'if [ false = true ]'],
   ]) {
     assert.ok(sources[file].includes(before), `${file}: mutation must affect actual source`)

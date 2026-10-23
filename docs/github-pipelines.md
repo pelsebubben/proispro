@@ -3,18 +3,28 @@
 ## Current deployment state
 
 Main CI passes, including the OCI image against real PostgreSQL and desktop/
-mobile browser tests. Staging delivery code is merged through PRs #79–#82.
-**Azure application deployment is blocked on PostgreSQL regional capacity**;
-there is no verified public staging app URL yet.
+mobile browser tests. Staging delivery code is merged through PRs #79–#83.
+The third release deployed the application/database and passed real deployed
+desktop/mobile checks, but failed the final manifest-recording step because the
+browser container has no `jq`. The recorder now uses the already installed Node
+runtime; a fully green repeat release is still required.
+
+Staging URL:
+<https://app-griplock-staging.delightfulisland-939e03e4.swedencentral.azurecontainerapps.io>
 
 - [First release, B1ms](https://github.com/pelsebubben/proispro/actions/runs/39935671862):
   OIDC, private ACR image publication, ARM preflight and foundation provisioning
   succeeded; PostgreSQL returned `RegionalAllocationFailed`.
 - [Second release, B2s](https://github.com/pelsebubben/proispro/actions/runs/39937100609):
   the next-smallest supported SKU returned the same regional capacity error.
-- Registry, pull identity, VNet/private DNS, Container Apps environment, locked
-  storage and logging exist in Sweden Central. No PostgreSQL server or app
-  revision was created; migration and deployed-browser gates correctly did not run.
+- [Third release, General Purpose D2ads v5](https://github.com/pelsebubben/proispro/actions/runs/39938478315):
+  PostgreSQL allocated in zone 2. Private API/RLS/JWT/CRUD verification and the
+  application migration succeeded. The app became healthy at source SHA
+  `d386ecd84453fb7f24068f58ba66ce4d9920f829`; both deployed browser cases passed.
+  Only recording the manifest failed.
+- Registry, pull identity, VNet/private DNS, Container Apps environment, private
+  PostgreSQL, finite jobs, app revision, locked storage and logging now exist in
+  Sweden Central.
 - With the owner unavailable and autonomous recovery delegated, the next bounded
   attempt uses General Purpose D2ads v5 (2 vCPU/8 GiB) in the same region.
   There is no automatic escalation beyond that size or region fallback.
