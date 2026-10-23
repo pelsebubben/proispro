@@ -3,11 +3,17 @@
 ## Current deployment state
 
 Main CI passes, including the OCI image against real PostgreSQL and desktop/
-mobile browser tests. Staging delivery code is merged through PRs #79–#83.
-The third release deployed the application/database and passed real deployed
-desktop/mobile checks, but failed the final manifest-recording step because the
-browser container has no `jq`. The recorder now uses the already installed Node
-runtime; a fully green repeat release is still required.
+mobile browser tests. Staging delivery code is merged through PRs #79–#84.
+**The complete staging release is green**, including private database
+verification/migration, app deployment, deployed desktop/mobile checks and the
+release-manifest/evidence artifact. The downloaded manifest was independently
+compared with the live health response and Azure's active image.
+
+Verified release:
+[39940746115](https://github.com/pelsebubben/proispro/actions/runs/39940746115),
+source SHA `4e2899c4d2824c206723beeb2041d59b9fffd10f`, schema version 1.
+Immutable image:
+`crgripgmfarjpxlkg2e.azurecr.io/griplock@sha256:fdb73d6315e88ed3302ab862d69996b3e5a87294aeb049368f37b1692e357f8e`.
 
 Staging URL:
 <https://app-griplock-staging.delightfulisland-939e03e4.swedencentral.azurecontainerapps.io>
@@ -25,10 +31,14 @@ Staging URL:
 - Registry, pull identity, VNet/private DNS, Container Apps environment, private
   PostgreSQL, finite jobs, app revision, locked storage and logging now exist in
   Sweden Central.
-- With the owner unavailable and autonomous recovery delegated, the next bounded
-  attempt uses General Purpose D2ads v5 (2 vCPU/8 GiB) in the same region.
+- With the owner unavailable and autonomous recovery delegated, the successful
+  bounded attempt used General Purpose D2ads v5 (2 vCPU/8 GiB) in the same region.
   There is no automatic escalation beyond that size or region fallback.
   Production migration, real customer login and DNS cutover remain untouched.
+- [Fourth release](https://github.com/pelsebubben/proispro/actions/runs/39940746115)
+  succeeded end to end after replacing the unavailable `jq` recorder with a
+  tested Node script. It also proved a repeat deployment against the existing
+  database, checksum-guarded migrations and a distinct new app revision.
 
 ## Delivery scope
 
