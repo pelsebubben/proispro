@@ -165,13 +165,7 @@ jobs:
       - run: npm ci
       - run: npm run test:staging
       - name: Record verified release
-        run: |
-          jq -n --arg sha "$SOURCE_SHA" --arg image "$IMAGE" --arg url "$STAGING_URL" \
-            --arg run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            '{sourceSha:$sha,image:$image,url:$url,run:$run,schemaVersion:1,environment:"staging",identityReady:false}' \
-            > staging-release.json
-          printf '### Verified staging release\n\nSHA: %s\n\nImage: %s\n\nURL: %s\n\nCustomer sign-in remains disabled.\n' \
-            "$SOURCE_SHA" "$IMAGE" "$STAGING_URL" >> "$GITHUB_STEP_SUMMARY"
+        run: node scripts/record-staging-release.mjs
       - name: Preserve deployed browser and release evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
