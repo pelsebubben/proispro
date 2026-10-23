@@ -1,19 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { CatalogDisc, useDiscCatalog } from '../hooks/useDiscCatalog'
-import { ClientDisc, colorSlug } from '../utils/disc'
+import { useEffect, useRef, useState } from 'react'
+import { CatalogDisc } from '../hooks/useDiscCatalog'
+import { ClientDisc, DiscDraft, DISC_TYPES, colorSlug } from '../utils/disc'
+import { prepareDiscPhoto } from '../utils/photo'
+import { DiscSearch } from './DiscSearch'
+import { DiscPhoto } from './DiscPhoto'
 
 interface DiscModalProps {
   disc?: ClientDisc | null
-  onSave: (disc: Omit<ClientDisc, 'id'> & { id?: string }) => Promise<void>
+  onSave: (disc: DiscDraft) => Promise<void>
   onClose: () => void
 }
-
-const DISC_TYPES = [
-  { value: 'putter', label: 'Putter' },
-  { value: 'midrange', label: 'Midrange' },
-  { value: 'fairway', label: 'Fairway Driver' },
-  { value: 'distance', label: 'Distance Driver' },
-]
 
 const CONDITION_OPTIONS = [
   { value: 'new', label: 'New/Mint' },
@@ -37,9 +33,6 @@ const COLOR_SWATCHES = [
   'Crimson',
 ]
 
-const NAME_SUGGESTION_LIMIT = 8
-const NAME_SUGGESTIONS_ID = 'disc-name-suggestions'
-
 export function DiscModal(props: DiscModalProps) {
   return <DiscForm key={props.disc?.id ?? 'new'} {...props} />
 }
@@ -47,6 +40,7 @@ export function DiscModal(props: DiscModalProps) {
 function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
   const [form, setForm] = useState(() => ({
     name: disc?.name ?? '',
+    edition: disc?.edition ?? '',
     manufacturer: disc?.manufacturer ?? '',
     type: disc?.type ?? '',
     plastic: disc?.plastic ?? '',
@@ -63,73 +57,40 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
   }))
   const [tagInput, setTagInput] = useState('')
   const [isSaving, setIsSaving] = useState(false)
-  const { catalog, isLoading: isCatalogLoading } = useDiscCatalog()
-  const [showSuggestions, setShowSuggestions] = useState(false)
-  const [activeSuggestion, setActiveSuggestion] = useState(-1)
-  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
-  const nameFieldRef = useRef<HTMLDivElement | null>(null)
-  const nameInputRef = useRef<HTMLInputElement | null>(null)
+  const [photo, setPhoto] = useState<string | null>()
+  const [isPreparingPhoto, setIsPreparingPhoto] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [photoError, setPhotoError] = useState<string | null>(null)
+  const photoSequence = useRef(0)
+  const photoInput = useRef<HTMLInputElement>(null)
+  const preview = photo === undefined ? disc?.photo_url : photo
+  useEffect(() => () => { photoSequence.current++ }, [])
 
-  const suggestions = useMemo(() => {
-    const query = form.name.trim().toLowerCase()
-    if (!query) return []
-
-    return catalog
-      .filter(item => item.name.toLowerCase().includes(query))
-      .slice(0, NAME_SUGGESTION_LIMIT)
-  }, [catalog, form.name])
-
-  const shouldShowSuggestionMenu = showSuggestions && dropdownPos !== null && (isCatalogLoading || suggestions.length > 0)
-
-  const updateDropdownPos = () => {
-    if (nameInputRef.current) {
-      const rect = nameInputRef.current.getBoundingClientRect()
-      setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width })
+  const choosePhoto = async (file: File) => {
+    const sequence = ++photoSequence.current
+    setPhotoError(null)
+    setIsPreparingPhoto(true)
+    try {
+      const prepared = await prepareDiscPhoto(file)
+      if (sequence === photoSequence.current) setPhoto(prepared)
+    } catch (reason) {
+      if (sequence === photoSequence.current) setPhotoError(reason instanceof Error ? reason.message : 'Photo could not be prepared.')
+    } finally {
+      if (sequence === photoSequence.current) setIsPreparingPhoto(false)
     }
   }
-
-  const closeSuggestions = () => {
-    setShowSuggestions(false)
-    setActiveSuggestion(-1)
-    setDropdownPos(null)
-  }
-
-  useEffect(() => {
-    setActiveSuggestion(-1)
-  }, [form.name, suggestions.length])
-
-  useEffect(() => {
-    const handleDocumentClick = (event: MouseEvent) => {
-      if (nameFieldRef.current && !nameFieldRef.current.contains(event.target as Node)) {
-        closeSuggestions()
-      }
-    }
-
-    document.addEventListener('click', handleDocumentClick)
-    return () => {
-      document.removeEventListener('click', handleDocumentClick)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!showSuggestions) return
-
-    const close = () => {
-      closeSuggestions()
-    }
-
-    window.addEventListener('scroll', close, true)
-    return () => window.removeEventListener('scroll', close, true)
-  }, [showSuggestions])
 
   const selectSuggestion = (selectedDisc: CatalogDisc) => {
     if (disc) {
-      setForm(prev => ({ ...prev, name: selectedDisc.name }))
+      setForm(prev => ({ ...prev, name: selectedDisc.name, manufacturer: selectedDisc.brand,
+        edition: selectedDisc.edition ?? '', ...(selectedDisc.plastic ? { plastic: selectedDisc.plastic } : {}) }))
     } else {
       setForm(prev => ({
         ...prev,
         name: selectedDisc.name,
         manufacturer: selectedDisc.brand,
+        edition: selectedDisc.edition ?? '',
+        plastic: selectedDisc.plastic ?? '',
         type: selectedDisc.type,
         speed: selectedDisc.speed,
         glide: selectedDisc.glide,
@@ -138,82 +99,33 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
       }))
     }
 
-    closeSuggestions()
-  }
-
-  const handleNameChange = (value: string) => {
-    const shouldOpen = value.trim().length > 0
-
-    setForm(prev => ({ ...prev, name: value }))
-    setActiveSuggestion(-1)
-
-    if (shouldOpen) {
-      updateDropdownPos()
-      setShowSuggestions(true)
-      return
-    }
-
-    closeSuggestions()
-  }
-
-  const handleNameFocus = () => {
-    if (form.name.trim().length > 0) {
-      updateDropdownPos()
-      setShowSuggestions(true)
-    }
-  }
-
-  const handleNameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'ArrowDown') {
-      if (suggestions.length === 0) return
-      e.preventDefault()
-      updateDropdownPos()
-      setShowSuggestions(true)
-      setActiveSuggestion(prev => (prev < suggestions.length - 1 ? prev + 1 : 0))
-      return
-    }
-
-    if (e.key === 'ArrowUp') {
-      if (suggestions.length === 0) return
-      e.preventDefault()
-      updateDropdownPos()
-      setShowSuggestions(true)
-      setActiveSuggestion(prev => (prev > 0 ? prev - 1 : suggestions.length - 1))
-      return
-    }
-
-    if (e.key === 'Enter' && showSuggestions && activeSuggestion >= 0 && suggestions[activeSuggestion]) {
-      e.preventDefault()
-      selectSuggestion(suggestions[activeSuggestion])
-      return
-    }
-
-    if (e.key === 'Escape') {
-      closeSuggestions()
-    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!form.name || !form.type) {
-      alert('Name and Type are required')
+    if (isSaving || isPreparingPhoto) return
+    if (!form.name.trim() || !form.type) {
+      setError('Name and Type are required.')
       return
     }
     setIsSaving(true)
+    setError(null)
     try {
       await onSave({
         ...(disc?.id ? { id: disc.id } : {}),
         ...form,
+        name: form.name.trim(),
         photo_url: disc?.photo_url || null,
+        ...(photo !== undefined ? { photo } : {}),
         added: disc?.added || Date.now(),
-      } as Omit<ClientDisc, 'id'> & { id?: string })
+      })
       onClose()
     } catch (err) {
       const msg =
         err instanceof Error
           ? err.message
           : (err as { message?: string })?.message ?? JSON.stringify(err)
-      alert('Save failed: ' + msg)
+      setError('Save failed: ' + msg)
     } finally {
       setIsSaving(false)
     }
@@ -243,9 +155,23 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
         zIndex: 1000,
         padding: '1rem',
       }}
-      onClick={onClose}
+      onClick={() => { if (!isSaving) onClose() }}
     >
       <div
+        className="disc-form-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="disc-form-title"
+        onKeyDown={event => {
+          if (event.key === 'Escape' && !event.defaultPrevented && !isSaving) onClose()
+          if (event.key === 'Tab') {
+            const fields = event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)')
+            const first = fields[0]
+            const last = fields[fields.length - 1]
+            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+            if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+          }
+        }}
         style={{
           background: 'var(--clr-surface)',
           borderRadius: 'var(--radius)',
@@ -257,107 +183,46 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
         }}
         onClick={e => e.stopPropagation()}
       >
-        <h2 style={{ margin: '0 0 1.5rem 0', color: 'var(--clr-text)' }}>
+        <h2 id="disc-form-title" style={{ margin: '0 0 1.5rem 0', color: 'var(--clr-text)' }}>
           {disc ? 'Edit Disc' : 'Add Disc'}
         </h2>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {/* Name */}
-          <div ref={nameFieldRef}>
-            <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.3rem', color: 'var(--clr-text)' }}>
-              Disc Name <span style={{ color: 'var(--clr-danger)' }}>*</span>
-            </label>
-            <input
-              ref={nameInputRef}
-              type="text"
-              value={form.name}
-              onChange={e => handleNameChange(e.target.value)}
-              onFocus={handleNameFocus}
-              onKeyDown={handleNameKeyDown}
-              autoComplete="off"
-              role="combobox"
-              aria-autocomplete="list"
-              aria-expanded={shouldShowSuggestionMenu}
-              aria-controls={NAME_SUGGESTIONS_ID}
-              aria-activedescendant={
-                activeSuggestion >= 0 ? `${NAME_SUGGESTIONS_ID}-${activeSuggestion}` : undefined
-              }
-              required
-              style={{
-                width: '100%',
-                padding: '0.5rem',
-                background: 'var(--clr-bg)',
-                border: '1px solid var(--clr-border)',
-                borderRadius: '6px',
-                color: 'var(--clr-text)',
-                fontSize: '0.9rem',
-              }}
-            />
-            {shouldShowSuggestionMenu && (
-              <div
-                id={NAME_SUGGESTIONS_ID}
-                role="listbox"
-                style={{
-                  position: 'fixed',
-                  top: dropdownPos?.top ?? 0,
-                  left: dropdownPos?.left ?? 0,
-                  width: dropdownPos?.width ?? 0,
-                  zIndex: 1100,
-                  maxHeight: '240px',
-                  overflowY: 'auto',
-                  background: 'var(--clr-surface)',
-                  border: '1px solid var(--clr-border)',
-                  borderRadius: '6px',
-                  boxShadow: '0 12px 24px rgba(0, 0, 0, 0.22)',
-                }}
-              >
-                {isCatalogLoading ? (
-                  <div
-                    style={{
-                      padding: '0.65rem 0.75rem',
-                      color: 'var(--clr-muted)',
-                      fontSize: '0.85rem',
-                    }}
-                  >
-                    Loading catalog…
-                  </div>
-                ) : (
-                  suggestions.map((suggestion, index) => {
-                    const isActive = index === activeSuggestion
-                    return (
-                      <div
-                        key={suggestion.id || `${suggestion.brand}-${suggestion.name}-${index}`}
-                        id={`${NAME_SUGGESTIONS_ID}-${index}`}
-                        role="option"
-                        aria-selected={isActive}
-                        onMouseEnter={() => setActiveSuggestion(index)}
-                        onMouseDown={e => {
-                          e.preventDefault()
-                          selectSuggestion(suggestion)
-                        }}
-                        style={{
-                          padding: '0.65rem 0.75rem',
-                          background: isActive ? 'var(--clr-surface2)' : 'var(--clr-surface)',
-                          borderLeft: isActive ? '2px solid var(--clr-accent)' : '2px solid transparent',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <div style={{ fontWeight: 600, color: 'var(--clr-text)' }}>{suggestion.name}</div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--clr-muted)' }}>{suggestion.brand}</div>
-                      </div>
-                    )
-                  })
-                )}
-              </div>
-            )}
+          <DiscSearch value={form.name} onChange={name => setForm(previous => ({ ...previous, name }))}
+            onSelect={selectSuggestion} />
+          <div className="disc-edition-field">
+            <label htmlFor="disc-edition">Edition / Run</label>
+            <input id="disc-edition" value={form.edition} maxLength={200}
+              placeholder="Optional, e.g. Midnight Prowl II"
+              onChange={event => setForm(previous => ({ ...previous, edition: event.target.value }))} />
           </div>
+          <div className="disc-photo-editor">
+            {preview && <div className="disc-photo-preview"><DiscPhoto src={preview} name={form.name || 'Disc'} /></div>}
+            <div className="disc-photo-controls">
+              <label htmlFor="disc-photo-upload">Personal photo</label>
+              <input id="disc-photo-upload" ref={photoInput} type="file" accept="image/jpeg,image/png,image/webp"
+                disabled={isSaving || isPreparingPhoto}
+                onChange={event => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ''
+                  if (file) void choosePhoto(file)
+                }} />
+              <small>JPEG, PNG or WebP, up to 10 MB. Resized before saving.</small>
+              {isPreparingPhoto && <p role="status">Preparing photo...</p>}
+              {preview && <button type="button" className="btn btn-secondary" disabled={isSaving || isPreparingPhoto}
+                onClick={() => { setPhoto(null); setPhotoError(null) }}>Remove photo</button>}
+              {photoError && <p role="alert">{photoError}</p>}
+            </div>
+          </div>
+          {error && <p role="alert">{error}</p>}
 
           {/* Manufacturer */}
           <div>
-            <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.3rem', color: 'var(--clr-text)' }}>
+            <label htmlFor="disc-manufacturer" style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.3rem', color: 'var(--clr-text)' }}>
               Manufacturer
             </label>
             <input
+              id="disc-manufacturer"
               type="text"
               value={form.manufacturer}
               onChange={e => setForm({ ...form, manufacturer: e.target.value })}
@@ -375,10 +240,11 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
 
           {/* Type */}
           <div>
-            <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.3rem', color: 'var(--clr-text)' }}>
+            <label htmlFor="disc-type" style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.3rem', color: 'var(--clr-text)' }}>
               Type <span style={{ color: 'var(--clr-danger)' }}>*</span>
             </label>
             <select
+              id="disc-type"
               value={form.type}
               onChange={e => setForm({ ...form, type: e.target.value })}
               required
@@ -574,10 +440,11 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
 
           {/* Notes */}
           <div>
-            <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.3rem', color: 'var(--clr-text)' }}>
+            <label htmlFor="disc-notes" style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.3rem', color: 'var(--clr-text)' }}>
               Notes
             </label>
             <textarea
+              id="disc-notes"
               value={form.notes}
               onChange={e => setForm({ ...form, notes: e.target.value })}
               rows={3}
@@ -678,18 +545,18 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
           <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
             <button
               type="submit"
-              disabled={isSaving}
+              disabled={isSaving || isPreparingPhoto}
               style={{
                 flex: 1,
                 padding: '0.65rem',
                 background: 'var(--clr-accent)',
-                color: '#fff',
+                color: 'var(--clr-bg)',
                 border: 'none',
                 borderRadius: '6px',
                 fontSize: '0.9rem',
                 fontWeight: 600,
-                cursor: isSaving ? 'wait' : 'pointer',
-                opacity: isSaving ? 0.6 : 1,
+                cursor: isSaving || isPreparingPhoto ? 'wait' : 'pointer',
+                opacity: isSaving || isPreparingPhoto ? 0.6 : 1,
               }}
             >
               {isSaving ? 'Saving...' : 'Save'}

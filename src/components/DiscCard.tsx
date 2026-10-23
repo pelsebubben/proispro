@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { DiscPhoto } from './DiscPhoto'
 import {
   ClientDisc,
   ClientBag,
@@ -55,17 +56,17 @@ export function DiscCard({
         gap: '0.75rem',
       }}
     >
+      {disc.photo_url && <div className="disc-card-photo"><DiscPhoto src={disc.photo_url} name={disc.name} /></div>}
       {/* Header: avatar + name + badge */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
         {/* Avatar */}
-        <div
+        {!disc.photo_url && <div
           style={{
             width: '48px',
             height: '48px',
             borderRadius: '50%',
             flexShrink: 0,
-            background: disc.photo_url ? 'transparent' : avatarBg,
-            backgroundImage: disc.photo_url ? `url(${disc.photo_url})` : undefined,
+            background: avatarBg,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             display: 'flex',
@@ -76,14 +77,15 @@ export function DiscCard({
             fontSize: '1.25rem',
           }}
         >
-          {!disc.photo_url && disc.name.charAt(0).toUpperCase()}
-        </div>
+          {disc.name.charAt(0).toUpperCase()}
+        </div>}
 
         {/* Name + manufacturer */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--clr-text)' }}>
             {disc.name}
           </div>
+          {disc.edition && <div className="disc-edition">{disc.edition}</div>}
           {disc.manufacturer && (
             <div style={{ fontSize: '0.8rem', color: 'var(--clr-muted)', marginTop: '0.15rem' }}>
               {disc.manufacturer}

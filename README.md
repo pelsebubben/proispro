@@ -11,10 +11,27 @@ A personal disc golf inventory and bag tracker for the owner and friends.
 - One dev database/application and one production database/application.
 
 Inventory, bags/history, collections, wishlist, sale listings/share links, course
-pins and hole assignments all use `/api/v1`. The public disc catalog uses DiscIt;
-course search/maps use OpenStreetMap Overpass. Neither requires our database
-credentials. Anonymous sale links disclose only available listings while their
+pins and hole assignments all use `/api/v1`. Disc search uses a bundled DiscIt
+snapshot, so typing never waits on an external service. Course search/maps use
+OpenStreetMap Overpass. Anonymous sale links disclose only available listings while their
 owner has explicitly enabled public sharing.
+
+## Adding discs
+
+Search by mold, manufacturer or special edition (for example, Origin or Midnight
+Prowl II). The mold and optional Edition / Run are saved separately and are both
+searchable in inventory. Missing catalogue entries can be added manually.
+Arrow keys and Enter select a result; Escape, Tab or clicking another field
+dismiss the list. [Catalogue sources and refresh instructions](docs/disc-catalog.md)
+describe the bundled data and its deliberately limited special-edition coverage.
+
+The Type selector and inventory filters include Utility. A personal JPEG, PNG
+or WebP photo can be added, replaced or removed in Add/Edit Disc. Files up to
+10 MB are resized in the browser before upload. The server validates and
+re-encodes them to metadata-free JPEGs, at most 1024 pixels and 256 KiB.
+Photos are private to their owner and stored in PostgreSQL, not a new cloud
+service. Cancelling the form does not upload or save changes. Metadata and
+photos save together; inventory responses contain photo references, not images.
 
 ## Local development
 
@@ -68,6 +85,8 @@ original `owned_discs` table and adds bags, bag history, collections/membership,
 wishlist items, sale listings/tokens, course pins and hole assignments. Runtime
 roles never own tables or bypass RLS. Child relationships use owner-scoped
 foreign keys; bag membership/history updates are transactional.
+Version 3 adds edition names and private, owner-scoped disc photos. Deleting a
+disc also deletes its photo.
 
 This deployment starts with a fresh Azure dataset. No old records, identities
 or objects are imported. The retired provider's remote resources remain

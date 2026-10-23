@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useDiscs } from '../hooks/useDiscs'
 import { useBags } from '../hooks/useBags'
-import { ClientDisc, DiscFilters, filterAndSort, SortOption } from '../utils/disc'
+import { ClientDisc, DiscDraft, DISC_TYPES, DiscFilters, filterAndSort, SortOption } from '../utils/disc'
 import { DiscCard } from '../components/DiscCard'
 import { DiscModal } from '../components/DiscModal'
 
@@ -46,7 +46,7 @@ export function InventoryPage() {
     setShowModal(true)
   }
 
-  const handleSaveDisc = async (disc: Omit<ClientDisc, 'id'> & { id?: string }) => {
+  const handleSaveDisc = async (disc: DiscDraft) => {
     try {
       await saveDisc(disc)
       setShowModal(false)
@@ -158,21 +158,21 @@ export function InventoryPage() {
           >
             All
           </button>
-          {['putter', 'midrange', 'fairway', 'distance'].map(type => (
+          {DISC_TYPES.map(({ value: type, label }) => (
             <button
               key={type}
               onClick={() => setFilters({ ...filters, filterType: filters.filterType === type ? '' : type })}
               style={{
                 padding: '0.45rem 0.85rem',
                 background: filters.filterType === type ? `var(--${type})` : 'var(--clr-surface)',
-                color: filters.filterType === type ? '#fff' : 'var(--clr-text)',
+                color: filters.filterType === type ? 'var(--clr-bg)' : 'var(--clr-text)',
                 border: '1px solid var(--clr-border)',
                 borderRadius: 'var(--radius)',
                 fontSize: '0.8rem',
                 cursor: 'pointer',
               }}
             >
-              {type === 'fairway' ? 'Fairway Driver' : type === 'distance' ? 'Distance Driver' : type.charAt(0).toUpperCase() + type.slice(1)}
+              {label}
             </button>
           ))}
         </div>

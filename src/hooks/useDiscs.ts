@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createRow, deleteRows, listRows, subscribeToChanges, updateRow } from '../lib/data'
 import { useAuth } from '../contexts/AuthContext'
-import { ClientDisc, fromDbDisc, toDbDisc } from '../utils/disc'
+import { ClientDisc, DiscDraft, fromDbDisc, toDbDisc } from '../utils/disc'
 
 export function useDiscs() {
   const { user } = useAuth()
@@ -27,10 +27,11 @@ export function useDiscs() {
     return subscribeToChanges(['discs'], loadDiscs)
   }, [loadDiscs])
 
-  const saveDisc = async (disc: Omit<ClientDisc, 'id'> & { id?: string }): Promise<ClientDisc | null> => {
+  const saveDisc = async (disc: DiscDraft): Promise<ClientDisc | null> => {
     if (!user) return null
     const newDisc: ClientDisc = { ...disc, id: disc.id ?? crypto.randomUUID() }
-    const { id, ...fields } = toDbDisc(newDisc)
+    const { id, ...metadata } = toDbDisc(newDisc)
+    const fields = { ...metadata, ...(disc.photo !== undefined ? { photo: disc.photo } : {}) }
     const row = disc.id
       ? await updateRow<Record<string, unknown>>('discs', id, fields)
       : await createRow<Record<string, unknown>>('discs', { ...fields, id })

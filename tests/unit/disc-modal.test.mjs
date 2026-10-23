@@ -12,11 +12,14 @@ const { outputText } = ts.transpileModule(source, {
 const moduleSource = outputText
   .replace(/from ["']react["']/g, `from ${JSON.stringify(import.meta.resolve('react'))}`)
   .replace(/from ["']react\/jsx-runtime["']/g, `from ${JSON.stringify(import.meta.resolve('react/jsx-runtime'))}`)
-  .replace(/import .* from ['"]\.\.\/hooks\/useDiscCatalog['"];?/, 'const useDiscCatalog = () => ({ catalog: [], isLoading: false });')
-  .replace(/import .* from ['"]\.\.\/utils\/disc['"];?/, 'const colorSlug = name => name.toLowerCase();')
+  .replace(/import .* from ['"]\.\/DiscSearch['"];?/, `import { createElement } from ${JSON.stringify(import.meta.resolve('react'))}; const DiscSearch = ({ value }) => createElement('input', { value, readOnly: true });`)
+  .replace(/import .* from ['"]\.\/DiscPhoto['"];?/, 'const DiscPhoto = () => null;')
+  .replace(/import .* from ['"]\.\.\/utils\/photo['"];?/, 'const prepareDiscPhoto = async () => "";')
+  .replace(/import .* from ['"]\.\.\/utils\/disc['"];?/, `const colorSlug = name => name.toLowerCase();
+    const DISC_TYPES = ['putter','midrange','fairway','distance','utility'].map(value => ({ value, label: value }));`)
 const { DiscModal } = await import(`data:text/javascript;base64,${Buffer.from(moduleSource).toString('base64')}`)
 const disc = {
-  id: 'fixture', name: 'Ready on first render', manufacturer: 'Test brand', type: 'midrange',
+  id: 'fixture', name: 'Ready on first render', edition: 'Special run', manufacturer: 'Test brand', type: 'midrange',
   plastic: 'Premium', weight: '174', quantity: 2, color: 'Blue', condition: 'used',
   speed: 5, glide: 4, turn: -1.5, fade: 1, notes: 'Existing notes', tags: ['favorite'],
   photo_url: null, added: 1,
@@ -25,7 +28,7 @@ const render = value => renderToStaticMarkup(createElement(DiscModal, { disc: va
 
 test('edit fields are populated on the first render, without waiting for effects', () => {
   const html = render(disc)
-  for (const value of ['Ready on first render', 'Test brand', 'Premium', '174', '-1.5']) {
+  for (const value of ['Ready on first render', 'Special run', 'Test brand', 'Premium', '174', '-1.5']) {
     assert.ok(html.includes(`value="${value}"`), `${value} is ready before effects or field input`)
   }
   assert.match(html, /value="midrange" selected=""/)
