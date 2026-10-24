@@ -6,7 +6,7 @@ import { schemaVersion } from '../../server/migrate.mjs'
 
 const names = ['ci.yml', 'infra.yml', 'prod.yml', 'dev.yml', 'squad-ci.yml']
 const sources = Object.fromEntries(await Promise.all(names.map(async name => [
-  name, await readFile(new URL(`../../.github/workflows/${name}`, import.meta.url), 'utf8'),
+  name, (await readFile(new URL(`../../.github/workflows/${name}`, import.meta.url), 'utf8')).replaceAll('\r\n','\n'),
 ])))
 const lock = JSON.parse(await readFile(new URL('../../package-lock.json', import.meta.url), 'utf8'))
 const playwrightVersion = lock.packages['node_modules/@playwright/test'].version
@@ -132,6 +132,11 @@ function checkTrustBoundary(files) {
   }
   assert.deepEqual(staging.jobs.browser.needs, ['staging','dev-provider'])
   const prodPdga=staging.jobs.staging.steps.find(step=>step.name==='Configure production PDGA from protected environment')
+  const providerIndex=staging.jobs.staging.steps.indexOf(prodPdga)
+  const freshLogin=staging.jobs.staging.steps[providerIndex-1]
+  assert.ok(providerIndex>deployIndex,'provision only after the app rollout')
+  assert.ok(freshLogin.uses?.startsWith('azure/login@'),'refresh OIDC immediately before protected provider provisioning')
+  assert.deepEqual(freshLogin.with,staging.jobs.staging.steps.find(step=>step.uses?.startsWith('azure/login@')).with)
   assert.equal(prodPdga.env.PDGA_STAGE,'prod')
   assert.equal(prodPdga.env.PDGA_PASSWORD,'${{ secrets.PDGA_PASSWORD }}')
   assert.equal(staging.jobs['dev-provider'].environment,'dev')
@@ -177,6 +182,7 @@ test('gates reject real workflow mutations that grant PR OIDC or remove apply pr
     ['prod.yml', '-- server/migrations server/migrate.mjs', '-- docs'],
     ['prod.yml', `.schemaVersion == ${schemaVersion}`, `.schemaVersion == ${schemaVersion - 1}`],
     ['dev.yml', "github.event_name == 'workflow_dispatch' && inputs.configure_pdga", 'always()'],
+    ['prod.yml', 'provider provisioning\n        uses: azure/login@', 'provider provisioning\n        uses: azure/logout@'],
   ]) {
     assert.ok(sources[file].includes(before), `${file}: mutation must affect actual source`)
     assert.throws(() => checkTrustBoundary({ ...sources, [file]: sources[file].replace(before, after) }), Error, `${file}: ${before}`)

@@ -32,6 +32,9 @@ then provisions production from its own environment and restores dev from its
 own environment. The provisioner checks trusted workflow identity and exact
 deployed SHA. ARM payloads remain in memory, existing app secrets are preserved,
 and logs contain only safe provisioning phases/numeric HTTP status.
+Production refreshes its Azure OIDC login immediately before provider
+provisioning, so a long infrastructure rollout does not leave it relying on
+the earlier federated assertion. Dev provisioning starts with its own login.
 
 PR-triggered dev deployments receive no provider secrets. The existing dev
 workflow's opt-in `configure_pdga` dispatch can activate all four settings after
