@@ -3,10 +3,24 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: daily
+    open-pull-requests-limit: 10
+    groups:
+      actions:
+        patterns: ["*"]
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: daily
+    open-pull-requests-limit: 10
+    groups:
+      application:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 10
+    groups:
+      runtime:
+        patterns: ["*"]

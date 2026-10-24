@@ -101,7 +101,7 @@ releases the app only after database verification/migration. No Kubernetes is
 required. Customer identity, PR-isolated previews, object upload access, restore
 rehearsals and same-image production promotion remain unfinished.
 
-The Node 22 OCI image serves React and `/api/v1` together. The API verifies
+The Node 24 LTS OCI image serves React and `/api/v1` together. The API verifies
 asymmetric issuer/audience JWTs and uses a non-owner, non-BYPASSRLS PostgreSQL role
 with transaction-local user context. Schema version 3 supports the complete
 inventory (edition names and private owner-only disc photos), bags/history,
@@ -132,7 +132,7 @@ deliberate staging choices; production sizing/recovery need separate approval.
 
 ## Local checks and test evidence
 
-Use Node 22 and the lockfile:
+Use Node 24 LTS (see `.nvmrc`) and the lockfile:
 
 ```powershell
 npm ci
@@ -176,6 +176,30 @@ records the source SHA, run ID, and authentication-test limitation. CI fails
 when tests fail or none are found; retries are disabled. These artifacts are
 safe only because the suite uses synthetic data. Do not reuse this capture
 configuration for real login sessions without restricting/redacting evidence.
+
+## Dependency maintenance
+
+Dependabot checks npm packages, GitHub Actions and the Docker runtime daily,
+with grouped PRs per ecosystem to avoid a queue of interdependent upgrades.
+Major upgrades still require compatibility work and the normal Required CI gate;
+they are not automatically merged or excluded.
+
+Builds use `npm ci` and the committed lockfile, never unbounded `latest` installs.
+Actions remain pinned to immutable release SHAs. Node uses the current selected
+LTS line consistently in `.nvmrc`, package engines, CI and the Docker image;
+runtime type definitions match that line rather than an unreleased-to-LTS major.
+Dependabot proposes Docker updates, including newer Node majors, for review.
+`engine-strict=true` rejects installs on an unsupported Node line instead of
+allowing a warning-only build.
+
+Browser jobs install Chromium using the exact Playwright version from `npm ci`.
+There is no separately pinned Playwright image that can become incompatible with
+an automated package update. The workflow tests enforce this ordering.
+
+For upgrade PRs, run the type checks, unit tests, build, desktop/mobile browser
+suite and real PostgreSQL/OCI integration checks. Check `npm outdated` and
+`npm audit` when reviewing the update; do not hide stale or vulnerable versions
+by closing update PRs without applying or explicitly superseding them.
 
 ## One-time GitHub setup
 

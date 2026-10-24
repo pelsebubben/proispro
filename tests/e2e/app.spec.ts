@@ -86,6 +86,30 @@ test('refresh keeps the current tab and Back walks tabs instead of leaving the a
   expect(unexpected).toEqual([])
 })
 
+test('analytics renders both charts and bag tooltips with the upgraded React and Recharts', async ({ page }) => {
+  const unexpected = await isolateNetwork(page, true)
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.route('**/api/v1/bags?*', route => route.fulfill({ json: { bags: [{
+    id: '11111111-1111-4111-8111-111111111114', name: 'Fixture bag',
+    disc_ids: ['11111111-1111-4111-8111-111111111112', '11111111-1111-4111-8111-111111111113'],
+  }] } }))
+  await page.goto('/analytics')
+  await expect(page.getByRole('heading', { name: 'Inventory Overview' })).toBeVisible()
+  await expect(page.locator('.recharts-pie-sector')).toHaveCount(2)
+  await expect(page.locator('.recharts-pie-label-text').filter({ hasText: 'Mid: 1' })).toBeVisible()
+  await expect(page.locator('.recharts-pie-label-text').filter({ hasText: 'Driver: 1' })).toBeVisible()
+  const bars = page.locator('.recharts-bar-rectangle')
+  await expect(bars).toHaveCount(1)
+  await expect(page.locator('.recharts-cartesian-axis-tick-value').filter({ hasText: 'Fixture bag' })).toBeVisible()
+  await bars.first().hover()
+  const tooltip = page.locator('.recharts-tooltip-wrapper').filter({ hasText: 'Fixture bag' })
+  await expect(tooltip).toBeVisible()
+  await expect(tooltip.locator('.recharts-tooltip-item-value')).toHaveText('2')
+  expect(errors).toEqual([])
+  expect(unexpected).toEqual([])
+})
+
 test('failed API loads are visible instead of looking like an empty collection', async ({ page }) => {
   await isolateNetwork(page, true)
   await page.route('**/api/v1/bags?*', route => route.fulfill({ status: 503, json: { error: 'service_unavailable' } }))

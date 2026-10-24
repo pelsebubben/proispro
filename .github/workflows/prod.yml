@@ -34,13 +34,13 @@ jobs:
           test "$GITHUB_REF" = refs/heads/main
           gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$SOURCE_SHA&event=push" \
             | jq -e --arg sha "$SOURCE_SHA" '.workflow_runs | any(.head_sha == $sha and .head_branch == "main" and .conclusion == "success")'
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.SOURCE_SHA }}
           persist-credentials: false
       - run: docker build --tag "griplock:$SOURCE_SHA" .
       - run: docker save "griplock:$SOURCE_SHA" | gzip > "$RUNNER_TEMP/griplock.tar.gz"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: runtime-${{ github.sha }}
           path: ${{ runner.temp }}/griplock.tar.gz
@@ -84,16 +84,16 @@ jobs:
           test "${#PG_APP}" -ge 32
           test "${#PG_DEV_APP}" -ge 32
           test "${#DEV_LOGIN}" -ge 32
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.SOURCE_SHA }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: runtime-${{ github.sha }}
           path: ${{ runner.temp }}/runtime
-      - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -189,7 +189,7 @@ jobs:
           echo "::error::Staging did not serve the expected release and schema"
           exit 1
       - name: Refresh Azure authentication for protected provider provisioning
-        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -215,11 +215,11 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.SOURCE_SHA }}
           persist-credentials: false
-      - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -238,28 +238,27 @@ jobs:
     name: Verify deployed desktop and mobile
     needs: [staging, dev-provider]
     runs-on: ubuntu-24.04
-    container:
-      image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948
     timeout-minutes: 15
     env:
       STAGING_URL: ${{ needs.staging.outputs.url }}
       IMAGE: ${{ needs.staging.outputs.image }}
       IDENTITY_READY: ${{ needs.staging.outputs.identityReady }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
       - run: npm ci
+      - run: npx --no-install playwright install --with-deps chromium
       - run: npm run test:staging
       - name: Record verified release
         run: node scripts/record-staging-release.mjs
       - name: Preserve deployed browser and release evidence
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: staging-evidence-${{ github.run_id }}
           path: |

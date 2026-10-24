@@ -92,7 +92,7 @@ See the [approved first-version scope](docs/prd-course-bag-configurations.md).
 
 ## Local development
 
-Install Node 22 and PostgreSQL (or use the included Docker Compose configuration).
+Install Node 24 LTS (see `.nvmrc`) and PostgreSQL (or use the included Docker Compose configuration).
 
 ```powershell
 npm ci

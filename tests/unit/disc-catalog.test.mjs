@@ -1,15 +1,13 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
-import ts from 'typescript'
+import { transformWithOxc } from 'vite'
 
-const compile = source => ts.transpileModule(source, {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-}).outputText
+const compile = async source => (await transformWithOxc(source, 'catalog.ts')).code
 const snapshot = await readFile(new URL('../../src/data/disc-catalog.ts', import.meta.url), 'utf8')
 const source = await readFile(new URL('../../src/hooks/useDiscCatalog.ts', import.meta.url), 'utf8')
-const snapshotUrl = `data:text/javascript;base64,${Buffer.from(compile(snapshot)).toString('base64')}`
-const moduleSource = compile(source).replace("'../data/disc-catalog'", JSON.stringify(snapshotUrl))
+const snapshotUrl = `data:text/javascript;base64,${Buffer.from(await compile(snapshot)).toString('base64')}`
+const moduleSource = (await compile(source)).replace(/["']\.\.\/data\/disc-catalog["']/, JSON.stringify(snapshotUrl))
 const { searchCatalog } = await import(`data:text/javascript;base64,${Buffer.from(moduleSource).toString('base64')}`)
 
 test('bundled catalogue is deduplicated and searches manufacturer plus mold', () => {

@@ -1,13 +1,10 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
-import ts from 'typescript'
+import { transformWithOxc } from 'vite'
 
-// Node 22.16 cannot load TypeScript directly; compile the actual pure module.
 const source = await readFile(new URL('../../src/utils/crop.ts', import.meta.url), 'utf8')
-const { outputText } = ts.transpileModule(source, {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-})
+const { code: outputText } = await transformWithOxc(source, 'crop.ts')
 const { MIN_ZOOM, MAX_ZOOM, OUTPUT_MAX, initialCrop, clampCrop, sourceRect, panBy, zoomTo, imageBox, outputSide } =
   await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`)
 
