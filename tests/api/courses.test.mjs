@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import pg from 'pg'
 import { createPool } from '../../server/database.mjs'
@@ -46,7 +46,10 @@ test('PDGA SQL cache survives replicas, expires, isolates exact event holes and 
     if(url.includes('/api/fixture-index')){
       if(rateLimited)return new Response('PRIVATE',{status:429,headers:{'Retry-After':'600'}})
       assert.equal(new URL(url).searchParams.get('courseId'),'27416','use node ID, never the legacy REST ID')
-      return Response.json([row])
+      const event=(tournId,layoutId,startDate)=>({...row,tournId,layoutId,
+        liveTournament:{tournamentName:`Event ${tournId}`,startDate}})
+      return Response.json([row,event(101,22,'9-May-2026'),event(100,15,'25-May-2026'),
+        event(999,3,'28-Sep-2019'),event(100,13,'25-May-2026'),event(100,14,'25-May-2026')])
     }
     if(url.includes('/api/fixture-overview'))return Response.json({tournId:99,players:[{private:'NEVER_STORE'}],
       liveLayouts:[{...row,courseId:999,layoutId:12,liveLayoutDetails:[]},
@@ -69,9 +72,22 @@ test('PDGA SQL cache survives replicas, expires, isolates exact event holes and 
   const second=create()
   assert.deepEqual(await second.course('pdga:4551'),course,'another replica reads the persisted SQL cache')
   assert.equal(calls.length,3)
+  const legacyKey=createHash('sha256').update('layouts:pdga:4551').digest('hex')
+  await pool.query('INSERT INTO provider_cache.entries(key,value,expires_at) VALUES($1,$2,$3)',
+    [legacyKey,JSON.stringify([{layout_id:'11',tournament_id:'99',event_date:'25-May-202'}]),new Date(Date.now()+pdgaCacheMs)])
   const index=await second.layouts('pdga:4551')
-  assert.equal(index.value[0].layout_id,'11')
+  assert.deepEqual(index.value.map(l=>l.layout_id),['13','14','15','22','11','3'],
+    'refresh the versioned index instead of reusing previously truncated dates')
+  const indexCalls=calls.length
+  const browsed=await courseRequest({req:{method:'GET'},url:new URL('http://localhost/api/v1/courses/pdga:4551/layouts'),
+    pdga:first,json:(status,value)=>({status,value})})
+  assert.equal(browsed.status,200)
+  assert.equal(browsed.value.expiresAt,index.expiresAt)
+  assert.deepEqual(browsed.value.layouts.map(l=>`${l.tournament_id}:${l.layout_id}`),
+    ['100:13','100:14','100:15','101:22'])
+  assert.equal(calls.length,indexCalls,'browsing sorts and limits the shared cached index without provider calls')
   const detail=await first.layout('pdga:4551','99','11')
+  assert.equal(detail.value.tournament_id,'99','older saved references remain resolvable outside the latest two events')
   assert.equal(detail.value.holes.length,2)
   assert.equal(detail.value.holes[0].label,'1')
   assert.equal(detail.value.holes[0].distance_m,15.24)

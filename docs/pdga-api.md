@@ -52,6 +52,12 @@ is an application policy, not a PDGA-prescribed refresh interval.
 The shared cache excludes raw responses, contact/player data, credentials,
 cookies and tokens. Events cache only the exact matched course/layout and its
 hole fields. Same-name layouts from different events are not conflated.
+Browsing offers the two most recent distinct events for the exact course,
+ordered by parsed event date (unknown dates last), with all layouts from each
+event. The newest event's first layout is initially selected, without changing
+the saved game plan until the user chooses it. The full temporary index remains
+available to resolve older saved plans and named copies; the browsing limit does
+not retire their provider references.
 Upstream 429 cooldown and a miss budget are shared across replicas; valid cached
 reads do not make upstream requests. Expired data is not served on error.
 
