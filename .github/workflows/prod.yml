@@ -34,7 +34,7 @@ jobs:
           test "$GITHUB_REF" = refs/heads/main
           gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$SOURCE_SHA&event=push" \
             | jq -e --arg sha "$SOURCE_SHA" '.workflow_runs | any(.head_sha == $sha and .head_branch == "main" and .conclusion == "success")'
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
           ref: ${{ env.SOURCE_SHA }}
           persist-credentials: false
@@ -84,7 +84,7 @@ jobs:
           test "${#PG_APP}" -ge 32
           test "${#PG_DEV_APP}" -ge 32
           test "${#DEV_LOGIN}" -ge 32
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
           ref: ${{ env.SOURCE_SHA }}
           fetch-depth: 0
@@ -209,7 +209,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
           ref: ${{ env.SOURCE_SHA }}
           persist-credentials: false
@@ -240,7 +240,7 @@ jobs:
       IMAGE: ${{ needs.staging.outputs.image }}
       IDENTITY_READY: ${{ needs.staging.outputs.identityReady }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
