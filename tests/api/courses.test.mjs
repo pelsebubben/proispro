@@ -13,8 +13,8 @@ test('real SQL catalogue is atomic, searchable, idempotent, and isolated from ru
   t.after(() => admin.end())
   await migrate(admin, process.env.PGAPP_PASSWORD, 'griplock_catalogue_app')
   const syncPassword = randomBytes(32).toString('hex')
-  await provisionCourseSync(admin, syncPassword, 'griplock_dev_courses_sync')
-  const worker = createPool({ ...process.env, PGUSER: 'griplock_dev_courses_sync', PGPASSWORD: syncPassword })
+  await provisionCourseSync(admin, syncPassword, 'griplock_verify_courses_sync')
+  const worker = createPool({ ...process.env, PGUSER: 'griplock_verify_courses_sync', PGPASSWORD: syncPassword })
   const reader = createPool({ ...process.env, PGUSER: 'griplock_catalogue_app', PGPASSWORD: process.env.PGAPP_PASSWORD })
   t.after(() => worker.end())
   t.after(() => reader.end())
@@ -79,10 +79,10 @@ test('real SQL catalogue is atomic, searchable, idempotent, and isolated from ru
   await saveCatalogue(worker, changed)
   assert.equal((await reader.query("SELECT active FROM course_catalog.courses WHERE id='osm:node:1'")).rows[0].active, false)
   assert.equal((await call('/api/v1/courses?q=Norway%20test%201')).body.courses.some(c => c.id === 'osm:node:1'), false)
-  await admin.query('GRANT SELECT ON bags TO griplock_dev_courses_sync')
+  await admin.query('GRANT SELECT ON bags TO griplock_verify_courses_sync')
   try {
-    await assert.rejects(provisionCourseSync(admin, syncPassword, 'griplock_dev_courses_sync'), /unexpected privileges/)
+    await assert.rejects(provisionCourseSync(admin, syncPassword, 'griplock_verify_courses_sync'), /unexpected privileges/)
   } finally {
-    await admin.query('REVOKE SELECT ON bags FROM griplock_dev_courses_sync')
+    await admin.query('REVOKE SELECT ON bags FROM griplock_verify_courses_sync')
   }
 })

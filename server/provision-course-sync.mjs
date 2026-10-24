@@ -2,7 +2,7 @@ import { pathToFileURL } from 'node:url'
 import { createPool } from './database.mjs'
 
 export async function provisionCourseSync(pool, password, role) {
-  if (!/^griplock_(?:dev_)?courses_sync$/.test(role ?? '') || typeof password !== 'string' || password.length < 32) {
+  if (!/^griplock_(?:(?:dev|verify)_)?courses_sync$/.test(role ?? '') || typeof password !== 'string' || password.length < 32) {
     throw new Error('A dedicated course-sync role and 32+ character password are required')
   }
   const client = await pool.connect()
