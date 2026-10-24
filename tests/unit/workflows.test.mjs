@@ -8,9 +8,6 @@ const names = ['ci.yml', 'infra.yml', 'prod.yml', 'dev.yml', 'squad-ci.yml']
 const sources = Object.fromEntries(await Promise.all(names.map(async name => [
   name, (await readFile(new URL(`../../.github/workflows/${name}`, import.meta.url), 'utf8')).replaceAll('\r\n','\n'),
 ])))
-const lock = JSON.parse(await readFile(new URL('../../package-lock.json', import.meta.url), 'utf8'))
-const playwrightVersion = lock.packages['node_modules/@playwright/test'].version
-
 function checkTrustBoundary(files) {
   const workflows = Object.fromEntries(Object.entries(files).map(([name, text]) => [name, parse(text)]))
   for (const [name, workflow] of Object.entries(workflows)) {
@@ -34,7 +31,12 @@ function checkTrustBoundary(files) {
   const lintedNames = [...lint.run.matchAll(/\.github\/workflows\/([\w-]+\.yml)/g)].map(match => match[1])
   assert.deepEqual(lintedNames.sort(), [...names].sort(), 'lint every supported delivery workflow')
   for (const browser of [ci.jobs.browser, workflows['prod.yml'].jobs.browser]) {
-    assert.match(browser.container.image, new RegExp(`^mcr.microsoft.com/playwright:v${playwrightVersion.replaceAll('.', '\\.')}-noble@sha256:[a-f0-9]{64}$`))
+    assert.equal(browser.container, undefined, 'no independently versioned browser container')
+    const install = browser.steps.findIndex(step => step.run === 'npm ci')
+    const browsers = browser.steps.findIndex(step => step.run === 'npx --no-install playwright install --with-deps chromium')
+    const execute = browser.steps.findIndex(step => /^npm run test:(e2e|staging)$/.test(step.run ?? ''))
+    assert.ok(install >= 0 && browsers > install && execute > browsers,
+      'install the exact locked Playwright browser before executing tests')
     assert.equal(browser.permissions?.['id-token'], undefined, 'browser gets no cloud identity')
     assert.equal(browser.environment, undefined, 'browser gets no environment secrets')
   }
@@ -166,7 +168,8 @@ test('gates reject real workflow mutations that grant PR OIDC or remove apply pr
     ['prod.yml', '.conclusion == "success"', '.conclusion != "success"'],
     ['prod.yml', 'test "$ENABLED" = true', 'echo enabled'],
     ['prod.yml', 'releaseId="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"', 'releaseId="constant"'],
-    ['ci.yml', 'playwright:v1.60.0-noble', 'playwright:v1.59.0-noble'],
+    ['ci.yml', 'npx --no-install playwright install --with-deps chromium', 'npx playwright@1.60.0 install chromium'],
+    ['prod.yml', 'npx --no-install playwright install --with-deps chromium', 'echo browser-install-skipped'],
     ['prod.yml', 'run: node scripts/record-staging-release.mjs', 'run: echo release-skipped'],
     ['prod.yml', 'identityConfiguration(process.env)', 'console.log("validation-skipped")'],
     ['ci.yml', '          .github/workflows/dev.yml', '          .github/workflows/deploy.yml'],
@@ -194,4 +197,56 @@ test('every release readiness contract expects the current schema version', asyn
   assert.equal(migrations.length, schemaVersion, 'schemaVersion counts the migration files')
   const stagingSpec = await readFile(new URL('../../tests/staging/staging.spec.ts', import.meta.url), 'utf8')
   assert.match(stagingSpec, new RegExp(`schemaVersion: ${schemaVersion} \\}`), 'the deployed-release browser check')
+})
+
+function checkDependencyMaintenance({ node, manifest, lock, docker, workflows, dependabot }) {
+  assert.match(node, /^\d+$/)
+  assert.equal(manifest.engines.node, `>=${node} <${Number(node) + 1}`, 'declare the selected Node LTS')
+  assert.deepEqual(lock.packages[''].engines, manifest.engines, 'lockfile matches the runtime contract')
+  assert.match(manifest.devDependencies['@types/node'], new RegExp(`^\\^${node}\\.`), 'types match the runtime')
+  assert.deepEqual([...docker.matchAll(/^FROM node:([^\s]+)/gm)].map(match => match[1]),
+    [`${node}-bookworm-slim`, `${node}-bookworm-slim`], 'build and runtime use the same LTS')
+  for (const [name, workflow] of Object.entries(workflows)) {
+    for (const job of Object.values(workflow.jobs)) {
+      for (const step of job.steps ?? []) {
+        if (step.uses?.startsWith('actions/setup-node@')) {
+          assert.equal(String(step.with['node-version']), node, `${name}: matching Node LTS`)
+        }
+      }
+    }
+  }
+  assert.equal(dependabot.version, 2)
+  for (const ecosystem of ['npm', 'github-actions', 'docker']) {
+    const update = dependabot.updates.find(item => item['package-ecosystem'] === ecosystem)
+    assert.equal(update?.directory, '/')
+    assert.equal(update.schedule.interval, 'daily', `${ecosystem}: daily update discovery`)
+    assert.ok(update['open-pull-requests-limit'] >= 10, `${ecosystem}: do not stall after five PRs`)
+    assert.ok(Object.values(update.groups).some(group => group.patterns.includes('*')),
+      `${ecosystem}: group interdependent updates, including majors`)
+    assert.equal(update.ignore, undefined, `${ecosystem}: do not suppress outdated dependencies`)
+  }
+}
+
+test('dependency maintenance keeps runtime, CI and update coverage aligned', async () => {
+  const read = async path => readFile(new URL(`../../${path}`, import.meta.url), 'utf8')
+  const workflows = {}
+  for (const name of await readdir(new URL('../../.github/workflows/', import.meta.url))) {
+    if (name.endsWith('.yml') && !name.endsWith('.lock.yml')) {
+      workflows[name] = parse(await read(`.github/workflows/${name}`))
+    }
+  }
+  const inputs = {
+    node: (await read('.nvmrc')).trim(),
+    manifest: JSON.parse(await read('package.json')),
+    lock: JSON.parse(await read('package-lock.json')),
+    docker: await read('Dockerfile'),
+    workflows,
+    dependabot: parse(await read('.github/dependabot.yml')),
+  }
+  checkDependencyMaintenance(inputs)
+  assert.throws(() => checkDependencyMaintenance({ ...inputs, node: String(Number(inputs.node) - 2) }))
+  assert.throws(() => checkDependencyMaintenance({ ...inputs, docker: inputs.docker.replace('FROM node:', 'FROM old-node:') }))
+  const stale = structuredClone(inputs)
+  stale.dependabot.updates.find(item => item['package-ecosystem'] === 'npm').schedule.interval = 'weekly'
+  assert.throws(() => checkDependencyMaintenance(stale))
 })

@@ -3,12 +3,10 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import ts from 'typescript'
+import { transformWithOxc } from 'vite'
 
 const source = await readFile(new URL('../../src/components/DiscModal.tsx', import.meta.url), 'utf8')
-const { outputText } = ts.transpileModule(source, {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX },
-})
+const { code: outputText } = await transformWithOxc(source, 'DiscModal.tsx', { jsx: { runtime: 'automatic' } })
 const moduleSource = outputText
   .replace(/from ["']react["']/g, `from ${JSON.stringify(import.meta.resolve('react'))}`)
   .replace(/from ["']react\/jsx-runtime["']/g, `from ${JSON.stringify(import.meta.resolve('react/jsx-runtime'))}`)

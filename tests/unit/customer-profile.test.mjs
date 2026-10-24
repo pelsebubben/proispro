@@ -5,12 +5,10 @@ import { pathToFileURL } from 'node:url'
 import test from 'node:test'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import ts from 'typescript'
+import { transformWithOxc } from 'vite'
 
 const source = await readFile(new URL('../../src/lib/customerProfile.ts', import.meta.url), 'utf8')
-const { outputText } = ts.transpileModule(source, {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-})
+const { code: outputText } = await transformWithOxc(source, 'customerProfile.ts')
 const { customerProfile } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`)
 const technical = '11111111-1111-4111-8111-111111111111@customers.onmicrosoft.com'
 const moduleUrl = code => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
@@ -72,12 +70,10 @@ test('the actual Entra client keeps the API user ID when the display profile cha
     identityReady:true,entra:{clientId:'fixture',authority:'https://fixture.ciamlogin.com/tenant',scope:'api://fixture/access_as_user'}
   }`)
   const clientSource = await readFile(new URL('../../src/lib/entra.ts', import.meta.url), 'utf8')
-  const compiled = ts.transpileModule(clientSource, {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-  }).outputText
-    .replace("'@azure/msal-browser'", JSON.stringify(sdk))
-    .replace("'./runtime'", JSON.stringify(runtime))
-    .replace("'./customerProfile'", JSON.stringify(moduleUrl(outputText)))
+  const compiled = (await transformWithOxc(clientSource, 'entra.ts')).code
+    .replace(/["']@azure\/msal-browser["']/, JSON.stringify(sdk))
+    .replace(/["']\.\/runtime["']/, JSON.stringify(runtime))
+    .replace(/["']\.\/customerProfile["']/, JSON.stringify(moduleUrl(outputText)))
   globalThis.fetch = async (url, options) => {
     fixture.calls.push({ url, options })
     return new Response(JSON.stringify({ userId: fixture.userId }), { status: fixture.status })
@@ -110,11 +106,9 @@ test('the actual header displays email, then name, then a neutral signed-in labe
   const auth = moduleUrl(`export function useAuth() {
     return {user:globalThis.${fixtureKey},signOut:async()=>{}}
   }`)
-  const compiled = ts.transpileModule(layoutSource, {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText
+  const compiled = (await transformWithOxc(layoutSource, 'Layout.tsx', { jsx: { runtime: 'automatic' } })).code
     .replace('"react/jsx-runtime"', JSON.stringify(pathToFileURL(require.resolve('react/jsx-runtime')).href))
-    .replace("'../contexts/AuthContext'", JSON.stringify(auth))
+    .replace(/["']\.\.\/contexts\/AuthContext["']/, JSON.stringify(auth))
   try {
     const { Layout } = await import(moduleUrl(compiled))
     for (const [profile, expected] of [
