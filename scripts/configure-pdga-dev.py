@@ -5,9 +5,13 @@ import subprocess
 import sys
 import time
 import urllib.request
+import urllib.error
+
+progress_phase = "workflow_guard"
 
 
 def configure():
+    global progress_phase
     stage = os.environ.get("PDGA_STAGE", "dev")
     event = os.environ.get("GITHUB_EVENT_NAME")
     trusted_release = (os.environ.get("GITHUB_REF") == "refs/heads/main" and
@@ -21,7 +25,9 @@ def configure():
     sha = os.environ.get("EXPECTED_SOURCE_SHA", "")
     if not username or not password or len(sha) != 40:
         raise RuntimeError("Configure both PDGA secrets in the selected GitHub environment before running.")
+    progress_phase = "azure_context"
     account = json.loads(subprocess.check_output(["az", "account", "show", "-o", "json"], stderr=subprocess.DEVNULL))
+    progress_phase = "azure_token"
     token = json.loads(subprocess.check_output(
         ["az", "account", "get-access-token", "--resource", "https://management.azure.com/", "-o", "json"],
         stderr=subprocess.DEVNULL))["accessToken"]
@@ -37,7 +43,9 @@ def configure():
             raw = response.read(4 * 1024 * 1024)
             return json.loads(raw) if raw else {}
 
+    progress_phase = "read_app"
     app = arm("GET")
+    progress_phase = "validate_app"
     template = app["properties"]["template"]
     containers = template["containers"]
     if len(containers) != 1 or containers[0]["name"] != "app":
@@ -45,6 +53,7 @@ def configure():
     env = containers[0]["env"]
     if not any(v.get("name") == "SOURCE_SHA" and v.get("value") == sha for v in env):
         raise RuntimeError("Deploy this exact commit before configuring PDGA credentials.")
+    progress_phase = "read_existing_secrets"
     existing = arm("POST", "/listSecrets")["value"]
     secrets = [v for v in existing if v["name"] not in ("pdga-username", "pdga-password")]
     secrets += [{"name": "pdga-username", "value": username}, {"name": "pdga-password", "value": password}]
@@ -52,7 +61,9 @@ def configure():
         {"name": "PDGA_USERNAME", "secretRef": "pdga-username"},
         {"name": "PDGA_PASSWORD", "secretRef": "pdga-password"}]
     template["revisionSuffix"] = "pdga-" + os.environ["GITHUB_RUN_ID"] + "-" + os.environ["GITHUB_RUN_ATTEMPT"]
+    progress_phase = "write_provider_configuration"
     arm("PATCH", body={"properties": {"configuration": {"secrets": secrets}, "template": template}})
+    progress_phase = "wait_ready"
     for _ in range(40):
         updated = arm("GET")["properties"]
         if updated.get("provisioningState") in ("Failed", "Canceled"):
@@ -68,8 +79,10 @@ def configure():
 if __name__ == "__main__":
     try:
         configure()
-    except Exception:
+    except Exception as error:
         # Azure/HTTP errors may embed credentials or full resource bodies.
-        print("PDGA provisioning failed. Check environment secrets, Azure permissions, and the deployed commit. Details suppressed.",
+        status = str(error.code) if isinstance(error, urllib.error.HTTPError) else "unavailable"
+        print("PDGA provisioning failed at " + progress_phase + " (HTTP status: " + status +
+              "). Check environment secrets, Azure permissions, and the deployed commit. Response details suppressed.",
               file=sys.stderr)
         sys.exit(1)

@@ -199,6 +199,7 @@ jobs:
   dev-provider:
     name: Restore dev provider after foundation release
     needs: staging
+    if: ${{ always() && needs.staging.outputs.url != '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     environment: dev
