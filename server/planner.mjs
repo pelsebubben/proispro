@@ -26,14 +26,15 @@ export async function plannerRequest({req,url,pool,userId,json,pdga=null}) {
   const match = url.pathname.match(/^\/api\/v1\/planner\/(layouts|pins)\/([0-9a-f-]+)$/i)
   const overview = url.pathname === '/api/v1/planner'
   const provider = url.pathname === '/api/v1/planner/event-layout'
-  if ((!match && !overview && !provider) || (match && !id(match[2]))) return json(400,{error:'invalid_planner_request'})
+  const duplicate = url.pathname === '/api/v1/planner/duplicate'
+  if ((!match && !overview && !provider && !duplicate) || (match && !id(match[2]))) return json(400,{error:'invalid_planner_request'})
   try {
     const materialize = async layout => {
       if (!layout.provider_ref) return layout
       if (!pdga) fail(503,'pdga_not_configured')
       const ref = layout.provider_ref
       const {value,expiresAt} = await pdga.layout(ref.course_id,ref.tournament_id,ref.layout_id)
-      return {...layout,name:value.name,holes:value.holes,provider_event:value,expiresAt}
+      return {...layout,name:layout.private_name??value.name,holes:value.holes,provider_event:value,expiresAt}
     }
     let body
     if (req.method === 'PUT' || req.method === 'POST') body = await readBody(req,{maxBytes:262144})
@@ -41,12 +42,14 @@ export async function plannerRequest({req,url,pool,userId,json,pdga=null}) {
     if (overview && req.method==='GET' && url.search) {
       if ([...url.searchParams.keys()].some(k=>!['pin_id','layout_id'].includes(k)) || !id(url.searchParams.get('pin_id')) ||
           url.searchParams.has('layout_id')&&!id(url.searchParams.get('layout_id'))) fail(400,'invalid_pin')
-      const {rows,plan}=await asUser(pool,userId,async client=>{
+      const {rows,plan,selected_plan}=await asUser(pool,userId,async client=>{
         const pin=(await client.query('SELECT * FROM course_pins WHERE id=$1',[url.searchParams.get('pin_id')])).rows[0]
         if(!pin)fail(404,'pin_not_found')
         return {
           rows:(await client.query('SELECT * FROM private_layouts WHERE course_key=$1 ORDER BY lower(name),id',[keyFor(pin)])).rows,
-          plan:(await client.query('SELECT * FROM private_plans WHERE course_pin_id=$1',[pin.id])).rows[0]??null,
+          plan:(await client.query('SELECT * FROM private_plans WHERE course_pin_id=$1 AND active',[pin.id])).rows[0]??null,
+          selected_plan:url.searchParams.has('layout_id')?(await client.query(
+            'SELECT * FROM private_plans WHERE course_pin_id=$1 AND layout_id=$2',[pin.id,url.searchParams.get('layout_id')])).rows[0]??null:null,
         }
       })
       const selected=url.searchParams.get('layout_id')??plan?.layout_id
@@ -57,10 +60,10 @@ export async function plannerRequest({req,url,pool,userId,json,pdga=null}) {
           if(!row.provider_ref)throw error
           console.warn(JSON.stringify({event:'planner_provider_details_unavailable',
             code:['pdga_busy','pdga_rate_limited','pdga_unavailable','pdga_layouts_not_configured'].includes(error.code)?error.code:'provider_unavailable'}))
-          layouts.push({...row,provider_error:'Event details are temporarily unavailable. Saved disc choices are unchanged.'})
+          layouts.push({...row,name:row.private_name??row.name,provider_error:'Event details are temporarily unavailable. Saved disc choices are unchanged.'})
         }
       }
-      return json(200,{layouts,plan})
+      return json(200,{layouts,plan,selected_plan})
     }
     let eventDetails, resolvedLayout
     if(provider&&req.method==='POST'){
@@ -81,12 +84,31 @@ export async function plannerRequest({req,url,pool,userId,json,pdga=null}) {
       if (req.method!=='GET') await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,72491926))',[userId])
       if (overview && req.method === 'GET') {
         if (!url.search) {
-          const summaries=(await client.query(`SELECT p.course_pin_id,l.name AS layout_name,
+          const summaries=(await client.query(`SELECT p.course_pin_id,COALESCE(l.private_name,l.name) AS layout_name,
             jsonb_array_length(l.holes) AS hole_count,
             (SELECT count(*)::int FROM jsonb_each(p.selections) s WHERE jsonb_array_length(s.value->'disc_ids')>0) AS planned_count
-            FROM private_plans p JOIN private_layouts l ON l.id=p.layout_id`)).rows
+            FROM private_plans p JOIN private_layouts l ON l.id=p.layout_id WHERE p.active`)).rows
           return {status:200,body:{summaries}}
         }
+      }
+      if (duplicate && req.method==='POST') {
+        if(url.search||!exact(body,['course_pin_id','layout_id','name','version'])||!id(body.course_pin_id)||
+            !id(body.layout_id)||!text(body.name,100)||!body.name.trim()||!Number.isInteger(body.version)||body.version<0)fail(400,'invalid_private_game_plan')
+        const pin=(await client.query('SELECT * FROM course_pins WHERE id=$1 FOR UPDATE',[body.course_pin_id])).rows[0]
+        if(!pin)fail(404,'pin_not_found')
+        const source=(await client.query('SELECT * FROM private_layouts WHERE id=$1 FOR UPDATE',[body.layout_id])).rows[0]
+        if(!source||source.course_key!==keyFor(pin))fail(404,'layout_not_found')
+        if(!source.provider_ref)fail(400,'event_layout_required')
+        const previous=(await client.query('SELECT * FROM private_plans WHERE course_pin_id=$1 AND active FOR UPDATE',[pin.id])).rows[0]
+        if(body.version!==(previous?.version??0))fail(409,'plan_changed_reload')
+        if((await client.query('SELECT count(*)::int AS n FROM private_layouts WHERE user_id=$1',[userId])).rows[0].n>=200)fail(400,'layout_limit_reached')
+        const saved=(await client.query('SELECT selections FROM private_plans WHERE course_pin_id=$1 AND layout_id=$2',[pin.id,source.id])).rows[0]
+        const layout=(await client.query(`INSERT INTO private_layouts(user_id,course_key,name,provider_ref,private_name)
+          VALUES($1,$2,'PDGA event layout',$3,$4) RETURNING *`,[userId,keyFor(pin),JSON.stringify(source.provider_ref),body.name.trim()])).rows[0]
+        await client.query('UPDATE private_plans SET active=false WHERE course_pin_id=$1 AND active',[pin.id])
+        const plan=(await client.query(`INSERT INTO private_plans(user_id,course_pin_id,layout_id,selections,version)
+          VALUES($1,$2,$3,$4,$5) RETURNING *`,[userId,pin.id,layout.id,JSON.stringify(saved?.selections??{}),(previous?.version??0)+1])).rows[0]
+        return {status:201,body:{layout,plan}}
       }
       if (provider && req.method==='POST') {
         const pin = (await client.query('SELECT * FROM course_pins WHERE id=$1 FOR UPDATE',[body.course_pin_id])).rows[0]
@@ -94,7 +116,7 @@ export async function plannerRequest({req,url,pool,userId,json,pdga=null}) {
         if (pin.course_id!==eventDetails.courseId) fail(409,'pin_changed_reload')
         const {value,expiresAt}=eventDetails
         const ref={course_id:pin.course_id,tournament_id:body.tournament_id,layout_id:body.layout_id}
-        let row=(await client.query(`SELECT * FROM private_layouts WHERE course_key=$1 AND provider_ref=$2`,
+        let row=(await client.query(`SELECT * FROM private_layouts WHERE course_key=$1 AND provider_ref=$2 AND private_name IS NULL`,
           [keyFor(pin),JSON.stringify(ref)])).rows[0]
         if (!row) {
           const count=(await client.query('SELECT count(*)::int AS n FROM private_layouts WHERE user_id=$1',[userId])).rows[0].n
@@ -136,8 +158,9 @@ export async function plannerRequest({req,url,pool,userId,json,pdga=null}) {
         if (!pin) fail(404,'pin_not_found')
         const layout = (await client.query('SELECT * FROM private_layouts WHERE id=$1 FOR UPDATE',[body.layout_id])).rows[0]
         if (!layout || layout.course_key !== keyFor(pin)) fail(400,'invalid_layout_reference')
-        const previous = (await client.query('SELECT * FROM private_plans WHERE course_pin_id=$1 FOR UPDATE',[pin.id])).rows[0]
-        if (body.version !== (previous?.version ?? 0)) fail(409,'plan_changed_reload')
+        const active = (await client.query('SELECT * FROM private_plans WHERE course_pin_id=$1 AND active FOR UPDATE',[pin.id])).rows[0]
+        if (body.version !== (active?.version ?? 0)) fail(409,'plan_changed_reload')
+        const previous = (await client.query('SELECT * FROM private_plans WHERE course_pin_id=$1 AND layout_id=$2 FOR UPDATE',[pin.id,layout.id])).rows[0]
         if(layout.provider_ref&&JSON.stringify(layout.provider_ref)!==JSON.stringify(resolvedLayout?.provider_ref))fail(409,'layout_changed_reload')
         const resolved = layout.provider_ref?resolvedLayout:layout
         const holeIds = new Set(resolved.holes.map(h=>h.id))
@@ -152,14 +175,15 @@ export async function plannerRequest({req,url,pool,userId,json,pdga=null}) {
           value.disc_ids.forEach(d=>discIds.add(d))
         }
         if (discIds.size && (await client.query('SELECT id FROM owned_discs WHERE id=ANY($1::uuid[]) FOR SHARE',[Array.from(discIds)])).rowCount !== discIds.size) fail(400,'disc_not_owned')
-        const plan = (await client.query(`INSERT INTO private_plans(user_id,course_pin_id,layout_id,selections)
-          VALUES($1,$2,$3,$4) ON CONFLICT(course_pin_id) DO UPDATE SET layout_id=EXCLUDED.layout_id,
-          selections=EXCLUDED.selections,version=private_plans.version+1,updated_at=now() RETURNING *`,
-        [userId,pin.id,layout.id,JSON.stringify(body.selections)])).rows[0]
+        await client.query('UPDATE private_plans SET active=false WHERE course_pin_id=$1 AND active',[pin.id])
+        const plan = (await client.query(`INSERT INTO private_plans(user_id,course_pin_id,layout_id,selections,version)
+          VALUES($1,$2,$3,$4,$5) ON CONFLICT(user_id,course_pin_id,layout_id) DO UPDATE SET
+          selections=EXCLUDED.selections,active=true,version=EXCLUDED.version,updated_at=now() RETURNING *`,
+        [userId,pin.id,layout.id,JSON.stringify(body.selections),(active?.version??0)+1])).rows[0]
         return {status:200,body:{plan}}
       }
       if (match?.[1]==='pins' && req.method==='DELETE' && !url.search) {
-        const result = await client.query('DELETE FROM private_plans WHERE course_pin_id=$1',[match[2]])
+        const result = await client.query('DELETE FROM private_plans WHERE course_pin_id=$1 AND active',[match[2]])
         return {status:result.rowCount?200:404,body:result.rowCount?{deleted:true}:{error:'plan_not_found'}}
       }
       if (match?.[1]==='layouts' && req.method==='DELETE' && !url.search) {

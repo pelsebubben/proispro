@@ -18,10 +18,11 @@ export interface PrivateLayout {
   provider_event?: EventLayout
   provider_error?: string
   expiresAt?: number
+  private_name?: string | null
 }
 interface HolePlan { disc_ids: string[]; notes: string }
 interface PrivatePlan { layout_id: string; selections: Record<string,HolePlan>; version: number }
-interface PlannerState { layouts: PrivateLayout[]; plan: PrivatePlan | null }
+interface PlannerState { layouts: PrivateLayout[]; plan: PrivatePlan | null; selected_plan?: PrivatePlan | null }
 const emptyLayout = (): PrivateLayout => ({
   id: '', name: '', tee: '', basket: '', description: '', checked_on: null, holes: [], version: 0,
 })
@@ -40,6 +41,7 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
   const [notice,setNotice] = useState('')
   const [events,setEvents] = useState<{layouts:EventLayout[];expiresAt:number}|null>(null)
   const [eventSelection,setEventSelection] = useState('')
+  const [copyName,setCopyName] = useState<string|null>(null)
   const saving = useRef(false)
   const layout = data?.layouts.find(l=>l.id===layoutId)
   useEffect(()=>{
@@ -49,13 +51,13 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
       const now=Date.now()
       setEvents(previous=>previous&&previous.expiresAt>now?previous:null)
       setData(previous=>previous?{...previous,layouts:previous.layouts.map(l=>l.expiresAt&&l.expiresAt<=now?
-        {...l,name:'PDGA event layout',holes:[],provider_event:undefined,expiresAt:undefined,
+        {...l,name:l.private_name??'PDGA event layout',holes:[],provider_event:undefined,expiresAt:undefined,
           provider_error:'Cached event details expired. Reload saved plan to refresh; your disc choices are unchanged.'}:l)}:null)
     },Math.max(0,Math.min(...expiries)-Date.now()))
     return ()=>clearTimeout(timer)
   },[events,data])
   useEffect(()=>{
-    if(!dirty&&!draft)return
+    if(!dirty&&!draft&&!copyName?.trim())return
     const beforeUnload=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue=''}
     const beforeNavigate=(event:Event)=>{if(!confirm('Leave without saving your private planner changes?'))event.preventDefault()}
     window.addEventListener('beforeunload',beforeUnload)
@@ -64,7 +66,7 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
       window.removeEventListener('beforeunload',beforeUnload)
       window.removeEventListener('griplock-before-navigation',beforeNavigate)
     }
-  },[dirty,draft])
+  },[dirty,draft,copyName])
   const load = async () => {
     const next = await plannerData<PlannerState>(`planner?pin_id=${pin.id}`)
     setData(next); setLayoutId(next.plan?.layout_id ?? '')
@@ -88,6 +90,12 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
   const savePlan = async()=>{
     await plannerData(`planner/pins/${pin.id}`,'PUT',{layout_id:layoutId,version:data?.plan?.version??0,selections})
     await load();setNotice('Game plan saved.')
+  }
+  const selectLayout = async(selected:string)=>{
+    const next=await plannerData<PlannerState>(`planner?pin_id=${pin.id}&layout_id=${selected}`)
+    setData(next);setLayoutId(selected)
+    setSelections(next.selected_plan?.selections??(selected===next.plan?.layout_id?next.plan.selections:{}))
+    setDirty(selected!==(next.plan?.layout_id??''))
   }
   const updateChoice=(holeId:string,value:HolePlan)=>{
     setSelections(previous=>({...previous,[holeId]:value}));setDirty(true);setNotice('')
@@ -131,10 +139,7 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
                 const [tournament_id,layout_id]=eventSelection.split(':')
                 const result=await plannerData<{layout:PrivateLayout}>('planner/event-layout','POST',
                   {course_pin_id:pin.id,tournament_id,layout_id})
-                const next=await load()
-                setLayoutId(result.layout.id)
-                setSelections(next.plan?.layout_id===result.layout.id?next.plan.selections:{})
-                setDirty(next.plan?.layout_id!==result.layout.id)
+                await selectLayout(result.layout.id)
                 setNotice('Event layout selected. Choose discs and save the game plan to link it to this bag.')
               })
             }}>Use event layout</button>
@@ -142,26 +147,22 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
         </>}
       </div>}
       <div className="planner-toolbar">
-        <label>Layout<select value={layoutId} disabled={busy||!!draft} onChange={event=>{
+        <label>Layout<select aria-label="Layout" value={layoutId} disabled={busy||!!draft} onChange={event=>{
           if(dirty&&!confirm('Discard unsaved game-plan changes?'))return
           const selected=event.target.value
-          if(data.layouts.find(l=>l.id===selected)?.provider_ref){
-            void perform(async()=>{
-              const next=await plannerData<PlannerState>(`planner?pin_id=${pin.id}&layout_id=${selected}`)
-              setData(next);setLayoutId(selected);setSelections(selected===next.plan?.layout_id?next.plan.selections:{})
-              setDirty(selected!==(next.plan?.layout_id??''))
-            })
-          }else{
-            setLayoutId(selected);setSelections(selected===data.plan?.layout_id?data.plan.selections:{})
-            setDirty(selected!==(data.plan?.layout_id??''))
-          }
+          setCopyName(null)
+          if(!selected){setLayoutId('');setSelections({});setDirty(false);return}
+          void perform(()=>selectLayout(selected))
           setNotice('')
         }}><option value="">Choose a private layout</option>
-          {data.layouts.map(l=><option key={l.id} value={l.id}>{l.name}{l.provider_ref?` · Event ${l.provider_ref.tournament_id} / Layout ${l.provider_ref.layout_id}`:''}</option>)}
+          {data.layouts.map(l=><option key={l.id} value={l.id}>{l.private_name??l.name}{l.private_name?' · Private game plan':l.provider_ref?` · Event ${l.provider_ref.tournament_id} / Layout ${l.provider_ref.layout_id}`:''}</option>)}
         </select></label>
         <button className="btn" disabled={busy||!!draft} onClick={()=>{
           if(!dirty||confirm('Discard unsaved game-plan changes before creating a layout?'))setDraft(emptyLayout())
         }}>Create private layout</button>
+        {layout?.provider_ref&&<button className="btn" disabled={busy||!!draft||dirty} onClick={()=>setCopyName('')}>
+          Duplicate &amp; rename
+        </button>}
         {layout&&!layout.provider_ref&&<button className="btn" disabled={busy||!!draft} onClick={()=>{
           if(!dirty||confirm('Discard unsaved game-plan changes before editing the layout?'))setDraft(structuredClone(layout))
         }}>Edit layout</button>}
@@ -170,6 +171,24 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
             void perform(async()=>{await plannerData(`planner/layouts/${layout.id}`,'DELETE');await load();setNotice('Private layout deleted.')})
         }}>Delete layout</button>}
       </div>
+      {copyName!==null&&layout?.provider_ref&&<form aria-label="Duplicate private game plan" className="course-search-form" onSubmit={event=>{
+        event.preventDefault()
+        void perform(async()=>{
+          await plannerData('planner/duplicate','POST',{course_pin_id:pin.id,layout_id:layout.id,
+            name:copyName.trim(),version:data.plan?.version??0})
+          await load();setCopyName(null);setNotice('Private game plan created. Your saved disc choices were copied; the source plan is unchanged.')
+        })
+      }}>
+        <label>Private game plan name<input required autoFocus maxLength={100} value={copyName} disabled={busy}
+          onChange={event=>setCopyName(event.target.value)} placeholder="e.g. Ekeberg everyday rounds"/></label>
+        <p className="bag-hint">Your name, saved disc choices and strategy are copied privately. PDGA holes still refresh from the 24-hour cache.
+          This is not a permanent hole-layout snapshot.</p>
+        <div className="planner-toolbar">
+          <button className="btn btn-primary" disabled={busy||!copyName.trim()||dirty}>Create private game plan</button>
+          <button type="button" className="btn" disabled={busy} onClick={()=>setCopyName(null)}>Cancel</button>
+        </div>
+      </form>}
+      {layout?.provider_ref&&dirty&&!draft&&<p className="bag-hint">Save your changes before duplicating this game plan.</p>}
       {data.layouts.length===0&&!draft&&<p>Add holes from your own observations. Do not copy restricted course guides, maps or provider content.</p>}
       {draft?<LayoutEditor key={draft.id||'new'} initial={draft} busy={busy} onCancel={()=>setDraft(null)}
         onSave={value=>void perform(async()=>{
@@ -184,7 +203,8 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
             'Layout saved. Save the game plan to link it to this bag.')
         })}/>:layout&&<>
         <div className="planner-heading"><div>
-          <h4>{layout.name}</h4>
+          <h4>{layout.private_name??layout.name}</h4>
+          {layout.private_name&&<p className="bag-hint">Private game plan · Your disc choices and strategy are independent of the source plan.</p>}
           {layout.provider_event?<p className="bag-hint">PDGA event: {layout.provider_event.event_name} · {layout.provider_event.event_date??'Date unknown'}
             {' '}· Par {layout.provider_event.par??'?'} · {layout.provider_event.length??'?'} {layout.provider_event.units}.
             {' '}This historical setup may differ from the current course.</p>:
@@ -232,7 +252,7 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
         <div className="planner-toolbar">
           <button className="btn btn-primary" disabled={saveDisabled} onClick={()=>void perform(savePlan)}>{busy?'Saving...':'Save game plan'}</button>
           {dirty&&<span role="status">Unsaved changes</span>}
-          {data.plan&&<button className="btn" disabled={busy} onClick={()=>{
+          {data.plan?.layout_id===layout.id&&<button className="btn" disabled={busy} onClick={()=>{
             if(confirm('Unlink this layout and remove this bag’s private hole choices? The layout stays available.'))
               void perform(async()=>{await plannerData(`planner/pins/${pin.id}`,'DELETE');await load();setNotice('Layout unlinked.')})
           }}>Unlink layout</button>}

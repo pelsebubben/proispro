@@ -93,10 +93,10 @@ test('PDGA SQL cache survives replicas, expires, isolates exact event holes and 
   t.after(()=>plannerPool.end())
   const plannerPdga=createPdgaService({...options,pool:plannerPool})
   services.push(plannerPdga)
-  const request=async(path,method='GET',body)=>{
+  const request=async(path,method='GET',body,userId=owner)=>{
     const req=Object.assign(Readable.from(body?[Buffer.from(JSON.stringify(body))]:[]),
       {method,headers:{'content-type':'application/json'}})
-    return plannerRequest({req,url:new URL(path,'http://localhost'),pool:plannerPool,userId:owner,pdga:plannerPdga,
+    return plannerRequest({req,url:new URL(path,'http://localhost'),pool:plannerPool,userId,pdga:plannerPdga,
       json:(status,value)=>({status,value})})
   }
   const chosen=await request('/api/v1/planner/event-layout','POST',{course_pin_id:pin,tournament_id:'99',layout_id:'11'})
@@ -119,6 +119,37 @@ test('PDGA SQL cache survives replicas, expires, isolates exact event holes and 
   const reloaded=await request(`/api/v1/planner?pin_id=${pin}`)
   assert.equal(reloaded.value.layouts[0].holes[0].id,holes[0].id)
   assert.deepEqual(reloaded.value.plan.selections,selections)
+  const duplicateBody={course_pin_id:pin,layout_id:layoutId,name:'My everyday Ekeberg plan',version:1}
+  assert.equal((await request('/api/v1/planner/duplicate','POST',{...duplicateBody,name:' '})).status,400)
+  assert.equal((await request('/api/v1/planner/duplicate','POST',{...duplicateBody,holes})).status,400)
+  assert.equal((await request('/api/v1/planner/duplicate','POST',{...duplicateBody,layout_id:randomUUID()})).status,404)
+  assert.equal((await request('/api/v1/planner/duplicate','POST',{...duplicateBody,version:0})).status,409)
+  assert.equal((await request('/api/v1/planner/duplicate','POST',duplicateBody,randomUUID())).status,404)
+  const anotherPin=(await admin.query(`INSERT INTO course_pins(user_id,bag_id,course_name,course_id)
+    VALUES($1,$2,'PDGA course','pdga:4550') RETURNING id`,[owner,bag])).rows[0].id
+  assert.equal((await request('/api/v1/planner/duplicate','POST',{...duplicateBody,course_pin_id:anotherPin})).status,404)
+  const copied=await request('/api/v1/planner/duplicate','POST',duplicateBody)
+  assert.equal(copied.status,201)
+  assert.notEqual(copied.value.layout.id,layoutId)
+  assert.equal(copied.value.layout.private_name,duplicateBody.name)
+  assert.deepEqual(copied.value.layout.holes,[],'duplicate stores no permanent provider facts')
+  assert.deepEqual(copied.value.layout.provider_ref,persisted.provider_ref)
+  assert.deepEqual(copied.value.plan.selections,selections)
+  assert.equal(copied.value.plan.version,2)
+  assert.equal((await request('/api/v1/planner/event-layout','POST',{course_pin_id:pin,tournament_id:'99',layout_id:'11'})).value.layout.id,layoutId,
+    'browsing the source never reuses a named private copy')
+  const copyId=copied.value.layout.id
+  const ownChanges={[holes[0].id]:{disc_ids:[disc],notes:'Independent recreational strategy'}}
+  assert.equal((await request(`/api/v1/planner/pins/${pin}`,'PUT',{layout_id:copyId,version:2,selections:ownChanges})).status,200)
+  const original=await request(`/api/v1/planner?pin_id=${pin}&layout_id=${layoutId}`)
+  assert.deepEqual(original.value.selected_plan.selections,selections,'source choices survive changing the copy')
+  const copyView=await request(`/api/v1/planner?pin_id=${pin}`)
+  assert.equal(copyView.value.layouts.find(l=>l.id===copyId).name,duplicateBody.name)
+  assert.deepEqual(copyView.value.plan.selections,ownChanges)
+  assert.equal((await request(`/api/v1/planner/pins/${pin}`,'PUT',{layout_id:layoutId,version:3,selections})).status,200)
+  const restoredCopy=await request(`/api/v1/planner?pin_id=${pin}&layout_id=${copyId}`)
+  assert.deepEqual(restoredCopy.value.selected_plan.selections,ownChanges,'switching layouts retains each private game plan')
+  assert.equal((await request('/api/v1/planner/duplicate','POST',duplicateBody)).status,409,'old active-plan versions cannot be replayed')
   const api=path=>courseRequest({req:{method:'GET'},url:new URL(path,'http://localhost'),pdga:first,
     json:(status,value)=>({status,value})})
   assert.equal((await api('/api/v1/courses/export')).status,404)
@@ -130,9 +161,19 @@ test('PDGA SQL cache survives replicas, expires, isolates exact event holes and 
   await assert.rejects(second.layouts('pdga:4551'),{code:'pdga_rate_limited'})
   assert.equal(calls.length,failedCount,'provider cooldown applies across replicas, without another upstream call')
   const unavailable=await request(`/api/v1/planner?pin_id=${pin}`)
-  assert.ok(unavailable.value.layouts[0].provider_error)
-  assert.equal(unavailable.value.layouts[0].name,'PDGA event layout')
+  assert.ok(unavailable.value.layouts.find(l=>l.id===layoutId).provider_error)
+  assert.equal(unavailable.value.layouts.find(l=>l.id===layoutId).name,'PDGA event layout')
   assert.deepEqual(unavailable.value.plan.selections,selections)
+  const duringOutage=await request('/api/v1/planner/duplicate','POST',{...duplicateBody,name:'Rate-limit-safe private plan',version:4})
+  assert.equal(duringOutage.status,201,'copying saved user choices and IDs needs no provider access')
+  assert.deepEqual(duringOutage.value.layout.holes,[])
+  assert.equal(calls.length,failedCount)
+  const outageView=await request(`/api/v1/planner?pin_id=${pin}`)
+  const namedOutage=outageView.value.layouts.find(l=>l.id===duringOutage.value.layout.id)
+  assert.equal(namedOutage.name,'Rate-limit-safe private plan')
+  assert.deepEqual(namedOutage.holes,[])
+  assert.ok(namedOutage.provider_error)
+  assert.deepEqual(outageView.value.plan.selections,selections)
   assert.ok(!JSON.stringify(logs).includes('PRIVATE'))
   assert.ok(logs.some(l=>l.httpStatus===429))
   await pool.query("UPDATE provider_cache.control SET blocked_until=now(),requests=0")

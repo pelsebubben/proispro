@@ -7,8 +7,8 @@ const secondDiscId='00000000-0000-4000-8000-000000000004'
 const layoutId='00000000-0000-4000-8000-000000000005'
 interface Plan {layout_id:string;version:number;selections:Record<string,{disc_ids:string[];notes:string}>}
 async function setup(page:Page,event=false){
-  const state:{layouts:PrivateLayout[];plan:Plan|null;failSave:boolean;layoutBodies:object[];providerRequests:number;failEvents:boolean}={
-    layouts:[],plan:null,failSave:false,layoutBodies:[],providerRequests:0,failEvents:false}
+  const state:{layouts:PrivateLayout[];plan:Plan|null;plans:Record<string,Plan>;failSave:boolean;layoutBodies:object[];providerRequests:number;failEvents:boolean}={
+    layouts:[],plan:null,plans:{},failSave:false,layoutBodies:[],providerRequests:0,failEvents:false}
   await page.addInitScript(()=>{
     sessionStorage.setItem('griplock.devAccessToken',`h.${btoa(JSON.stringify({preferred_username:'planner-fixture'}))}.s`)
   })
@@ -39,8 +39,21 @@ async function setup(page:Page,event=false){
         provider_ref:{course_id:'pdga:4551',tournament_id:'99',layout_id:'11'},
         provider_event:{layout_id:'11',tournament_id:'99',name:'Fixture event layout',hole_count:1,par:3,length:85,
           units:'Meters',event_name:'Fixture event',event_date:'2026-01-02'},expiresAt:Date.now()+86400000}
-      state.layouts=[layout]
-      return route.fulfill({status:201,json:{layout}})
+      const existing=state.layouts.find(l=>l.id===layoutId)
+      if(!existing)state.layouts.push(layout)
+      return route.fulfill({status:201,json:{layout:existing??layout}})
+    }
+    if(path==='/api/v1/planner/duplicate'&&method==='POST'){
+      if(state.failSave)return route.fulfill({status:409,json:{error:'plan_changed_reload'}})
+      const body=route.request().postDataJSON()
+      const source=state.layouts.find(l=>l.id===body.layout_id)!
+      const layout={...structuredClone(source),id:'00000000-0000-4000-8000-000000000010',
+        private_name:body.name,name:body.name}
+      state.layouts.push(layout)
+      state.plan={layout_id:layout.id,version:(state.plan?.version??0)+1,
+        selections:structuredClone(state.plans[source.id]?.selections??{})}
+      state.plans[layout.id]=structuredClone(state.plan)
+      return route.fulfill({status:201,json:{layout,plan:state.plan}})
     }
     if(path==='/api/v1/planner'){
       if(method==='POST'){
@@ -49,7 +62,8 @@ async function setup(page:Page,event=false){
         state.layouts.push(layout)
         return route.fulfill({status:201,json:{layout}})
       }
-      if(new URL(route.request().url()).search)return route.fulfill({json:{layouts:state.layouts,plan:state.plan}})
+      if(new URL(route.request().url()).search)return route.fulfill({json:{layouts:state.layouts,plan:state.plan,
+        selected_plan:state.plans[new URL(route.request().url()).searchParams.get('layout_id')??'']??null}})
       const layout=state.layouts.find(l=>l.id===state.plan?.layout_id)
       return route.fulfill({json:{summaries:layout?[{course_pin_id:pinId,layout_name:layout.name,hole_count:layout.holes.length,
         planned_count:Object.values(state.plan!.selections).filter(s=>s.disc_ids.length).length}]:[]}})
@@ -69,6 +83,7 @@ async function setup(page:Page,event=false){
     if(path===`/api/v1/planner/pins/${pinId}`&&method==='PUT'){
       if(state.failSave)return route.fulfill({status:409,json:{error:'plan_changed_reload'}})
       state.plan={...route.request().postDataJSON(),version:(state.plan?.version??0)+1}
+      state.plans[state.plan!.layout_id]=structuredClone(state.plan!)
       return route.fulfill({json:{plan:state.plan}})
     }
     return route.fulfill({json:{[path.split('/').at(-1)!]:[]}})
@@ -188,4 +203,51 @@ test('an unused layout can be deleted without having to link it to a plan first'
   await expect(page.getByText('Private layout deleted.',{exact:true})).toBeVisible()
   expect(state.layouts).toEqual([])
   expect(state.plan).toBeNull()
+})
+
+test('duplicate and rename keeps independent private choices and never claims a static provider snapshot',async({page},testInfo)=>{
+  const state=await setup(page,true)
+  await page.getByRole('button',{name:'Browse PDGA event layouts',exact:true}).click()
+  await page.getByLabel('PDGA event layout',{exact:true}).selectOption('99:11')
+  await page.getByRole('button',{name:'Use event layout',exact:true}).click()
+  const duplicate=page.getByRole('button',{name:'Duplicate & rename',exact:true})
+  await expect(duplicate).toBeDisabled()
+  await page.getByLabel('Add disc for hole 1A',{exact:true}).selectOption(discId)
+  await page.getByLabel('Strategy for hole 1A',{exact:true}).fill('Saved source strategy')
+  const topSave=page.getByRole('group',{name:'Planner actions',exact:true}).getByRole('button',{name:'Save game plan',exact:true})
+  await topSave.click()
+  await duplicate.click()
+  const form=page.getByRole('form',{name:'Duplicate private game plan',exact:true})
+  await expect(form.getByRole('button',{name:'Create private game plan',exact:true})).toBeDisabled()
+  await form.getByLabel('Private game plan name',{exact:true}).fill('Ekeberg everyday rounds')
+  await expect(form).toContainText('not a permanent hole-layout snapshot')
+  state.failSave=true
+  await form.getByRole('button',{name:'Create private game plan',exact:true}).click()
+  await expect(form.getByLabel('Private game plan name',{exact:true})).toHaveValue('Ekeberg everyday rounds')
+  state.failSave=false
+  await form.getByRole('button',{name:'Create private game plan',exact:true}).click()
+  await expect(page.getByRole('heading',{name:'Ekeberg everyday rounds',exact:true})).toBeVisible()
+  await expect(page.getByLabel('Strategy for hole 1A',{exact:true})).toHaveValue('Saved source strategy')
+  await page.getByLabel('Strategy for hole 1A',{exact:true}).fill('My independent everyday strategy')
+  await topSave.click()
+  expect(state.plans['00000000-0000-4000-8000-000000000010'].selections['00000000-0000-4000-8000-000000000008'].notes).toBe('My independent everyday strategy')
+  await page.getByRole('combobox',{name:'Layout',exact:true}).selectOption(layoutId)
+  await expect(page.getByLabel('Strategy for hole 1A',{exact:true})).toHaveValue('Saved source strategy')
+  page.once('dialog',dialog=>dialog.accept())
+  await page.getByRole('combobox',{name:'Layout',exact:true}).selectOption('00000000-0000-4000-8000-000000000010')
+  await expect(page.getByLabel('Strategy for hole 1A',{exact:true})).toHaveValue('My independent everyday strategy')
+  await page.reload()
+  await page.getByRole('navigation').getByRole('button',{name:/Courses/}).click()
+  await page.getByRole('button',{name:'Open private planner',exact:true}).click()
+  await expect(page.getByRole('heading',{name:'Ekeberg everyday rounds',exact:true})).toBeVisible()
+  await expect(page.getByLabel('Strategy for hole 1A',{exact:true})).toHaveValue('My independent everyday strategy')
+  await page.getByRole('button',{name:'Browse PDGA event layouts',exact:true}).click()
+  await page.getByLabel('PDGA event layout',{exact:true}).selectOption('99:11')
+  await page.getByRole('button',{name:'Use event layout',exact:true}).click()
+  await expect(page.getByLabel('Strategy for hole 1A',{exact:true})).toHaveValue('Saved source strategy')
+  page.once('dialog',dialog=>dialog.accept())
+  await page.getByRole('combobox',{name:'Layout',exact:true}).selectOption('00000000-0000-4000-8000-000000000010')
+  await expect(page.getByLabel('Strategy for hole 1A',{exact:true})).toHaveValue('My independent everyday strategy')
+  expect(await page.locator('body').evaluate(body=>body.scrollWidth<=innerWidth)).toBe(true)
+  await page.screenshot({path:testInfo.outputPath('private-named-gameplan.png'),fullPage:true})
 })

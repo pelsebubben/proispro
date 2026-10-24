@@ -26,6 +26,16 @@ The event name and date remain visible: an event setup is not a claim about the
 course's current layout. Missing or changed provider data is an explicit error;
 saved private choices are not silently removed or reassigned.
 
+After saving an event plan, choose **Duplicate & rename**, enter your own name
+and select **Create private game plan**. The copy starts with your saved disc
+choices and strategy; later changes are independent of the source. Switching
+between layouts restores each plan's saved choices. Only one plan is active
+for a course/bag link at a time.
+
+This is a named private plan, **not a permanent snapshot of PDGA holes**. Both
+source and copy retain provider IDs and resolve hole facts from the temporary
+cache. An unavailable provider does not erase the private name or strategy.
+
 The provider's developing integration routes are confidential configuration.
 Do not put their URLs, raw responses or documentation in public source, fixtures,
 issues, screenshots or browser payloads. See the server-only configuration names
@@ -44,7 +54,7 @@ Misses serialize across replicas, identical requests coalesce, and a shared
 Cached reads continue during cooldown. Failure never overwrites a valid cached
 response with empty data.
 
-Private provider layouts store **IDs only**, not duplicate provider facts.
+Private provider layouts store **IDs and optional user-authored plan names only**, not duplicate provider facts.
 They resolve through the temporary cache; their hole keys are stable for the
 same course, event, layout and provider hole ID. User-authored strategy and disc
 selections remain in owner-RLS tables. Provider facts are read-only.
