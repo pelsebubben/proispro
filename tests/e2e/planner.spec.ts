@@ -43,6 +43,11 @@ async function setup(page:Page){
       if(state.plan)state.plan.version++
       return route.fulfill({json:{layout}})
     }
+    if(path===`/api/v1/planner/layouts/${layoutId}`&&method==='DELETE'){
+      if(state.plan)return route.fulfill({status:409,json:{error:'layout_in_use_unlink_game_plans_first'}})
+      state.layouts=[]
+      return route.fulfill({json:{deleted:true}})
+    }
     if(path===`/api/v1/planner/pins/${pinId}`&&method==='PUT'){
       if(state.failSave)return route.fulfill({status:409,json:{error:'plan_changed_reload'}})
       state.plan={...route.request().postDataJSON(),version:(state.plan?.version??0)+1}
@@ -112,4 +117,14 @@ test('failed saves remain explicit and unsaved navigation can be declined',async
   state.failSave=false
   await page.getByRole('button',{name:'Save game plan',exact:true}).click()
   await expect(page.getByText('Game plan saved.',{exact:true})).toBeVisible()
+})
+
+test('an unused layout can be deleted without having to link it to a plan first',async({page})=>{
+  const state=await setup(page)
+  await createLayout(page)
+  page.once('dialog',dialog=>dialog.accept())
+  await page.getByRole('button',{name:'Delete layout',exact:true}).click()
+  await expect(page.getByText('Private layout deleted.',{exact:true})).toBeVisible()
+  expect(state.layouts).toEqual([])
+  expect(state.plan).toBeNull()
 })

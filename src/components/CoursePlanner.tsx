@@ -89,10 +89,14 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
         }}><option value="">Choose a private layout</option>
           {data.layouts.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}
         </select></label>
-        <button className="btn" disabled={busy||!!draft||dirty} onClick={()=>setDraft(emptyLayout())}>Create private layout</button>
-        {layout&&<button className="btn" disabled={busy||!!draft||dirty} onClick={()=>setDraft(structuredClone(layout))}>Edit layout</button>}
-        {layout&&<button className="btn" disabled={busy||!!draft||dirty} onClick={()=>{
-          if(confirm('Delete this private layout? It must be unlinked from all game plans first. This cannot be undone.'))
+        <button className="btn" disabled={busy||!!draft} onClick={()=>{
+          if(!dirty||confirm('Discard unsaved game-plan changes before creating a layout?'))setDraft(emptyLayout())
+        }}>Create private layout</button>
+        {layout&&<button className="btn" disabled={busy||!!draft} onClick={()=>{
+          if(!dirty||confirm('Discard unsaved game-plan changes before editing the layout?'))setDraft(structuredClone(layout))
+        }}>Edit layout</button>}
+        {layout&&<button className="btn" disabled={busy||!!draft} onClick={()=>{
+          if(confirm('Delete this private layout and discard unsaved game-plan changes? It must be unlinked from all game plans first. This cannot be undone.'))
             void perform(async()=>{await plannerData(`planner/layouts/${layout.id}`,'DELETE');await load();setNotice('Private layout deleted.')})
         }}>Delete layout</button>}
       </div>
