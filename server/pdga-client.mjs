@@ -119,8 +119,10 @@ function validateCourses(courses) {
 export function readPdgaCourse(credentials, id, fetcher = fetch) {
   if (!/^pdga:[1-9][0-9]{0,15}$/.test(id)) throw new Error('Invalid PDGA course ID.')
   return withSession(credentials, async search => {
-    const courses = validateCourses(await search({ country: 'NO', course_id: id.slice(5), limit: '1' }))
-    if (courses.length && courses[0].id !== id) throw new Error('PDGA returned a different course.')
-    return courses[0] ?? null
+    // Live ID queries can include neighbouring legacy IDs; never treat the first row as an exact match.
+    const courses = await search({ country: 'NO', course_id: id.slice(5), limit: '30' })
+    const matches = courses.filter(course => course.id === id.slice(5))
+    if (courses.length && !matches.length) throw new Error('PDGA returned a different course.')
+    return validateCourses(matches)[0] ?? null
   }, fetcher)
 }

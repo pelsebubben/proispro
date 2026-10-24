@@ -17,6 +17,13 @@ content. Never substitute this file for an already-applied migration.
 
 - Authenticated search performs one bounded PDGA request with the user's query,
   `country=NO`, and at most 30 results. A saved pin resolves one course by ID.
+  Live `course_id` queries were observed returning neighbouring legacy IDs, not
+  just the requested record. A cold pin lookup therefore reads one bounded
+  response (limit 30), selects an exact returned ID match and discards the
+  neighbours. There is no pagination, broad fallback or cache of those neighbours.
+  No match in a nonempty response fails explicitly; the first row is never used
+  as a substitute. Verify saved pins after a cold restart, not only after search
+  has warmed their cache.
 - Credentials, API cookies and CSRF tokens remain server-side. Every valid API
   session attempts logout, including after failure; failed logout is an error.
 - A process-local cache holds at most 100 entries for 15 minutes. Expired data

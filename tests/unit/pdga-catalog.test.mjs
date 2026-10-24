@@ -33,9 +33,23 @@ test('PDGA uses one bounded user search or exact ID lookup, not country replicat
   assert.ok(!JSON.stringify(courses).includes('PRIVATE'))
   assert.equal((await readPdgaCourse(credentials, 'pdga:4551', api.fetcher)).id, 'pdga:4551')
   assert.equal(api.calls[4].searchParams.get('course_id'), '4551')
-  assert.equal(api.calls[4].searchParams.get('limit'), '1')
+  assert.equal(api.calls[4].searchParams.get('limit'), '30')
   assert.throws(() => searchPdga(credentials, ''), /Invalid PDGA search/)
   assert.throws(() => readPdgaCourse(credentials, 'osm:4551'), /Invalid PDGA course/)
+})
+test('cold ID lookup finds only the exact returned ID within one bounded response, never a neighbouring course',async t=>{
+  const api=fixture()
+  api.state.records=[{...record,course_id:'4550',course_name:'Neighbour before'},record,
+    {...record,course_id:'4552',course_name:'Neighbour after'}]
+  const service=createPdgaService({...credentials,fetcher:api.fetcher})
+  t.after(()=>service.close())
+  assert.equal((await service.course('pdga:4551')).value.name,'Ekeberg')
+  assert.equal(api.calls.length,3)
+  assert.equal(api.calls[1].searchParams.get('limit'),'30')
+  api.state.records=[{...record,course_id:'4550',course_name:'Not requested'}]
+  service.clear()
+  await assert.rejects(service.course('pdga:4551'),{code:'pdga_unavailable'})
+  assert.equal(api.calls.length,6)
 })
 test('temporary cache expires, never serves stale on error, and can be purged immediately', async t => {
   let time = 1000
