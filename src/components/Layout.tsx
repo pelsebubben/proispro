@@ -1,7 +1,6 @@
 import { ReactNode } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-
-type Tab = 'inventory' | 'bags' | 'courses' | 'collections' | 'wishlist' | 'forsale' | 'analytics'
+import type { Tab } from '../lib/navigation'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'inventory', label: '💿 Inventory' },
@@ -69,6 +68,7 @@ export function Layout({ activeTab, onTabChange, children }: LayoutProps) {
           <button
             key={tab.id}
             onClick={() => onTabChange(tab.id)}
+            aria-current={activeTab === tab.id ? 'page' : undefined}
             style={{
               padding: '0.65rem 1rem',
               background: 'transparent',

@@ -189,6 +189,12 @@ test('failed saves remain explicit and unsaved navigation can be declined',async
   page.once('dialog',dialog=>dialog.dismiss())
   await page.getByRole('button',{name:'Open linked bag',exact:true}).click()
   await expect(page.getByRole('heading',{name:'Private layout & game plan'})).toBeVisible()
+  const plannerUrl=page.url()
+  page.once('dialog',dialog=>dialog.dismiss())
+  await page.goBack()
+  await expect(page.getByRole('heading',{name:'Private layout & game plan'})).toBeVisible()
+  await expect(page).toHaveURL(plannerUrl)
+  await expect(page.getByText('Unsaved changes',{exact:true})).toBeVisible()
   state.failSave=false
   await expect(topSave).toBeEnabled()
   await page.getByRole('button',{name:'Save game plan',exact:true}).last().click()
