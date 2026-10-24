@@ -21,6 +21,8 @@ param postgresAppPassword string
 param devLoginPasscode string = ''
 
 var live = stage == 'live'
+// Adopt the portal-created managed certificate; Azure continues to renew it.
+var productionCertificateId = '${environmentId}/managedCertificates/griplock.no-cae-grip-261024191340'
 // Shared passcode login exists only on the dev app and replaces customer sign-in there.
 var devLogin = !live && !empty(devLoginPasscode)
 var devLoginEnv = devLogin ? [
@@ -44,6 +46,13 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         targetPort: 8080
         transport: 'http'
         allowInsecure: false
+        customDomains: live ? [
+          {
+            name: 'griplock.no'
+            bindingType: 'SniEnabled'
+            certificateId: productionCertificateId
+          }
+        ] : []
       }
       secrets: concat([{ name: 'pg-app', value: postgresAppPassword }], devLogin ? [{ name: 'dev-passcode', value: devLoginPasscode }] : [])
     }
