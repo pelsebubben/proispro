@@ -5,7 +5,13 @@ import { DiscPhoto } from './DiscPhoto'
 
 interface DiscListProps {
   groups: TypeGroup[]
-  onEdit: (disc: ClientDisc) => void
+  onEdit?: (disc: ClientDisc) => void
+  membership?: {
+    bagName: string
+    selectedIds: string[]
+    disabled: boolean
+    onToggle: (disc: ClientDisc) => void
+  }
 }
 
 const hasNumber = (value: number | string) => value !== '' && value != null
@@ -19,7 +25,7 @@ const icon = { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': true,
 
 // Moxfield-style: text rows grouped by type, with the picture of whichever disc is
 // hovered, focused or tapped shown beside (or, on a phone, above) the list.
-export function DiscList({ groups, onEdit }: DiscListProps) {
+export function DiscList({ groups, onEdit, membership }: DiscListProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const discs = groups.flatMap(group => group.discs)
   const active = discs.find(disc => disc.id === activeId) ?? discs[0]
@@ -39,7 +45,7 @@ export function DiscList({ groups, onEdit }: DiscListProps) {
               </h3>
               <ul className="disc-list-rows">
                 {group.discs.map(disc => (
-                  <DiscRow key={disc.id} disc={disc} active={disc.id === active?.id} onActivate={setActiveId} onEdit={onEdit} />
+                  <DiscRow key={disc.id} disc={disc} active={disc.id === active?.id} onActivate={setActiveId} onEdit={onEdit} membership={membership} />
                 ))}
               </ul>
             </section>
@@ -78,13 +84,25 @@ interface DiscRowProps {
   disc: ClientDisc
   active: boolean
   onActivate: (id: string) => void
-  onEdit: (disc: ClientDisc) => void
+  onEdit?: (disc: ClientDisc) => void
+  membership?: DiscListProps['membership']
 }
 
-const DiscRow = memo(function DiscRow({ disc, active, onActivate, onEdit }: DiscRowProps) {
+const DiscRow = memo(function DiscRow({ disc, active, onActivate, onEdit, membership }: DiscRowProps) {
   const flight = flightOf(disc)
   return (
     <li className="disc-row" data-active={active ? 'true' : undefined}>
+      {membership && (
+        <label className="disc-row-membership">
+          <input
+            type="checkbox"
+            checked={membership.selectedIds.includes(disc.id)}
+            disabled={membership.disabled}
+            onChange={() => membership.onToggle(disc)}
+          />
+          <span className="sr-only">{`Include ${disc.name}${disc.edition ? ` ${disc.edition}` : ''} in ${membership.bagName}`}</span>
+        </label>
+      )}
       <button
         type="button"
         className="disc-row-main"
@@ -93,7 +111,7 @@ const DiscRow = memo(function DiscRow({ disc, active, onActivate, onEdit }: Disc
         onFocus={() => onActivate(disc.id)}
         onClick={() => onActivate(disc.id)}
       >
-        <span className="disc-row-qty">{disc.quantity > 1 ? `${disc.quantity}×` : ''}</span>
+        {!membership && <span className="disc-row-qty">{disc.quantity > 1 ? `${disc.quantity}×` : ''}</span>}
         <span className="disc-row-name">
           <span className="disc-row-line">
             <span className="disc-row-title">{disc.name}</span>
@@ -110,9 +128,9 @@ const DiscRow = memo(function DiscRow({ disc, active, onActivate, onEdit }: Disc
           </>}
         </span>
       </button>
-      <button type="button" className="disc-row-edit" aria-label={`Edit ${disc.name}`} onClick={() => onEdit(disc)}>
+      {onEdit && <button type="button" className="disc-row-edit" aria-label={`Edit ${disc.name}`} onClick={() => onEdit(disc)}>
         <svg {...icon}><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="M13.5 6.5l4 4" /></svg>
-      </button>
+      </button>}
     </li>
   )
 })

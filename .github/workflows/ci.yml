@@ -105,7 +105,7 @@ jobs:
           docker run --rm --network host \
             -e NODE_ENV -e PGHOST -e PGDATABASE -e PGUSER \
             -e PGPASSWORD -e PGAPP_PASSWORD -e PGSSLMODE \
-            griplock:ci node --test tests/api/discs.test.mjs
+            griplock:ci node --test tests/api/discs.test.mjs tests/api/courses.test.mjs tests/api/planner.test.mjs
 
   infrastructure:
     name: Infrastructure checks
@@ -122,6 +122,8 @@ jobs:
           az bicep build --file infra/bootstrap.bicep --stdout > /dev/null
           az bicep build --file infra/staging.bicep --stdout > /dev/null
           az bicep build --file infra/app.bicep --stdout > /dev/null
+      - name: Test PDGA secret provisioning without Azure credentials
+        run: python3 tests/unit/pdga_provision_test.py
       - name: Install checksum-verified actionlint
         env:
           GH_TOKEN: ${{ github.token }}

@@ -278,7 +278,7 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
                 event.target.value = ''
                 if (file) void choosePhoto(file)
               }} />
-            <small className="disc-photo-hint">JPEG, PNG or WebP, up to 10 MB. You crop it to a square before saving.</small>
+            <small className="disc-photo-hint">JPEG, PNG or WebP, up to 10 MB. Frame the disc inside the circle before saving.</small>
             {isPreparingPhoto && <p role="status">Preparing photo...</p>}
             {photoError && <p role="alert">{photoError}</p>}
           </div>

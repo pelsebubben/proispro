@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises'
 import { resolve, extname, sep } from 'node:path'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
 import { featureRequest, publicSale } from './features.mjs'
+import { courseRequest } from './courses.mjs'
+import { plannerRequest } from './planner.mjs'
 import { schemaVersion } from './migrate.mjs'
 import { runtimeConfiguration } from './identity.mjs'
 import { isLoopbackAddress } from './dev-identity.mjs'
@@ -12,7 +14,7 @@ const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
   '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' }
 
 export function createApplication({ pool, issuer, audience, jwksUrl, requiredScope,
-  identity = null, devIdentity = null, staticRoot = 'dist', sourceSha = 'local' }) {
+  identity = null, devIdentity = null, pdga = null, staticRoot = 'dist', sourceSha = 'local' }) {
   let jwks
   if (devIdentity) {
     if (!devIdentity.hosted && process.env.NODE_ENV === 'production') throw new Error('Local dev identity is forbidden in production')
@@ -116,6 +118,12 @@ export function createApplication({ pool, issuer, audience, jwksUrl, requiredSco
         const users = await pool.query('SELECT id FROM app_users WHERE issuer=$1 AND subject=$2', [issuer, identity.sub])
         const userId = users.rows[0].id
         if (url.pathname === '/api/v1/session' && req.method === 'GET') return json(200, { userId })
+        if (url.pathname === '/api/v1/planner' || url.pathname.startsWith('/api/v1/planner/')) {
+          return await plannerRequest({req,url,pool,userId,json})
+        }
+        if (url.pathname === '/api/v1/courses' || url.pathname.startsWith('/api/v1/courses/')) {
+          return await courseRequest({ req, url, pool, json, pdga })
+        }
         return await featureRequest({ req, url, pool, userId, json, image })
       }
       if (!['GET', 'HEAD'].includes(req.method)) return json(405, { error: 'method_not_allowed' })

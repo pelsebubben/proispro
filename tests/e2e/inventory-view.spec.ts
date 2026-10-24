@@ -73,8 +73,12 @@ test('cards show the photo, or a stock illustration, small in the top-right corn
   const photo = cardOf(page, 'Judge').getByAltText('Judge personal photo')
   await expect(photo).toBeVisible()
   await expect(photo).toHaveCSS('object-fit', 'cover')
+  await expect(photo).toHaveCSS('border-radius', '50%')
   const shown = (await photo.boundingBox())!
   expect(Math.abs(shown.width - shown.height)).toBeLessThan(1)
+  const pictureFrame = (await cardOf(page, 'Judge').locator('.disc-photo-frame').boundingBox())!
+  // Stock art has 8% padding and an outer radius of 98 in a 200-unit viewBox.
+  expect(shown.width / pictureFrame.width).toBeCloseTo(0.84 * 0.98, 2)
   await expect(cardOf(page, 'Aviar').getByAltText(/personal photo/)).toHaveCount(0)
   expect(await noHorizontalScroll(page)).toBe(true)
   await page.screenshot({ path: info.outputPath('cards.png'), scale: 'css', fullPage: true })
@@ -88,6 +92,7 @@ test('the edit form shows the photo small in its top-right corner', async ({ pag
   await expect(dialog.getByRole('heading', { name: 'Edit Disc' })).toBeVisible()
   const photo = dialog.getByAltText('Judge personal photo')
   await expect(photo).toBeVisible()
+  await expect(photo).toHaveCSS('border-radius', '50%')
   const frame = (await dialog.boundingBox())!
   const thumb = (await photo.boundingBox())!
   expect(thumb.width).toBeLessThanOrEqual(100)
@@ -141,6 +146,11 @@ test('hovering or tapping a row previews that disc: your photo if you have one, 
   if (!touch) await expect(preview.getByText('Stock illustration', { exact: true })).toBeVisible()
   await point('Origin')
   await expect(preview.getByRole('img', { name: 'Origin personal photo' })).toBeVisible()
+  const personal = preview.getByRole('img', { name: 'Origin personal photo' })
+  await expect(personal).toHaveCSS('border-radius', '50%')
+  const mask = (await personal.boundingBox())!
+  const media = (await preview.locator('.disc-photo-frame').boundingBox())!
+  expect(mask.width / media.width).toBeCloseTo(0.84 * 0.98, 2)
   await expect(preview.getByText('Midnight Prowl II')).toBeVisible()
   // The phone strip keeps its height, so the rows do not slide away from under the next tap.
   if (touch) expect(await stripHeight()).toBeCloseTo(initialHeight, 0)

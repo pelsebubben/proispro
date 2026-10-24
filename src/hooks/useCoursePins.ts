@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { createRow, deleteRows, listRows, updateRow } from '../lib/data'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { createRow, deleteRows, listRows, updateRow, readCourseCatalogue } from '../lib/data'
 import { useAuth } from '../contexts/AuthContext'
 
 export interface ClientPin {
@@ -18,11 +18,14 @@ export interface HoleAssignment {
   disc_name: string
 }
 
-export interface OSMCourse {
-  osmId: number
-  osmType: string
+export interface CatalogueCourse {
+  id: string
+  source: 'osm' | 'pdga'
+  source_url: string | null
+  expiresAt?: number
   name: string
-  holes: string
+  expected_holes: number | null
+  mapped_holes: number
   city: string
   lat: number | null
   lon: number | null
@@ -33,31 +36,55 @@ export interface ParsedHole {
   name: string
   lat: number | null
   lon: number | null
+  par: number | null
+  length_m: number | null
 }
 
 interface CourseMapData {
-  lat: number
-  lon: number
+  lat: number | null
+  lon: number | null
   holes: ParsedHole[]
-  mapData?: any
+  coverageNote: string
+  sourceUrl: string | null
+  courseName?: string
+  expiresAt?: number
 }
 
-const OSM_MIRRORS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://overpass.openstreetmap.ru/api/interpreter',
-]
-
-export function useCoursePins() {
+export function useCoursePins(detailsForBagId?:string) {
   const { user } = useAuth()
   const [pins, setPins] = useState<ClientPin[]>([])
+  const [pinsLoading, setPinsLoading] = useState(true)
+  const [pinsError, setPinsError] = useState('')
   const [holeAssignments, setHoleAssignments] = useState<HoleAssignment[]>([])
-  const [pdgaSuggestions, setPdgaSuggestions] = useState<OSMCourse[]>([])
+  const [courseSuggestions, setCourseSuggestions] = useState<CatalogueCourse[]>([])
+  const [courseError, setCourseError] = useState<string | null>(null)
+  const [providerNotice, setProviderNotice] = useState<string | null>(null)
+  const [catalogueUpdatedAt, setCatalogueUpdatedAt] = useState<string | null>(null)
   const [courseLoading, setCourseLoading] = useState(false)
   const [courseCache, setCourseCache] = useState<Record<string, CourseMapData>>({})
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const searchSequence = useRef(0)
+  useEffect(() => () => {
+    if (searchTimeout.current) clearTimeout(searchTimeout.current)
+    searchSequence.current++
+  }, [])
+  useEffect(() => {
+    const expiries = [...Object.values(courseCache).map(c => c.expiresAt),
+      ...courseSuggestions.map(c => c.expiresAt)].filter((time): time is number => time !== undefined)
+    if (!expiries.length) return
+    const timer = setTimeout(() => {
+      setCourseCache(previous => Object.fromEntries(Object.entries(previous).filter(([, value]) =>
+        !value.expiresAt || value.expiresAt > Date.now())))
+      setCourseSuggestions(previous => previous.filter(c => !c.expiresAt || c.expiresAt > Date.now()))
+    }, Math.max(0, Math.min(...expiries) - Date.now()))
+    return () => clearTimeout(timer)
+  }, [courseCache, courseSuggestions])
 
   const loadPins = useCallback(async () => {
     if (!user) return
+    setPinsLoading(true)
+    setPinsError('')
+    try {
     const data = await listRows<{ id: string; course_name: string; course_id: string | null; bag_id: string; created_at: string }>('course_pins')
     setPins(
       (data || []).map(p => ({
@@ -68,6 +95,10 @@ export function useCoursePins() {
         createdAt: new Date(p.created_at).getTime(),
       }))
     )
+    } catch(error) {
+      setPinsError(error instanceof Error?error.message:'Could not load course links.')
+      throw error
+    } finally {setPinsLoading(false)}
   }, [user])
 
   const loadHoleAssignments = useCallback(async () => {
@@ -91,7 +122,7 @@ export function useCoursePins() {
 
   const createPin = async (courseName: string, courseId: string | null, bagId: string) => {
     if (!user) return
-    await createRow('course_pins', { course_name: courseName, course_id: courseId, bag_id: bagId })
+    await createRow('course_pins', { course_name: courseId?.startsWith('pdga:') ? 'PDGA course' : courseName, course_id: courseId, bag_id: bagId })
     await loadPins()
   }
 
@@ -145,118 +176,79 @@ export function useCoursePins() {
   }
 
   const searchCourses = async (query: string) => {
-    if (!query || query.length < 2) {
-      setPdgaSuggestions([])
-      return
-    }
+    const sequence = ++searchSequence.current
+    if (!query || query.trim().length < 2) { setCourseSuggestions([]); setCourseLoading(false); return }
     setCourseLoading(true)
+    setCourseError(null)
     try {
-      const escaped = query.replace(/[\\'"]/g, '')
-      const oql = `[out:json][timeout:10];(node["leisure"="disc_golf_course"]["name"~"${escaped}",i];way["leisure"="disc_golf_course"]["name"~"${escaped}",i];relation["leisure"="disc_golf_course"]["name"~"${escaped}",i];);out center 10;`
-
-      let result = null
-      for (const mirror of OSM_MIRRORS) {
-        try {
-          const res = await fetch(mirror, {
-            method: 'POST',
-            body: oql,
-            headers: { 'Content-Type': 'text/plain' },
-          })
-          if (res.status === 429 || res.status === 504) continue
-          if (res.ok) {
-            result = await res.json()
-            break
-          }
-        } catch {
-          continue
-        }
+      const result = await readCourseCatalogue<{ courses: CatalogueCourse[]; sync: { completed_at: string } | null;
+        providers?: { pdga: { status: string } }; osmAvailable?: boolean }>(
+        `courses?q=${encodeURIComponent(query.trim())}`)
+      if (sequence === searchSequence.current) {
+        setCourseSuggestions(result.courses)
+        setCatalogueUpdatedAt(result.sync?.completed_at ?? null)
+        setProviderNotice(result.providers?.pdga.status === 'unavailable' ? 'PDGA search is temporarily unavailable. OSM results are shown; retry to include PDGA.' :
+          result.providers?.pdga.status === 'not_configured' ? 'PDGA search is not configured on this server. OSM results are shown.' :
+          result.osmAvailable === false ? 'The OSM catalogue has not synced yet. Only PDGA results are available.' : null)
       }
-
-      if (result && result.elements) {
-        const courses: OSMCourse[] = result.elements.map((el: any) => ({
-          osmId: el.id,
-          osmType: el.type,
-          name: el.tags?.name || '',
-          holes: el.tags?.holes || '',
-          city: el.tags?.['addr:city'] || '',
-          lat: el.lat ?? el.center?.lat ?? null,
-          lon: el.lon ?? el.center?.lon ?? null,
-        }))
-        setPdgaSuggestions(courses)
-      } else {
-        setPdgaSuggestions([])
+    } catch (error) {
+      if (sequence === searchSequence.current) {
+        setCourseSuggestions([])
+        setCourseError(error instanceof Error ? error.message : 'Course search failed. Please try again.')
       }
-    } catch {
-      setPdgaSuggestions([])
     } finally {
-      setCourseLoading(false)
+      if (sequence === searchSequence.current) setCourseLoading(false)
     }
   }
 
-  let searchTimeout: NodeJS.Timeout | null = null
   const searchCoursesDebounced = (query: string) => {
-    if (searchTimeout) clearTimeout(searchTimeout)
-    searchTimeout = setTimeout(() => searchCourses(query), 400)
+    searchSequence.current++
+    setCourseSuggestions([])
+    setCourseError(null)
+    setCourseLoading(query.trim().length >= 2)
+    if (searchTimeout.current) clearTimeout(searchTimeout.current)
+    searchTimeout.current = setTimeout(() => void searchCourses(query), 300)
   }
 
-  const downloadCourseMap = async (pin: ClientPin, lat: number, lon: number) => {
-    if (!pin.id) return
+  const downloadCourseMap = useCallback(async (pin: ClientPin) => {
+    if (!pin.courseId) return
     setCourseLoading(true)
+    setCourseError(null)
     try {
-      const oql = `[out:json][timeout:25];(node(around:2500,${lat},${lon})["disc_golf"];way(around:2500,${lat},${lon})["disc_golf"];relation(around:2500,${lat},${lon})["disc_golf"];);out center tags;`
-
-      let result = null
-      for (const mirror of OSM_MIRRORS) {
-        try {
-          const res = await fetch(mirror, {
-            method: 'POST',
-            body: oql,
-            headers: { 'Content-Type': 'text/plain' },
-          })
-          if (res.status === 429 || res.status === 504) continue
-          if (res.ok) {
-            result = await res.json()
-            break
-          }
-        } catch {
-          continue
-        }
-      }
-
-      if (!result || !result.elements) return
-
-      const holeTypes = ['hole', 'tee', 'basket']
-      let holes: ParsedHole[] = []
-      for (const holeType of holeTypes) {
-        const filtered = result.elements.filter(
-          (el: any) => el.tags?.disc_golf === holeType
-        )
-        if (filtered.length > 0) {
-          holes = filtered.map((el: any, idx: number) => ({
-            ref: el.tags?.ref || String(idx + 1),
-            name: el.tags?.name || '',
-            lat: el.lat ?? el.center?.lat ?? null,
-            lon: el.lon ?? el.center?.lon ?? null,
-          }))
-          break
-        }
-      }
-
-      holes.sort((a, b) => {
-        const aNum = parseInt(a.ref, 10)
-        const bNum = parseInt(b.ref, 10)
-        if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum
-        return a.ref.localeCompare(b.ref)
-      })
-
+      const result = await readCourseCatalogue<{
+        course: { name: string; lat: number | null; lon: number | null; active: boolean; source_url?: string }
+        holes: { ref: string; name: string; par: number | null; length_m: number | null; geometry: [number, number][] }[]
+        coverage: { note: string }
+        sync?: { completed_at: string }
+        expiresAt?: number
+      }>(`courses/${pin.courseId}/holes`)
+      const holes: ParsedHole[] = result.holes.map(h => ({ ref: h.ref, name: h.name,
+        par: h.par, length_m: h.length_m, lat: h.geometry[0]?.[1] ?? null, lon: h.geometry[0]?.[0] ?? null }))
+        .sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }))
       setCourseCache(prev => ({
         ...prev,
-        [pin.id]: { lat, lon, holes, mapData: result },
+        [pin.id]: { lat: result.course.lat, lon: result.course.lon, holes, sourceUrl: result.course.source_url ?? null,
+          courseName: result.course.name, expiresAt: result.expiresAt,
+          coverageNote: result.course.active ? result.coverage.note : 'This course is no longer present in the latest source catalogue.' },
       }))
+      if (result.sync) setCatalogueUpdatedAt(result.sync.completed_at)
+    } catch (error) {
+      setCourseError(error instanceof Error ? error.message : 'Could not load course holes. Please try again.')
     } finally {
       setCourseLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      for (const pin of pins) {
+        if (cancelled) break
+        if (pin.courseId?.startsWith('pdga:')&&(!detailsForBagId||pin.bagId===detailsForBagId)) await downloadCourseMap(pin)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [pins, downloadCourseMap,detailsForBagId])
 
   const getHolesForPin = (pin: ClientPin): ParsedHole[] | null => {
     return courseCache[pin.id]?.holes || null
@@ -281,7 +273,10 @@ export function useCoursePins() {
   }
 
   return {
-    pins,
+    pinsLoading,
+    pinsError,
+    pins: pins.map(pin => pin.courseId?.startsWith('pdga:') ?
+      { ...pin, courseName: courseCache[pin.id]?.courseName ?? 'PDGA course' } : pin),
     loadPins,
     createPin,
     updatePin,
@@ -295,7 +290,10 @@ export function useCoursePins() {
     downloadCourseMap,
     courseSearch: searchCourses,
     courseLoading,
-    pdgaSuggestions,
+    courseSuggestions,
+    courseError,
+    providerNotice,
+    catalogueUpdatedAt,
     courseCache,
     getHolesForPin,
     computeDiscUsageStats,

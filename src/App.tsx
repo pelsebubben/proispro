@@ -4,6 +4,7 @@ import { useDiscs } from './hooks/useDiscs'
 import { useBags } from './hooks/useBags'
 import { LoginPage } from './pages/LoginPage'
 import { Layout } from './components/Layout'
+import { confirmPlannerNavigation } from './lib/data'
 
 const InventoryPage = lazy(() => import('./pages/InventoryPage').then(m => ({ default: m.InventoryPage })))
 const BagsPage = lazy(() => import('./pages/BagsPage').then(m => ({ default: m.BagsPage })))
@@ -20,6 +21,8 @@ function FeatureAppShell() {
   const { discs } = useDiscs()
   const { bags } = useBags()
   const [activeTab, setActiveTab] = useState<Tab>('inventory')
+  const [bagTarget,setBagTarget]=useState<string>()
+  const [courseTarget,setCourseTarget]=useState<{bagId?:string;pinId?:string}>({})
   const [dataError, setDataError] = useState('')
   useEffect(() => {
     const listener = (event: Event) => setDataError((event as CustomEvent<string>).detail)
@@ -28,15 +31,19 @@ function FeatureAppShell() {
   }, [])
 
   return (
-    <Layout activeTab={activeTab} onTabChange={setActiveTab}>
+    <Layout activeTab={activeTab} onTabChange={tab=>{if(confirmPlannerNavigation()){setActiveTab(tab);setCourseTarget({})}}}>
       {authError && <p role="alert">{authError}</p>}
       {dataError && <div role="alert" style={{ padding: '1rem' }}>
         {dataError} <button onClick={() => setDataError('')}>Dismiss</button>
       </div>}
       <Suspense fallback={<div style={{ padding: '2rem', color: 'var(--clr-muted)', textAlign: 'center' }}>Loading…</div>}>
         {activeTab === 'inventory' && <InventoryPage />}
-        {activeTab === 'bags' && <BagsPage />}
-        {activeTab === 'courses' && <CoursesPage allDiscs={discs} allBags={bags} />}
+        {activeTab === 'bags' && <BagsPage initialBagId={bagTarget} onOpenCourses={(bagId,pinId)=>{
+          setCourseTarget({bagId,pinId});setActiveTab('courses')
+        }}/>}
+        {activeTab === 'courses' && <CoursesPage allDiscs={discs} allBags={bags}
+          initialBagId={courseTarget.bagId} initialPinId={courseTarget.pinId}
+          onOpenBag={bagId=>{if(confirmPlannerNavigation()){setBagTarget(bagId);setActiveTab('bags')}}}/>}
         {activeTab === 'collections' && <CollectionsPage allDiscs={discs} />}
         {activeTab === 'wishlist' && <WishlistPage />}
         {activeTab === 'forsale' && <ForSalePage allDiscs={discs} />}

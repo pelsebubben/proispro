@@ -12,8 +12,9 @@ A personal disc golf inventory and bag tracker for the owner and friends.
 
 Inventory, bags/history, collections, wishlist, sale listings/share links, course
 pins and hole assignments all use `/api/v1`. Disc search uses a bundled DiscIt
-snapshot, so typing never waits on an external service. Course search/maps use
-OpenStreetMap Overpass. Anonymous sale links disclose only available listings while their
+snapshot, so typing never waits on an external service. Norway course search and
+hole data come from a PostgreSQL catalogue refreshed weekly from OpenStreetMap,
+not browser calls to Overpass. Anonymous sale links disclose only available listings while their
 owner has explicitly enabled public sharing.
 
 ## Adding discs
@@ -27,8 +28,12 @@ describe the bundled data and its deliberately limited special-edition coverage.
 
 The Type selector and inventory filters include Utility. A personal JPEG, PNG
 or WebP photo can be added, replaced or removed in Add/Edit Disc. Choosing a
-file opens a square crop step: drag to move, zoom with the slider, mouse wheel,
-pinch or arrow keys, then Use photo. Adjust crop reopens it later. Files up to
+file opens a circular crop preview: align the disc's rim with the circle, drag to move, zoom with the slider, mouse wheel,
+pinch or arrow keys, then Use photo. Adjust crop reopens it later. Personal photos
+use a circular mask and the same padding as stock illustrations in every view,
+including existing photos. The bounding square is still stored as JPEG; this
+hides the background outside the circle, rather than automatically detecting
+the disc edge or producing a transparent image file. Files up to
 10 MB are cropped and resized in the browser before upload. The server validates
 and re-encodes them to metadata-free JPEGs, at most 1024 pixels and 256 KiB.
 Photos are private to their owner and stored in PostgreSQL, not a new cloud
@@ -46,6 +51,47 @@ that disc's own photo in the preview beside the list (above it on phones); the
 pencil button opens Edit Disc.
 Discs without a photo show a generated stock illustration, not a manufacturer
 photograph. [Catalogue sources](docs/disc-catalog.md) explains why.
+
+## Bag configurations
+
+Create Bag opens an in-page name form, not a browser prompt. Select a saved bag
+from the configuration selector. Its disc list uses the same type groups,
+sorting, search and photo preview as Inventory List. Switch to All inventory
+and check discs to include them; uncheck to remove them from this configuration.
+Changes save immediately, with a saving indicator and visible failures.
+The same inventory entry can be included in multiple configurations. Membership
+does not allocate inventory quantities or move discs out of other configurations.
+Rename, flight chart, recent history and an in-page deletion confirmation are
+available beside the configuration name. Deleting a configuration removes its
+course links and history, never its inventory discs.
+
+## Norway courses
+
+Search the shared SQL catalogue, pin a course to a bag, and load its stored hole
+data without contacting Overpass from your device. Coverage warnings and source
+attribution stay visible; the ODbL catalogue can be downloaded separately from
+private user data. [Coverage, licensing and sync operations](docs/course-catalogue.md)
+describe the Norway-only scope and independent weekly Azure job.
+
+The PDGA Norway directory integration uses server-side, on-demand search with
+a temporary in-memory cache, not a permanent SQL catalogue or bulk sync.
+Only PDGA matching IDs persist in private bag links. It is disabled until
+server credentials are configured through the opt-in manual dev workflow or
+the protected main production release using each environment's own secrets.
+PDGA entries can link to bag configurations but do not provide
+individual hole layouts through the documented REST API. Approved PDGA API
+access can also be checked separately with the
+[secure local read-only test and deployment guide](docs/pdga-api.md). The test does not save credentials or
+mix PDGA data into the OSM catalogue.
+
+**Bags → Courses & plans** shows linked courses, selected private layouts and
+hole-planning progress. Open the same private planner from either Bags or Courses.
+Enter your own layout and holes, then choose a primary disc, alternatives and
+strategy notes per hole. Plans warn about selected discs outside the linked bag.
+Layout facts can be reused across your own bag links; disc choices stay specific
+to each link. Existing OSM assignments remain separate. Community publishing and
+map/photo uploads are deferred; do not copy restricted provider layouts.
+See the [approved first-version scope](docs/prd-course-bag-configurations.md).
 
 ## Local development
 

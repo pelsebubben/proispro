@@ -245,7 +245,7 @@ test('a failed stored photo can be replaced by a fresh local preview', async ({ 
   expect(writes).toEqual([])
 })
 
-test('the crop keeps the centre square untouched, and Adjust crop re-crops a stored photo without upscaling', async ({ page }) => {
+test('the crop keeps the centre image untouched, and Adjust crop re-crops a stored photo without upscaling', async ({ page }) => {
   const { writes } = await inventory(page)
   const dialog = page.getByRole('dialog')
   await page.getByRole('combobox', { name: /Disc Name/ }).fill('Adjusted disc')
@@ -265,7 +265,36 @@ test('the crop keeps the centre square untouched, and Adjust crop re-crops a sto
   expect(await savedPhoto(writes[1].photo)).toEqual({ width: 512, height: 512, bands: ['green', 'green', 'green', 'green'] })
 })
 
-test('dragging the photo moves the square window, and what is inside it is what gets saved', async ({ page }, info) => {
+test('the circular crop preview and saved photo hide the same corners without extra zoom', async ({ page }, info) => {
+  await inventory(page)
+  const photo = await sharp({ create: { width: 600, height: 600, channels: 3, background: '#ff0000' } }).png().toBuffer()
+  await choosePhoto(page, photo)
+  const stage = page.getByRole('group', { name: /^Crop area/ })
+  await expect(stage).toHaveCSS('border-radius', '50%')
+  await expect(page.getByText(/Align the disc's rim with the circle/)).toBeVisible()
+  const assertCircle = async (screenshot: Buffer) => {
+    const { data, info: pixels } = await sharp(screenshot).removeAlpha().raw().toBuffer({ resolveWithObject: true })
+    const redAt = (x: number, y: number) => {
+      const offset = (y * pixels.width + x) * pixels.channels
+      return data[offset] > 200 && data[offset + 1] < 50 && data[offset + 2] < 50
+    }
+    expect(redAt(Math.floor(pixels.width / 2), Math.floor(pixels.height / 2))).toBe(true)
+    for (const x of [2, pixels.width - 3]) {
+      for (const y of [2, pixels.height - 3]) expect(redAt(x, y)).toBe(false)
+    }
+  }
+  await assertCircle(await stage.screenshot({ path: info.outputPath('circular-crop.png') }))
+  await useCrop(page)
+  const image = page.getByRole('dialog').getByAltText('Disc personal photo')
+  await expect(image).toHaveCSS('border-radius', '50%')
+  await assertCircle(await image.screenshot())
+  await expect(page.locator('.disc-photo-frame')).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Adjust crop', exact: true }).click()
+  await expect(page.getByRole('dialog').locator('output')).toHaveText('1.0×')
+  await assertCircle(await stage.screenshot())
+})
+
+test('dragging the photo moves the circular window over the stored image', async ({ page }, info) => {
   const { writes } = await inventory(page)
   const dialog = page.getByRole('dialog')
   await page.getByRole('combobox', { name: /Disc Name/ }).fill('Dragged disc')
