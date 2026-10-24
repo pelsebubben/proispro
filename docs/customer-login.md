@@ -27,6 +27,11 @@ An ID token for the separate browser registration is not an API token.
 The API maps `(issuer, sub)` to its own PostgreSQL user ID; email addresses are
 display-only and never used to link identities.
 
+The current account header displays MSAL's account username. For a federated
+Google user, this can be an Entra-generated `@griplockcustomers.onmicrosoft.com`
+username rather than the Google email address. It does not change which
+identity owns the application data.
+
 The customer sign-in screen redirects to the customer tenant's hosted user flow;
 Google is selected/configured there. Failed/cancelled login is visible.
 Signed-in users see the real inventory, bags, collections, wishlist, sale,
@@ -104,9 +109,10 @@ https://23ed0ae8-6f57-46c5-9b6b-bc223a923224.ciamlogin.com/23ed0ae8-6f57-46c5-9b
 ```
 
 This is Google's callback to Entra, not the browser app's SPA redirect to
-Griplock. If only a friendly-hostname callback is registered, Google rejects
-the canonical-hostname flow with `redirect_uri_mismatch`. Keep any existing
-callbacks needed by other clients.
+Griplock. A callback for the workforce tenant or a different hostname does not
+cover this URL; Google rejects the request with `redirect_uri_mismatch`. The
+customer callback was added with owner approval on 2026-10-24, preserving all
+seven existing entries. Keep any existing callbacks needed by other clients.
 
 Deploy normally after configuring the tenant. `/auth/config` returns only public
 runtime configuration; `/runtime-config.js` delivers the same configuration with
@@ -174,9 +180,23 @@ screen loading. Real PostgreSQL tests verify signed API tokens, wrong
 audience/expiry, scope denials, all feature relationships, ownership/RLS,
 transaction context isolation, persistence and token-gated anonymous sale links.
 
-A real customer flow still requires an owner-assisted browser check with a
-dedicated account: sign in with private Gmail, confirm the API-mapped identity,
-reload, sign out, reject expired/incorrect tokens and prove cross-user denial.
+Production acceptance on 2026-10-24 used release `40041880597` (source
+`a62b109`): the owner completed Google sign-in with a passkey in normal Edge
+and reached the authenticated inventory. The owner confirmed that the session
+survived a page refresh. Anonymous session/inventory requests and malformed
+tokens returned 401; the production test-login endpoint returned 404. No
+inventory data was changed. Logout was not exercised because the owner chose
+to remain signed in.
+
+If an embedded browser preview does not expose the user's passkey, open the
+application origin in their normal browser and start a fresh sign-in there.
+Do not copy an in-progress authorization/callback URL between browsers: its
+state and PKCE verifier belong to the browser that started the request.
+
+For future identity changes, repeat an owner-assisted browser check with a
+dedicated account: sign in with Google, confirm the API-mapped identity, reload
+and sign out. Keep automated wrong-audience, expiry, scope and cross-user
+denial coverage separate from evidence of a real provider sign-in.
 CAPTCHA/MFA/consent cannot be bypassed. Never upload tokens, browser storage or
 real identity-provider traces to public CI evidence.
 
