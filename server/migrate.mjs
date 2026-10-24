@@ -46,8 +46,6 @@ export async function migrate(pool, appPassword, appRole = 'griplock_app') {
     await client.query(`GRANT SELECT ON schema_migrations TO ${appRole}`)
     await client.query(`GRANT USAGE ON SCHEMA course_catalog TO ${appRole}`)
     await client.query(`GRANT SELECT ON ALL TABLES IN SCHEMA course_catalog TO ${appRole}`)
-    await client.query(`GRANT USAGE ON SCHEMA pdga_catalog TO ${appRole}`)
-    await client.query(`GRANT SELECT ON ALL TABLES IN SCHEMA pdga_catalog TO ${appRole}`)
     await client.query('COMMIT')
   } catch (error) {
     await client.query('ROLLBACK')

@@ -109,7 +109,14 @@ function checkTrustBoundary(files) {
   assert.equal(dev.jobs.dev.environment.name, 'dev')
   assert.equal(dev.jobs.dev.permissions['id-token'], 'write')
   assert.equal(dev.jobs.dev['runs-on'], 'ubuntu-24.04')
-  assert.ok(!files['dev.yml'].includes('secrets.'), 'dev deploys hold no database or registry secrets')
+  const pdgaStep = dev.jobs.dev.steps.find(step => step.name === 'Configure server-only PDGA dev access')
+  assert.equal(pdgaStep.if, "${{ github.event_name == 'workflow_dispatch' && inputs.configure_pdga }}",
+    'PDGA secrets only enter an explicitly requested manual dev step, never a PR-triggered deployment')
+  assert.deepEqual(pdgaStep.env, { PDGA_USERNAME: '${{ secrets.PDGA_USERNAME }}',
+    PDGA_PASSWORD: '${{ secrets.PDGA_PASSWORD }}', EXPECTED_SOURCE_SHA: '${{ env.SOURCE_SHA }}' })
+  assert.equal(pdgaStep.run, 'python3 scripts/configure-pdga-dev.py')
+  assert.equal(files['dev.yml'].match(/secrets\./g)?.length, 2, 'no database or registry secrets added')
+  assert.equal(dev.on.workflow_dispatch.inputs.configure_pdga.default, false)
   assert.ok(!/job-griplock-migrate\b(?!-dev)|app-griplock-staging/.test(files['dev.yml']), 'dev never targets live resources')
   assert.equal(staging.jobs.staging.steps[deployIndex].run.match(/releaseId="\$GITHUB_RUN_ID-\$GITHUB_RUN_ATTEMPT"/g)?.length, 2,
     'live and dev app revisions are unique per run attempt')
@@ -158,6 +165,7 @@ test('gates reject real workflow mutations that grant PR OIDC or remove apply pr
     ['prod.yml', '          ref: ${{ env.SOURCE_SHA }}', '          ref: main'],
     ['prod.yml', '-- server/migrations server/migrate.mjs', '-- docs'],
     ['prod.yml', `.schemaVersion == ${schemaVersion}`, `.schemaVersion == ${schemaVersion - 1}`],
+    ['dev.yml', "github.event_name == 'workflow_dispatch' && inputs.configure_pdga", 'always()'],
   ]) {
     assert.ok(sources[file].includes(before), `${file}: mutation must affect actual source`)
     assert.throws(() => checkTrustBoundary({ ...sources, [file]: sources[file].replace(before, after) }), Error, `${file}: ${before}`)

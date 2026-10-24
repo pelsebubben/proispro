@@ -1,119 +1,117 @@
-# PDGA course catalogue and API access
+# PDGA on-demand course access
 
-The application supports a Norway PDGA course directory alongside OSM. Migration
-005 creates a separate `pdga_catalog` schema; the runtime can only read it. PDGA
-records never enter the ODbL export or the OSM ingestion job. Course identifiers
-remain source-specific, preserving existing pins and private bag links. Courses
-from different providers are not automatically merged or treated as the same
-layout.
+The application searches Norway through the official PDGA REST API on demand,
+alongside the separate SQL-backed OSM catalogue. The PDGA account's licence
+agreement was inspected in the signed-in browser on 2026-10-24. It permits
+temporary caching for application operation/performance with invalidation, but
+prohibits permanent storage, creating a PDGA database or bulk downloads without
+an exception. PDGA record IDs may be retained for back-end matching.
 
-The documented PDGA Course Search API supplies course details and hole counts,
-not individual holes, tees, baskets or layout variants. PDGA results explicitly
-show **layout unavailable**. They can be linked to a bag configuration, but no
-hole-by-hole disc assignments or layout completeness are invented. Official
-individual-hole access is a separate prerequisite for advanced layout planning.
+Consequently there is **no PDGA catalogue replication, bulk import or scheduled
+PDGA sync**. The initial disabled bulk-sync implementation was replaced before
+deployment or any live import. Migration 005 has not been deployed: it now
+constrains PDGA-linked pins to a generic name and a source ID, not provider
+content. Never substitute this file for an already-applied migration.
 
-## Server-side ingestion (not enabled automatically)
+## Data flow and retention
 
-`server/pdga-client.mjs` shares the tested login/logout implementation with the
-local launcher below. The Norway ingestion paginates in batches of 200 with a
-5,000-record safety bound. Duplicate IDs, failed pages, wrong countries and
-unexpectedly small snapshots abort ingestion. Only names, city, country,
-coordinates, stated hole count, stable course ID and canonical PDGA node URL are
-retained. Personal contact fields and raw API responses are discarded.
+- Authenticated search performs one bounded PDGA request with the user's query,
+  `country=NO`, and at most 30 results. A saved pin resolves one course by ID.
+- Credentials, API cookies and CSRF tokens remain server-side. Every valid API
+  session attempts logout, including after failure; failed logout is an error.
+- A process-local cache holds at most 100 entries for 15 minutes. Expired data
+  is invalidated, physically pruned at least once per minute, and never served
+  stale when the provider fails. There is no disk, SQL or shared durable cache.
+- Identical concurrent requests coalesce; other concurrent misses fail busy.
+  Each server process allows at most 20 cache misses per minute.
+- Only course name, city, coordinates, stated hole count, IDs and canonical
+  PDGA link leave the API session. Contact details/raw responses are discarded.
+- A private bag link stores `pdga:<course_id>`, a generic `PDGA course` label and
+  the user's bag relationship. SQL rejects saving provider names in PDGA pins.
+  Display names and links are resolved afresh; the browser clears temporary
+  course results/details at expiry. A provider failure leaves an honest generic
+  pin with retry rather than an indefinitely retained provider name.
+- The application returns `Cache-Control: no-store` on authenticated API data.
+  PDGA information is never included in the ODbL download.
 
-`server/sync-pdga.mjs` publishes a validated snapshot in one PostgreSQL
-transaction under an advisory lock. Older snapshots and count drops above 25%
-are rejected; removed records become inactive so existing pins survive.
-Publication occurs only after confirmed API logout. The worker emits sanitized
-success/failure events and exits nonzero on failure, without logging credentials
-or database error details. Investigate failures through the existing Azure job
-execution status before retrying; there is no automatic retry storm.
+The PDGA agreement requires the attribution **"Player, event, and course data
+provided by PDGA."** linking to PDGA on every screen with PDGA data. Course names
+link to the corresponding PDGA page. Provider results are not silently conflated
+with OSM courses or layouts.
 
-Before activation, verify that the account's agreement permits this server-side
-cache, in-app display and intended use. `PDGA_CACHE_APPROVED=true` is an explicit
-operator gate, not a claim that approval has already been obtained.
+## Layout limitations
 
-`infra/pdga-sync.bicep` defines a **manual** Azure Container Apps worker, disabled
-by default (`cacheApproved=false`). It reuses the existing environment, private
-database and image-pull identity. A separate PDGA writer can read/insert/update
-only its own catalogue tables and cannot access private user records or OSM.
-Administrator credentials occur only in the short-lived setup job, never the
-worker or application. All credential parameters are secure and the worker
-references Azure job secrets.
+The documented Course Search API supplies course details and a hole count,
+**not** individual holes, pars, distances, tees, baskets or layout variants.
+PDGA courses can link to bag configurations but show **layout unavailable**.
+No numbered holes or hole-by-hole game plans are generated from their counts.
+Additional official API access/written permission is needed for those features.
 
-Deployment sequence after confirming terms:
+## Dev credentials and deployment
 
-1. Release schema 5 and the application through the existing dev release path.
-2. Supply integration credentials and a fresh 32+ character PDGA-writer password
-   through a trusted secret provisioning process, not chat, Git, argv, parameter
-   files, workflow outputs, debug logs or shell history. Use a dedicated PDGA
-   account if permitted. No credentials from the local test were saved.
-3. Deploy the Bicep with secure in-memory parameters and `cacheApproved=true`,
-   run `job-griplock-pdga-setup-dev`, verify success and delete the setup job.
-   Never rotate a dev role from verification: PostgreSQL roles are cluster-wide.
-4. Run `job-griplock-pdga-dev` and confirm its execution succeeds. Verify Ekeberg
-   search, the PDGA course link, unavailable-layout notice, and an unchanged
-   OSM-only export through the authenticated app.
-5. Set a schedule only after confirming PDGA's permitted refresh interval,
-   retention/deletion obligations and attribution requirements. Alert routing
-   and the operational runbook must be in place before production activation.
+Add both `PDGA_USERNAME` and `PDGA_PASSWORD` under the repository's GitHub
+**dev environment secrets**, not variables or source files. Do not paste them
+into chat. Use the approved account only; the agreement does not authorize
+creating an unrelated shared integration account without PDGA permission.
 
-This repository change does **not** provision credentials, enable a schedule,
-import live PDGA data, or deploy production. No Supabase service or dependency
-is involved; storage is the existing Azure PostgreSQL database.
+The existing **Deploy Griplock dev** workflow has an opt-in
+`configure_pdga` manual input (default false). Its credential step:
 
-## Local API access test
+1. Uses the dev environment's OIDC Azure identity and the shared dev release lock.
+2. Requires the exact workflow commit to be deployed on `app-griplock-dev`.
+3. Transfers the two secrets to Azure Container App secrets through an in-memory
+   ARM request. They never become CLI arguments, parameter files or log output.
+4. Preserves existing app secrets, adds server-side `secretRef` environment
+   variables and waits for the new revision to become ready.
 
-This is a local, read-only connectivity test for an approved PDGA API account.
-It does not change Griplock, import PDGA data into SQL, or create a scheduled
-integration. A PDGA website browser session is not harvested or exported.
+Dispatch the existing dev workflow at this commit with `configure_pdga=true`.
+The deployment completes before the credential step runs. PR-triggered deploys
+never execute that step or receive its PDGA secret environment.
+No credentials are available from the earlier local API test.
+Activation is not performed merely by adding GitHub secrets.
 
-## Run securely
+Ordinary dev image updates preserve this configuration. A full Bicep foundation
+reapplication currently supplies its own complete secret/environment set; run
+the manual dev workflow with PDGA configuration enabled again afterward. Production is not
+targeted by this workflow and remains unconfigured.
 
-In a private PowerShell terminal, from the repository root:
+After activation, verify authenticated Ekeberg search and the corresponding
+PDGA link, a saved bag link after reload, the unavailable-layout explanation,
+provider-failure warnings and the OSM-only export. Local fixtures are not proof
+of a live PDGA deployment.
+
+For access revocation or a PDGA removal request, remove the two server
+environment references, deactivate/stop all previous app revisions, restart
+current replicas and remove the two Azure secrets. This clears all process
+caches; API responses are not browser-cacheable. Only generic private pins and
+matching IDs remain. PDGA requires removal/destruction within 24 hours of a
+written request. Do not serve stale content while resolving access problems.
+
+Before public launch, obtain PDGA review when required, and contact
+**dev@pdga.com** for commercial use, unaddressed uses or additional layout APIs.
+The 15-minute cache is an application policy, not a refresh interval specified
+or separately approved by PDGA.
+
+## Local read-only access test
+
+From a private PowerShell terminal in the repository root:
 
 ```powershell
 .\scripts\test-pdga.ps1
 ```
 
-The launcher asks for the username and a hidden password using `Get-Credential`.
-Enter credentials only in that prompt, not in chat, command arguments, source
-files, environment files, or a recorded/transcribed/debugging PowerShell session.
-Node 22 and PowerShell are required; no extra dependencies are needed.
+The launcher uses `Get-Credential` with hidden password input and passes it to
+Node over an anonymous stdin pipe, never arguments, environment files or disk.
+Do not use PowerShell transcription, debugging, screen recording or memory
+dumps. JavaScript/.NET strings cannot be guaranteed securely erased.
 
-The credentials pass directly to Node over an anonymous stdin pipe. They and
-the API cookie/CSRF token exist only in process memory and are never deliberately
-saved. JavaScript/.NET strings cannot be guaranteed securely erased from memory;
-use a trusted workstation. Do not capture process dumps while testing.
+It searches Ekeberg plus a bounded Norway sample of 10, then confirms logout.
+It imports nothing and saves no credentials. Output excludes account/contact
+data, passwords, cookies, tokens and raw responses. Requests reject redirects,
+have a 30-second timeout and a 2 MiB response cap. A website browser session is
+not harvested. This test does not activate the hosted integration.
 
-The test calls the documented HTTPS login, searches `country=NO` for Ekeberg,
-then requests a sample of at most 10 Norwegian courses. It always attempts API
-logout after a valid session, including when a search fails. It neither logs out
-the website session nor reads its cookies. Logout failures are explicit.
-
-Output contains only selected course fields and PDGA attribution. It excludes
-account details, contact information, passwords, cookies, tokens, and raw API
-responses. Errors expose a sanitized status, not server response bodies. Requests
-have a 30-second timeout, a 2 MiB response cap, and reject redirects.
-
-An empty search is not proof that a course does not exist. This sample is not a
-Norway coverage count. The documented directory API does not establish access to
-individual hole layouts, pars, distances, or tee/basket geometry.
-
-## Licensing references
-
-Confirm permitted server-side caching, redistribution, refresh frequency, and
-commercial use with PDGA. Keep PDGA-derived records/provenance and licence
-obligations distinct from the downloadable OSM catalogue; never put PDGA data
-into an ODbL export without confirming rights.
-
-For a later scheduled dev integration, credentials belong in an approved Azure
-secret store with access limited to the sync worker, not in frontend runtime
-configuration or Git. Prefer a dedicated PDGA integration account if PDGA permits
-it. That persistent credential storage and cloud configuration are not performed
-by this local test.
-
-References: [authentication](https://www.pdga.com/dev/api/rest/v1/auth),
-[course service](https://www.pdga.com/dev/api/rest/v1/services#course-search),
+References: [API agreement](https://www.pdga.com/pdga-api-license-agreement),
+[authentication](https://www.pdga.com/dev/api/rest/v1/auth),
+[services](https://www.pdga.com/dev/api/rest/v1/services),
 [developer programme](https://www.pdga.com/dev).

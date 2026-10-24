@@ -49,7 +49,7 @@ function courseSummary(value) {
 
 async function withSession({ username, password }, operation, fetcher) {
   if (typeof username !== 'string' || !username.trim() || typeof password !== 'string' || !password) {
-    throw new Error('PDGA username and password are required through the hidden-prompt launcher.')
+    throw new Error('PDGA username and password are required through secure server configuration or the hidden-prompt launcher.')
   }
   let session
   try {
@@ -79,7 +79,7 @@ async function withSession({ username, password }, operation, fetcher) {
 }
 
 export const pdgaAttribution = {
-  text: 'Course data provided by PDGA', url: 'https://www.pdga.com/', license: 'PDGA API agreement',
+  text: 'Player, event, and course data provided by PDGA.', url: 'https://www.pdga.com/', license: 'PDGA API agreement',
 }
 
 export function testPdga(credentials, fetcher = fetch) {
@@ -91,24 +91,35 @@ export function testPdga(credentials, fetcher = fetch) {
   }), fetcher)
 }
 
-export function fetchPdgaNorway(credentials, fetcher = fetch) {
+export function searchPdga(credentials, query, fetcher = fetch) {
+  if (typeof query !== 'string' || query.trim().length < 2 || query.length > 100) throw new Error('Invalid PDGA search.')
   return withSession(credentials, async search => {
-    const courses = []
-    const ids = new Set()
-    // A bounded full-country snapshot; failure on any page aborts publication.
-    for (let offset = 0; offset < 5000; offset += 200) {
-      const page = await search({ country: 'NO', limit: '200', offset: String(offset) })
-      for (const course of page) {
-        if (ids.has(course.id)) throw new Error('PDGA pagination returned duplicate courses; refusing partial snapshot.')
-        if (course.country !== 'Norway' && course.country !== 'NO') throw new Error('PDGA returned a course outside Norway.')
-        ids.add(course.id)
-        courses.push(course)
-      }
-      if (page.length < 200) {
-        if (courses.length < 10) throw new Error('PDGA Norway snapshot unexpectedly small; refusing publication.')
-        return { fetchedAt: new Date().toISOString(), courses }
-      }
+    return validateCourses(await search({ country: 'NO', course_name: query.trim(), limit: '30' }))
+  }, fetcher)
+}
+
+function validateCourses(courses) {
+  const ids = new Set()
+  for (const course of courses) {
+    if (!/^[1-9][0-9]{0,15}$/.test(course.id) || ids.has(course.id) || !course.name?.trim() ||
+        !['Norway', 'NO'].includes(course.country) || !course.source_url ||
+        (course.holes !== null && (!Number.isInteger(course.holes) || course.holes < 1 || course.holes > 200)) ||
+        (course.latitude !== null && (course.latitude < 57 || course.latitude > 82)) ||
+        (course.longitude !== null && (course.longitude < -10 || course.longitude > 36))) {
+      throw new Error('PDGA returned an unexpected course record.')
     }
-    throw new Error('PDGA pagination exceeded the Norway safety limit; refusing partial snapshot.')
+    ids.add(course.id)
+  }
+  return courses.map(c => ({ id: `pdga:${c.id}`, source: 'pdga', source_url: c.source_url,
+    name: c.name, city: c.city ?? '', country: 'NO', lat: c.latitude, lon: c.longitude,
+    expected_holes: c.holes, mapped_holes: 0, active: true }))
+}
+
+export function readPdgaCourse(credentials, id, fetcher = fetch) {
+  if (!/^pdga:[1-9][0-9]{0,15}$/.test(id)) throw new Error('Invalid PDGA course ID.')
+  return withSession(credentials, async search => {
+    const courses = validateCourses(await search({ country: 'NO', course_id: id.slice(5), limit: '1' }))
+    if (courses.length && courses[0].id !== id) throw new Error('PDGA returned a different course.')
+    return courses[0] ?? null
   }, fetcher)
 }

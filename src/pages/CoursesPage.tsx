@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ClientDisc, ClientBag } from '../utils/disc'
 import { useCoursePins, ClientPin, CatalogueCourse } from '../hooks/useCoursePins'
 import { readCourseCatalogue } from '../lib/data'
@@ -21,6 +21,7 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
     courseLoading,
     courseSuggestions,
     courseError,
+    providerNotice,
     catalogueUpdatedAt,
     courseCache,
     getHolesForPin,
@@ -34,6 +35,15 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
   const [showGamePlan, setShowGamePlan] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+  useEffect(() => {
+    if (!selectedCourse?.expiresAt) return
+    const timer = setTimeout(() => {
+      setSelectedCourse(null)
+      setCourseQuery('')
+      searchCoursesDebounced('')
+    }, Math.max(0, selectedCourse.expiresAt - Date.now()))
+    return () => clearTimeout(timer)
+  }, [selectedCourse])
 
   const exportCatalogue = async () => {
     setExporting(true)
@@ -67,6 +77,7 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
         setShowModal(false)
       }
     } else {
+      if (selectedCourse.expiresAt && selectedCourse.expiresAt <= Date.now()) return
       const courseId = selectedCourse.id
       await createPin(selectedCourse.name, courseId, selectedBagId)
       setShowModal(false)
@@ -153,7 +164,7 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
 
       <p className="bag-hint">
         Norway course catalogue · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors · ODbL</a>.
-        {' '}<a href="https://www.pdga.com/" target="_blank" rel="noopener noreferrer">Course data provided by PDGA</a>.
+        {' '}<a href="https://www.pdga.com/" target="_blank" rel="noopener noreferrer">Player, event, and course data provided by PDGA.</a>
         {' '}Hole mapping may be incomplete; layout variants are not inferred.
         {catalogueUpdatedAt && <> Last synced {new Date(catalogueUpdatedAt).toLocaleDateString()}.</>}
       </p>
@@ -230,6 +241,7 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                 </div>
               )}
               {courseError && <p role="alert">{courseError} Try searching again.</p>}
+              {providerNotice && <p role="status">{providerNotice}</p>}
               {!courseLoading && !courseError && courseQuery.trim().length >= 2 && !selectedCourse && courseSuggestions.length === 0 &&
                 <p className="bag-hint">No matching Norwegian courses found. The catalogue may be incomplete.</p>}
               {courseSuggestions.length > 0 && !selectedCourse && (

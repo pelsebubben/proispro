@@ -7,7 +7,7 @@ const course = { id: 'osm:way:123', source: 'osm', source_url: null, name: 'Norw
   mapped_holes: 2, lat: 60, lon: 10, active: true }
 const sync = { completed_at: '2026-10-24T12:00:00Z' }
 async function setup(page: Page, existing = false, pdga = false) {
-  const entry = pdga ? { ...course, id: 'pdga:4551', source: 'pdga', name: 'Ekeberg fixture course',
+  const entry = pdga ? { ...course, id: 'pdga:4551', source: 'pdga', name: 'Ekeberg fixture course', expiresAt: Date.now() + 900_000,
     source_url: 'https://www.pdga.com/node/10000', mapped_holes: 0 } : course
   const state = { pins: existing ? [{ id: pinId, course_name: course.name, course_id: course.id, bag_id: bagId,
     created_at: sync.completed_at }] : [], failSearch: false, failHoles: false, empty: false, external: [] as string[] }
@@ -32,7 +32,7 @@ async function setup(page: Page, existing = false, pdga = false) {
     } })
     if (url.pathname.endsWith('/holes')) return state.failHoles
       ? route.fulfill({ status: 503, json: { error: 'service_unavailable' } })
-      : route.fulfill({ json: { course: entry, sync, coverage: {
+      : route.fulfill({ json: { course: entry, sync, expiresAt: pdga ? Date.now() + 900_000 : undefined, coverage: {
         note: pdga ? 'PDGA supplies course details and a hole count, not individual layouts through this API. Hole-by-hole planning is unavailable for this source.' :
           'OSM mapping may be incomplete. No tee/layout variants are inferred.' },
         holes: state.empty || pdga ? [] : [
@@ -114,6 +114,7 @@ test('PDGA results link to the provider and a bag without inventing layouts, inc
   await expect(page.getByText(/PDGA supplies course details/)).toBeVisible()
   expect(state.pins[0].course_id).toBe('pdga:4551')
   expect(state.pins[0].bag_id).toBe(bagId)
+  expect(state.pins[0].course_name).toBe('PDGA course')
   await page.reload()
   await page.getByRole('navigation').getByRole('button', { name: /Courses/ }).click()
   await expect(page.getByRole('heading', { name: 'Ekeberg fixture course' }).getByRole('link')).toHaveAttribute('href', 'https://www.pdga.com/node/10000')

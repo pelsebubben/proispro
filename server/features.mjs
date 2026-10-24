@@ -174,6 +174,15 @@ export async function featureRequest({ req, url, pool, userId, json, image }) {
         const owned = await client.query('SELECT id FROM owned_discs WHERE user_id=$1 AND id=ANY($2::uuid[])', [userId, body.disc_ids])
         if (owned.rowCount !== body.disc_ids.length) throw Object.assign(new Error('invalid_reference'), { status: 400 })
       }
+      if (resource === 'course_pins') {
+        const previousPin = rowId ? (await client.query(
+          'SELECT course_id FROM course_pins WHERE id=$1 AND user_id=$2 FOR UPDATE', [rowId, userId])).rows[0] : null
+        const sourceId = Object.hasOwn(body, 'course_id') ? body.course_id : previousPin?.course_id
+        if (sourceId?.startsWith('pdga:')) {
+          if (!/^pdga:[1-9][0-9]{0,15}$/.test(sourceId)) throw Object.assign(new Error('invalid_input'), { status: 400 })
+          body.course_name = 'PDGA course'
+        }
+      }
       const entries = Object.entries(body).filter(([key]) => !(photoWrite && ['photo', 'user_photo_url'].includes(key)))
       if (photoWrite) entries.push(['photo_version', photo ? randomUUID() : null], ['user_photo_url', null])
       const values = entries.map(([, value]) => Array.isArray(value) ? JSON.stringify(value) : value)

@@ -83,9 +83,11 @@ Research checked: 2026-10-23. Provider availability, terms, and coverage require
 verification before implementation.
 
 Implementation update: approved PDGA REST access has been verified against
-Ekeberg. The application now has a separate SQL-backed PDGA directory path and
-provider-aware pins; live caching is still gated on agreement terms and secret
-provisioning. The documented endpoint supplies hole counts, not individual
+Ekeberg. The application now has an on-demand PDGA directory path with temporary
+in-memory caching and ID-only provider-aware pins. The signed-in agreement
+prohibits permanent PDGA databases/bulk downloads without an exception; the
+initial disabled bulk-sync implementation was replaced before activation.
+Live access is gated on server secret provisioning. The endpoint supplies hole counts, not individual
 layouts. Layout/tee planning therefore remains a separate capability gate, not
 an inferred feature of the directory integration. The current course search uses
 the same-origin API backed by PostgreSQL, not browser Overpass requests. The

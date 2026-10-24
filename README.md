@@ -73,12 +73,14 @@ attribution stay visible; the ODbL catalogue can be downloaded separately from
 private user data. [Coverage, licensing and sync operations](docs/course-catalogue.md)
 describe the Norway-only scope and independent weekly Azure job.
 
-The PDGA Norway directory integration uses a separate PostgreSQL schema and
-least-privilege worker. It is disabled until storage terms and worker credentials
-are configured. PDGA entries can link to bag configurations but do not provide
+The PDGA Norway directory integration uses server-side, on-demand search with
+a temporary in-memory cache, not a permanent SQL catalogue or bulk sync.
+Only PDGA matching IDs persist in private bag links. It is disabled until
+server credentials are configured through the manual dev workflow.
+PDGA entries can link to bag configurations but do not provide
 individual hole layouts through the documented REST API. Approved PDGA API
 access can also be checked separately with the
-[secure local read-only test](docs/pdga-api.md). It does not save credentials or
+[secure local read-only test and deployment guide](docs/pdga-api.md). The test does not save credentials or
 mix PDGA data into the OSM catalogue.
 
 ## Local development

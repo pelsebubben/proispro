@@ -22,6 +22,7 @@ export interface CatalogueCourse {
   id: string
   source: 'osm' | 'pdga'
   source_url: string | null
+  expiresAt?: number
   name: string
   expected_holes: number | null
   mapped_holes: number
@@ -45,6 +46,8 @@ interface CourseMapData {
   holes: ParsedHole[]
   coverageNote: string
   sourceUrl: string | null
+  courseName?: string
+  expiresAt?: number
 }
 
 export function useCoursePins() {
@@ -53,6 +56,7 @@ export function useCoursePins() {
   const [holeAssignments, setHoleAssignments] = useState<HoleAssignment[]>([])
   const [courseSuggestions, setCourseSuggestions] = useState<CatalogueCourse[]>([])
   const [courseError, setCourseError] = useState<string | null>(null)
+  const [providerNotice, setProviderNotice] = useState<string | null>(null)
   const [catalogueUpdatedAt, setCatalogueUpdatedAt] = useState<string | null>(null)
   const [courseLoading, setCourseLoading] = useState(false)
   const [courseCache, setCourseCache] = useState<Record<string, CourseMapData>>({})
@@ -62,6 +66,17 @@ export function useCoursePins() {
     if (searchTimeout.current) clearTimeout(searchTimeout.current)
     searchSequence.current++
   }, [])
+  useEffect(() => {
+    const expiries = [...Object.values(courseCache).map(c => c.expiresAt),
+      ...courseSuggestions.map(c => c.expiresAt)].filter((time): time is number => time !== undefined)
+    if (!expiries.length) return
+    const timer = setTimeout(() => {
+      setCourseCache(previous => Object.fromEntries(Object.entries(previous).filter(([, value]) =>
+        !value.expiresAt || value.expiresAt > Date.now())))
+      setCourseSuggestions(previous => previous.filter(c => !c.expiresAt || c.expiresAt > Date.now()))
+    }, Math.max(0, Math.min(...expiries) - Date.now()))
+    return () => clearTimeout(timer)
+  }, [courseCache, courseSuggestions])
 
   const loadPins = useCallback(async () => {
     if (!user) return
@@ -98,7 +113,7 @@ export function useCoursePins() {
 
   const createPin = async (courseName: string, courseId: string | null, bagId: string) => {
     if (!user) return
-    await createRow('course_pins', { course_name: courseName, course_id: courseId, bag_id: bagId })
+    await createRow('course_pins', { course_name: courseId?.startsWith('pdga:') ? 'PDGA course' : courseName, course_id: courseId, bag_id: bagId })
     await loadPins()
   }
 
@@ -157,11 +172,15 @@ export function useCoursePins() {
     setCourseLoading(true)
     setCourseError(null)
     try {
-      const result = await readCourseCatalogue<{ courses: CatalogueCourse[]; sync: { completed_at: string } }>(
+      const result = await readCourseCatalogue<{ courses: CatalogueCourse[]; sync: { completed_at: string } | null;
+        providers?: { pdga: { status: string } }; osmAvailable?: boolean }>(
         `courses?q=${encodeURIComponent(query.trim())}`)
       if (sequence === searchSequence.current) {
         setCourseSuggestions(result.courses)
-        setCatalogueUpdatedAt(result.sync.completed_at)
+        setCatalogueUpdatedAt(result.sync?.completed_at ?? null)
+        setProviderNotice(result.providers?.pdga.status === 'unavailable' ? 'PDGA search is temporarily unavailable. OSM results are shown; retry to include PDGA.' :
+          result.providers?.pdga.status === 'not_configured' ? 'PDGA search is not configured on this server. OSM results are shown.' :
+          result.osmAvailable === false ? 'The OSM catalogue has not synced yet. Only PDGA results are available.' : null)
       }
     } catch (error) {
       if (sequence === searchSequence.current) {
@@ -188,10 +207,11 @@ export function useCoursePins() {
     setCourseError(null)
     try {
       const result = await readCourseCatalogue<{
-        course: { lat: number | null; lon: number | null; active: boolean; source_url?: string }
+        course: { name: string; lat: number | null; lon: number | null; active: boolean; source_url?: string }
         holes: { ref: string; name: string; par: number | null; length_m: number | null; geometry: [number, number][] }[]
         coverage: { note: string }
-        sync: { completed_at: string }
+        sync?: { completed_at: string }
+        expiresAt?: number
       }>(`courses/${pin.courseId}/holes`)
       const holes: ParsedHole[] = result.holes.map(h => ({ ref: h.ref, name: h.name,
         par: h.par, length_m: h.length_m, lat: h.geometry[0]?.[1] ?? null, lon: h.geometry[0]?.[0] ?? null }))
@@ -199,9 +219,10 @@ export function useCoursePins() {
       setCourseCache(prev => ({
         ...prev,
         [pin.id]: { lat: result.course.lat, lon: result.course.lon, holes, sourceUrl: result.course.source_url ?? null,
+          courseName: result.course.name, expiresAt: result.expiresAt,
           coverageNote: result.course.active ? result.coverage.note : 'This course is no longer present in the latest source catalogue.' },
       }))
-      setCatalogueUpdatedAt(result.sync.completed_at)
+      if (result.sync) setCatalogueUpdatedAt(result.sync.completed_at)
     } catch (error) {
       setCourseError(error instanceof Error ? error.message : 'Could not load course holes. Please try again.')
     } finally {
@@ -238,7 +259,8 @@ export function useCoursePins() {
   }
 
   return {
-    pins,
+    pins: pins.map(pin => pin.courseId?.startsWith('pdga:') ?
+      { ...pin, courseName: courseCache[pin.id]?.courseName ?? 'PDGA course' } : pin),
     loadPins,
     createPin,
     updatePin,
@@ -254,6 +276,7 @@ export function useCoursePins() {
     courseLoading,
     courseSuggestions,
     courseError,
+    providerNotice,
     catalogueUpdatedAt,
     courseCache,
     getHolesForPin,

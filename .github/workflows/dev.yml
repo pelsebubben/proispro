@@ -4,6 +4,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
+    inputs:
+      configure_pdga:
+        description: Provision dev PDGA secrets after deploying this commit
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -82,3 +87,10 @@ jobs:
           done
           echo "::error::Dev did not serve the expected branch commit"
           exit 1
+      - name: Configure server-only PDGA dev access
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.configure_pdga }}
+        env:
+          PDGA_USERNAME: ${{ secrets.PDGA_USERNAME }}
+          PDGA_PASSWORD: ${{ secrets.PDGA_PASSWORD }}
+          EXPECTED_SOURCE_SHA: ${{ env.SOURCE_SHA }}
+        run: python3 scripts/configure-pdga-dev.py

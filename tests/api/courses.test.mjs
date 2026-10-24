@@ -7,7 +7,9 @@ import { provisionCourseSync } from '../../server/provision-course-sync.mjs'
 import { saveCatalogue } from '../../server/sync-courses.mjs'
 import { courseRequest } from '../../server/courses.mjs'
 import { norwayFixture } from '../fixtures/norway-osm.mjs'
-import { savePdgaCatalogue } from '../../server/sync-pdga.mjs'
+import { createPdgaService } from '../../server/pdga-service.mjs'
+import { featureRequest } from '../../server/features.mjs'
+import { Readable } from 'node:stream'
 
 test('real SQL catalogue is atomic, searchable, idempotent, and isolated from runtime and private data', async t => {
   const admin = createPool()
@@ -88,36 +90,26 @@ test('real SQL catalogue is atomic, searchable, idempotent, and isolated from ru
   }
 })
 
-test('PDGA catalogue stays separate, publishes atomically and reports unavailable layouts honestly', async t => {
+test('on-demand PDGA search does not create SQL content and ODbL exports exclude it', async t => {
   const admin = createPool()
   t.after(() => admin.end())
   await migrate(admin, process.env.PGAPP_PASSWORD, 'griplock_pdga_test_app')
-  const syncPassword = randomBytes(32).toString('hex')
-  await provisionCourseSync(admin, syncPassword, 'griplock_verify_pdga_sync', 'pdga')
-  const writer = createPool({ ...process.env, PGUSER: 'griplock_verify_pdga_sync', PGPASSWORD: syncPassword })
   const reader = createPool({ ...process.env, PGUSER: 'griplock_pdga_test_app', PGPASSWORD: process.env.PGAPP_PASSWORD })
-  t.after(() => writer.end())
   t.after(() => reader.end())
-  for (const sql of ['SELECT * FROM course_catalog.courses', 'SELECT * FROM app_users',
-    'SELECT * FROM bags', 'DELETE FROM pdga_catalog.sync_runs']) {
-    await assert.rejects(writer.query(sql), { code: '42501' })
-  }
-  await assert.rejects(reader.query('DELETE FROM pdga_catalog.courses'), { code: '42501' })
-  const snapshot = { fetchedAt: new Date().toISOString(), courses: Array.from({ length: 20 }, (_, i) => ({
-    id: String(4551 + i), name: i === 0 ? 'Ekeberg PDGA fixture' : `Norway PDGA fixture ${i}`, city: 'Oslo',
-    country: 'Norway', holes: 18, latitude: 59.895283, longitude: 10.786967,
-    source_url: `https://www.pdga.com/node/${10000 + i}`,
-  })) }
+  assert.equal((await admin.query("SELECT count(*)::int AS n FROM pg_namespace WHERE nspname='pdga_catalog'")).rows[0].n, 0)
+  const pdga = createPdgaService({ username: 'fixture', password: 'synthetic-only', fetcher: async url => {
+    if (url.endsWith('/login')) return Response.json({ session_name: 'SSESS_fixture', sessid: 'fixture', token: 'fixture' })
+    if (url.endsWith('/logout')) return Response.json(true)
+    return Response.json({ courses: [{ course_id: '4551', course_node_nid: '10000', course_name: 'Ekeberg fixture',
+      city: 'Oslo', country: 'Norway', latitude: '59.9', longitude: '10.7', holes: '18' }] })
+  } })
+  t.after(() => pdga.close())
   const call = async path => {
     let result
-    await courseRequest({ req: { method: 'GET' }, url: new URL(path, 'http://localhost'), pool: reader,
+    await courseRequest({ req: { method: 'GET' }, url: new URL(path, 'http://localhost'), pool: reader, pdga,
       json: (status, body) => { result = { status, body } } })
     return result
   }
-  assert.deepEqual(await savePdgaCatalogue(writer, snapshot),
-    { event: 'pdga_sync_completed', courseCount: 20, layoutsAvailable: false })
-  await savePdgaCatalogue(writer, snapshot)
-  assert.equal((await reader.query('SELECT count(*)::int AS n FROM pdga_catalog.courses')).rows[0].n, 20)
   const search = await call('/api/v1/courses?q=Ekeberg')
   assert.equal(search.status, 200)
   const course = search.body.courses.find(c => c.id === 'pdga:4551')
@@ -125,36 +117,45 @@ test('PDGA catalogue stays separate, publishes atomically and reports unavailabl
   assert.equal(course.source_url, 'https://www.pdga.com/node/10000')
   assert.equal(course.expected_holes, 18)
   assert.equal(course.mapped_holes, 0)
-  assert.equal(search.body.sources.pdga.course_count, 20)
+  assert.equal(search.body.providers.pdga.status, 'ready')
   const detail = await call('/api/v1/courses/pdga:4551/holes')
   assert.equal(detail.status, 200)
   assert.deepEqual(detail.body.holes, [])
   assert.equal(detail.body.coverage.layoutsAvailable, false)
   assert.equal(detail.body.coverage.countMatches, false)
   assert.equal(detail.body.attribution.license, 'PDGA API agreement')
-  assert.equal((await call('/api/v1/courses/pdga:999999/holes')).status, 404)
   const exported = await call('/api/v1/courses/export')
   assert.equal(exported.status, 200)
   assert.ok(exported.body.courses.every(c => c.id.startsWith('osm:')))
   assert.ok(!JSON.stringify(exported.body).includes('PDGA'))
-  await assert.rejects(savePdgaCatalogue(writer, { ...snapshot, courses: snapshot.courses.slice(0, 10) }), /smaller/)
-  await assert.rejects(savePdgaCatalogue(writer, { ...snapshot, fetchedAt: new Date(Date.now() - 86400_000).toISOString() }), /stale/)
-  await assert.rejects(savePdgaCatalogue(writer, { ...snapshot, courses: [...snapshot.courses, snapshot.courses[0]] }), /Invalid PDGA course/)
-  const auditCount = (await reader.query('SELECT count(*)::int AS n FROM pdga_catalog.sync_runs')).rows[0].n
-  await admin.query(`CREATE FUNCTION pdga_catalog.test_failure() RETURNS trigger LANGUAGE plpgsql AS
-    $$ BEGIN RAISE EXCEPTION 'synthetic PDGA failure'; END $$;
-    CREATE TRIGGER test_failure BEFORE INSERT ON pdga_catalog.courses FOR EACH ROW EXECUTE FUNCTION pdga_catalog.test_failure()`)
-  try {
-    await assert.rejects(savePdgaCatalogue(writer, snapshot), /synthetic PDGA failure/)
-    assert.equal((await reader.query('SELECT count(*)::int AS n FROM pdga_catalog.sync_runs')).rows[0].n, auditCount)
-    assert.equal((await reader.query('SELECT count(*)::int AS n FROM pdga_catalog.courses WHERE active')).rows[0].n, 20)
-  } finally {
-    await admin.query('DROP TRIGGER test_failure ON pdga_catalog.courses; DROP FUNCTION pdga_catalog.test_failure()')
+  const userId = (await admin.query("INSERT INTO app_users(issuer,subject) VALUES('pdga-fixture','test') RETURNING id")).rows[0].id
+  const bag = (await admin.query("INSERT INTO bags(user_id,name) VALUES($1,'Fixture bag') RETURNING id", [userId])).rows[0]
+  const writePin = async (body, rowId) => {
+    let response
+    const req = Object.assign(Readable.from([Buffer.from(JSON.stringify(body))]), {
+      method: rowId ? 'PATCH' : 'POST', headers: { 'content-type': 'application/json' },
+    })
+    await featureRequest({ req, url: new URL(`/api/v1/course_pins${rowId ? `/${rowId}` : ''}`, 'http://localhost'),
+      pool: reader, userId, json: (status, value) => { response = { status, value } } })
+    return response
   }
-  await savePdgaCatalogue(writer, { ...snapshot, courses: snapshot.courses.slice(0, 19) })
-  assert.equal((await reader.query("SELECT active FROM pdga_catalog.courses WHERE id='pdga:4570'")).rows[0].active, false)
-  await admin.query('GRANT SELECT ON course_catalog.courses TO griplock_verify_pdga_sync')
-  try {
-    await assert.rejects(provisionCourseSync(admin, syncPassword, 'griplock_verify_pdga_sync', 'pdga'), /cross-source/)
-  } finally { await admin.query('REVOKE SELECT ON course_catalog.courses FROM griplock_verify_pdga_sync') }
+  const pin = await writePin({ course_name: 'Ekeberg fixture', course_id: 'pdga:4551', bag_id: bag.id })
+  assert.equal(pin.status, 201)
+  assert.equal(pin.value.course_name, 'PDGA course')
+  const updated = await writePin({ course_name: 'Do not retain provider name' }, pin.value.id)
+  assert.equal(updated.status, 200)
+  assert.equal(updated.value.course_name, 'PDGA course')
+  const persisted = (await admin.query('SELECT course_name,course_id FROM course_pins WHERE id=$1', [pin.value.id])).rows[0]
+  assert.deepEqual(persisted, { course_name: 'PDGA course', course_id: 'pdga:4551' })
+  await assert.rejects(admin.query('UPDATE course_pins SET course_name=$1 WHERE id=$2', ['Ekeberg fixture', pin.value.id]), { code: '23514' })
+  assert.equal((await writePin({ course_name: 'Invalid', course_id: 'pdga:bad', bag_id: bag.id })).status, 400)
+  pdga.clear()
+  const partial = await courseRequest({
+    req: { method: 'GET' }, url: new URL('/api/v1/courses?q=Ekeberg', 'http://localhost'), pool: reader,
+    pdga: { search: async () => { throw Object.assign(new Error('safe'), { code: 'pdga_unavailable' }) } },
+    json: (status, body) => ({ status, body }),
+  })
+  assert.equal(partial.status, 200)
+  assert.equal(partial.body.providers.pdga.status, 'unavailable')
+  assert.ok(partial.body.courses.every(c => c.source === 'osm'))
 })

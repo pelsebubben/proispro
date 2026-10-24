@@ -122,7 +122,8 @@ jobs:
           az bicep build --file infra/bootstrap.bicep --stdout > /dev/null
           az bicep build --file infra/staging.bicep --stdout > /dev/null
           az bicep build --file infra/app.bicep --stdout > /dev/null
-          az bicep build --file infra/pdga-sync.bicep --stdout > /dev/null
+      - name: Test PDGA secret provisioning without Azure credentials
+        run: python3 tests/unit/pdga_provision_test.py
       - name: Install checksum-verified actionlint
         env:
           GH_TOKEN: ${{ github.token }}
