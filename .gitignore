@@ -17,6 +17,8 @@ dist/
 dist-ssr/
 playwright-report/
 test-results/
+__pycache__/
+*.pyc
 staging-results/
 staging-report/
 infra/main.json

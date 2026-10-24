@@ -151,7 +151,6 @@ export function BagsPage({initialBagId,onOpenCourses}:{initialBagId?:string;onOp
           </section>}
 
           {error && <p className="bag-feedback" role="alert">{error}</p>}
-          {onOpenCourses&&<BagCourseLinks key={`courses-${bag.id}`} bagId={bag.id} onOpenCourses={onOpenCourses}/>}
           {showChart && <section aria-label="Bag flight chart"><FlightChart discs={bagDiscs} /></section>}
           {history && <section className="bag-history" aria-label="Bag history">
             <h3>Recent changes</h3>
@@ -186,6 +185,7 @@ export function BagsPage({initialBagId,onOpenCourses}:{initialBagId?:string;onOp
                   <option value="added-asc">Oldest First</option>
                 </select>
               </label>
+              {onOpenCourses&&<BagCourseLinks key={`courses-${bag.id}`} bagId={bag.id} onOpenCourses={onOpenCourses}/>}
             </div>
           </div>
           <div className="bag-list-status">

@@ -1,171 +1,149 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { randomBytes } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import { Readable } from 'node:stream'
+import pg from 'pg'
 import { createPool } from '../../server/database.mjs'
 import { migrate } from '../../server/migrate.mjs'
-import { provisionCourseSync } from '../../server/provision-course-sync.mjs'
-import { saveCatalogue } from '../../server/sync-courses.mjs'
+import { createPdgaService, pdgaCacheMs } from '../../server/pdga-service.mjs'
 import { courseRequest } from '../../server/courses.mjs'
-import { norwayFixture } from '../fixtures/norway-osm.mjs'
-import { createPdgaService } from '../../server/pdga-service.mjs'
-import { featureRequest } from '../../server/features.mjs'
-import { Readable } from 'node:stream'
+import { plannerRequest } from '../../server/planner.mjs'
 
-test('real SQL catalogue is atomic, searchable, idempotent, and isolated from runtime and private data', async t => {
+test('PDGA SQL cache survives replicas, expires, isolates exact event holes and preserves private plans without retaining provider facts', async t => {
   const admin = createPool()
-  t.after(() => admin.end())
-  await migrate(admin, process.env.PGAPP_PASSWORD, 'griplock_catalogue_app')
-  const syncPassword = randomBytes(32).toString('hex')
-  await provisionCourseSync(admin, syncPassword, 'griplock_verify_courses_sync')
-  const worker = createPool({ ...process.env, PGUSER: 'griplock_verify_courses_sync', PGPASSWORD: syncPassword })
-  const reader = createPool({ ...process.env, PGUSER: 'griplock_catalogue_app', PGPASSWORD: process.env.PGAPP_PASSWORD })
-  t.after(() => worker.end())
-  t.after(() => reader.end())
-  assert.equal((await worker.query(`SELECT rolsuper OR rolbypassrls OR rolcreaterole AS elevated
-    FROM pg_roles WHERE rolname=current_user`)).rows[0].elevated, false)
-  for (const sql of ['SELECT * FROM app_users', 'SELECT * FROM bags', 'SELECT * FROM disc_photos',
-    'INSERT INTO owned_discs(name) VALUES (\'no\')', 'DELETE FROM course_catalog.sync_runs']) {
-    await assert.rejects(worker.query(sql), { code: '42501' })
-  }
-  await assert.rejects(reader.query('DELETE FROM course_catalog.courses'), { code: '42501' })
-  const fixture = norwayFixture()
-  const first = await saveCatalogue(worker, fixture)
-  assert.equal(first.importedCourses, 13)
-  await saveCatalogue(worker, fixture)
-  assert.equal((await reader.query('SELECT count(*)::int AS n FROM course_catalog.courses WHERE active')).rows[0].n, 13)
-  assert.equal((await reader.query('SELECT count(*)::int AS n FROM course_catalog.holes')).rows[0].n, 2)
-  const auditCount = (await reader.query('SELECT count(*)::int AS n FROM course_catalog.sync_runs')).rows[0].n
-  await admin.query(`CREATE FUNCTION course_catalog.test_failure() RETURNS trigger LANGUAGE plpgsql AS
-    $$ BEGIN RAISE EXCEPTION 'synthetic catalogue insert failure'; END $$;
-    CREATE TRIGGER test_failure BEFORE INSERT ON course_catalog.holes FOR EACH ROW EXECUTE FUNCTION course_catalog.test_failure()`)
-  try {
-    await assert.rejects(saveCatalogue(worker, fixture), /synthetic catalogue/)
-    assert.equal((await reader.query('SELECT count(*)::int AS n FROM course_catalog.holes')).rows[0].n, 2)
-    assert.equal((await reader.query('SELECT count(*)::int AS n FROM course_catalog.sync_runs')).rows[0].n, auditCount)
-  } finally {
-    await admin.query('DROP TRIGGER test_failure ON course_catalog.holes; DROP FUNCTION course_catalog.test_failure()')
-  }
-  const call = async (path, method = 'GET') => {
-    let result
-    await courseRequest({ req: { method }, url: new URL(path, 'http://localhost'), pool: reader,
-      json: (status, body) => { result = { status, body } } })
-    return result
-  }
-  const search = await call('/api/v1/courses?q=Explicit')
-  const exported = await call('/api/v1/courses/export')
-  assert.equal(exported.body.courses.length, 13)
-  assert.equal(exported.body.holes.length, 2)
-  assert.equal(exported.body.courses[0].source_version, 1)
-  assert.equal(exported.body.licenseUrl, 'https://opendatacommons.org/licenses/odbl/1-0/')
-  assert.deepEqual(Object.keys(exported.body).sort(), ['attribution', 'courses', 'holes', 'licenseUrl', 'source', 'sync'])
-  assert.equal(search.status, 200)
-  assert.equal(search.body.courses[0].mapped_holes, 2)
-  assert.equal(search.body.attribution.license, 'ODbL-1.0')
-  assert.equal((await call('/api/v1/courses?q=%27%20OR%201%3D1--')).body.courses.length, 0)
-  assert.equal((await call('/api/v1/courses?country=SE')).status, 400)
-  assert.equal((await call('/api/v1/courses', 'POST')).status, 405)
-  assert.equal((await call('/api/v1/courses/osm:relation:20/holes')).body.holes.length, 2)
-  assert.equal((await call('/api/v1/courses/osm:node:9999/holes')).status, 404)
-  const smaller = norwayFixture()
-  smaller.elements = smaller.elements.filter(e => e.type === 'node')
-  await assert.rejects(saveCatalogue(worker, smaller), /shrank/)
-  const old = structuredClone(fixture)
-  old.osm3s.timestamp_osm_base = new Date(Date.now() - 3600_000).toISOString()
-  await assert.rejects(saveCatalogue(worker, old), /older/)
-  const corrupt = structuredClone(fixture)
-  corrupt.remark = 'timeout'
-  await assert.rejects(saveCatalogue(worker, corrupt), /partial/)
-  assert.equal((await reader.query('SELECT count(*)::int AS n FROM course_catalog.holes')).rows[0].n, 2)
-  const changed = structuredClone(fixture)
-  changed.osm3s.timestamp_osm_base = new Date(Date.now() + 1000).toISOString()
-  changed.elements = changed.elements.filter(e => e.id !== 1)
-  await saveCatalogue(worker, changed)
-  assert.equal((await reader.query("SELECT active FROM course_catalog.courses WHERE id='osm:node:1'")).rows[0].active, false)
-  assert.equal((await call('/api/v1/courses?q=Norway%20test%201')).body.courses.some(c => c.id === 'osm:node:1'), false)
-  await admin.query('GRANT SELECT ON bags TO griplock_verify_courses_sync')
-  try {
-    await assert.rejects(provisionCourseSync(admin, syncPassword, 'griplock_verify_courses_sync'), /unexpected privileges/)
-  } finally {
-    await admin.query('REVOKE SELECT ON bags FROM griplock_verify_courses_sync')
-  }
-})
-
-test('on-demand PDGA search does not create SQL content and ODbL exports exclude it', async t => {
-  const admin = createPool()
-  let userId
-  t.after(async () => {
+  let owner
+  const services = []
+  t.after(async()=>{
+    for(const service of services)service.close()
     try {
-      if (userId) {
-        await admin.query('DELETE FROM course_pins WHERE user_id=$1', [userId])
-        await admin.query('DELETE FROM bags WHERE user_id=$1', [userId])
-        await admin.query('DELETE FROM app_users WHERE id=$1', [userId])
+      if(owner){
+        await admin.query('DELETE FROM private_plans WHERE user_id=$1',[owner])
+        await admin.query('DELETE FROM private_layouts WHERE user_id=$1',[owner])
+        await admin.query('DELETE FROM course_pins WHERE user_id=$1',[owner])
+        await admin.query('DELETE FROM bags WHERE user_id=$1',[owner])
+        await admin.query('DELETE FROM owned_discs WHERE user_id=$1',[owner])
+        await admin.query('DELETE FROM app_users WHERE id=$1',[owner])
       }
     } finally { await admin.end() }
   })
-  await migrate(admin, process.env.PGAPP_PASSWORD, 'griplock_pdga_test_app')
-  const reader = createPool({ ...process.env, PGUSER: 'griplock_pdga_test_app', PGPASSWORD: process.env.PGAPP_PASSWORD })
-  t.after(() => reader.end())
-  assert.equal((await admin.query("SELECT count(*)::int AS n FROM pg_namespace WHERE nspname='pdga_catalog'")).rows[0].n, 0)
-  const pdga = createPdgaService({ username: 'fixture', password: 'synthetic-only', fetcher: async url => {
-    if (url.endsWith('/login')) return Response.json({ session_name: 'SSESS_fixture', sessid: 'fixture', token: 'fixture' })
-    if (url.endsWith('/logout')) return Response.json(true)
-    return Response.json({ courses: [{ course_id: '4551', course_node_nid: '10000', course_name: 'Ekeberg fixture',
-      city: 'Oslo', country: 'Norway', latitude: '59.9', longitude: '10.7', holes: '18' }] })
-  } })
-  t.after(() => pdga.close())
-  const call = async path => {
-    let result
-    await courseRequest({ req: { method: 'GET' }, url: new URL(path, 'http://localhost'), pool: reader, pdga,
-      json: (status, body) => { result = { status, body } } })
-    return result
+  await migrate(admin,process.env.PGAPP_PASSWORD,'griplock_pdga_test_app')
+  assert.equal((await admin.query("SELECT count(*)::int AS n FROM pg_namespace WHERE nspname='course_catalog'")).rows[0].n,0)
+  const pool=createPool({...process.env,PGUSER:'griplock_pdga_test_app',PGPASSWORD:process.env.PGAPP_PASSWORD})
+  t.after(()=>pool.end())
+  await pool.query('DELETE FROM provider_cache.entries')
+  await pool.query("UPDATE provider_cache.control SET blocked_until=now(),requests=0,window_start=now()")
+  const calls=[]
+  let rateLimited=false
+  let gate=null
+  const row={layoutId:11,courseId:27416,tournId:99,name:'Fixture event layout',holes:2,par:7,length:200,units:'Feet',
+    liveTournament:{tournamentName:'Fixture event',startDate:'2026-01-02T00:00:00Z'}}
+  const fetcher=async(url,options)=>{
+    calls.push(url)
+    assert.equal(options.redirect,'error')
+    if(gate)await gate
+    if(url.endsWith('/login'))return Response.json({session_name:'SSESS_fixture',sessid:'fixture',token:'fixture'})
+    if(url.endsWith('/logout'))return Response.json(true)
+    if(url.includes('/api/fixture-index')){
+      if(rateLimited)return new Response('PRIVATE',{status:429,headers:{'Retry-After':'600'}})
+      assert.equal(new URL(url).searchParams.get('courseId'),'27416','use node ID, never the legacy REST ID')
+      return Response.json([row])
+    }
+    if(url.includes('/api/fixture-overview'))return Response.json({tournId:99,players:[{private:'NEVER_STORE'}],
+      liveLayouts:[{...row,courseId:999,layoutId:12,liveLayoutDetails:[]},
+        {...row,liveLayoutDetails:[
+          {layoutDetailId:102,layoutId:11,holeOrdinal:2,label:'2A',par:4,length:150,tee:'Long',target:'Basket',notes:'OB fixture'},
+          {layoutDetailId:101,layoutId:11,holeOrdinal:1,label:'1',par:3,length:50,tee:'Short',target:null,notes:null},
+        ]}]})
+    return Response.json({courses:[{course_id:'4550',course_node_nid:'27415',course_name:'Wrong neighbour',country:'Norway'},
+      {course_id:'4551',course_node_nid:'27416',course_name:'Ekeberg fixture',country:'Norway',holes:'18'}]})
   }
-  const search = await call('/api/v1/courses?q=Ekeberg')
-  assert.equal(search.status, 200)
-  const course = search.body.courses.find(c => c.id === 'pdga:4551')
-  assert.equal(course.source, 'pdga')
-  assert.equal(course.source_url, 'https://www.pdga.com/node/10000')
-  assert.equal(course.expected_holes, 18)
-  assert.equal(course.mapped_holes, 0)
-  assert.equal(search.body.providers.pdga.status, 'ready')
-  const detail = await call('/api/v1/courses/pdga:4551/holes')
-  assert.equal(detail.status, 200)
-  assert.deepEqual(detail.body.holes, [])
-  assert.equal(detail.body.coverage.layoutsAvailable, false)
-  assert.equal(detail.body.coverage.countMatches, false)
-  assert.equal(detail.body.attribution.license, 'PDGA API agreement')
-  const exported = await call('/api/v1/courses/export')
-  assert.equal(exported.status, 200)
-  assert.ok(exported.body.courses.every(c => c.id.startsWith('osm:')))
-  assert.ok(!JSON.stringify(exported.body).includes('PDGA'))
-  userId = (await admin.query("INSERT INTO app_users(issuer,subject) VALUES('pdga-fixture',$1) RETURNING id",
-    [randomBytes(16).toString('hex')])).rows[0].id
-  const bag = (await admin.query("INSERT INTO bags(user_id,name) VALUES($1,'Fixture bag') RETURNING id", [userId])).rows[0]
-  const writePin = async (body, rowId) => {
-    let response
-    const req = Object.assign(Readable.from([Buffer.from(JSON.stringify(body))]), {
-      method: rowId ? 'PATCH' : 'POST', headers: { 'content-type': 'application/json' },
-    })
-    await featureRequest({ req, url: new URL(`/api/v1/course_pins${rowId ? `/${rowId}` : ''}`, 'http://localhost'),
-      pool: reader, userId, json: (status, value) => { response = { status, value } } })
-    return response
+  const logs=[]
+  const options={username:'fixture',password:'synthetic-only',pool,fetcher,logger:e=>logs.push(e),
+    indexTemplate:'https://www.pdga.com/api/fixture-index?courseId={courseId}',
+    overviewTemplate:'https://www.pdga.com/api/fixture-overview/{tournId}'}
+  const create=()=>{const service=createPdgaService(options);services.push(service);return service}
+  const first=create()
+  const course=await first.course('pdga:4551')
+  assert.equal(course.value.name,'Ekeberg fixture')
+  assert.ok(Math.abs(course.expiresAt-Date.now()-pdgaCacheMs)<1000)
+  const second=create()
+  assert.deepEqual(await second.course('pdga:4551'),course,'another replica reads the persisted SQL cache')
+  assert.equal(calls.length,3)
+  const index=await second.layouts('pdga:4551')
+  assert.equal(index.value[0].layout_id,'11')
+  const detail=await first.layout('pdga:4551','99','11')
+  assert.equal(detail.value.holes.length,2)
+  assert.equal(detail.value.holes[0].label,'1')
+  assert.equal(detail.value.holes[0].distance_m,15.24)
+  assert.equal(detail.value.holes[1].tee,'Long')
+  assert.equal(detail.value.holes[1].notes,'OB fixture')
+  await assert.rejects(first.layout('pdga:4551','99','12'),{code:'layout_not_found'})
+  const count=calls.length
+  assert.deepEqual(await second.layout('pdga:4551','99','11'),detail)
+  assert.equal(calls.length,count,'viewing the same layout must make zero provider requests')
+  const values=(await pool.query('SELECT value FROM provider_cache.entries')).rows
+  assert.ok(!JSON.stringify(values).includes('NEVER_STORE'))
+  assert.ok(!JSON.stringify(values).includes('Wrong neighbour'))
+  owner=(await admin.query("INSERT INTO app_users(issuer,subject) VALUES('pdga-fixture',$1) RETURNING id",[randomUUID()])).rows[0].id
+  const bag=(await admin.query("INSERT INTO bags(user_id,name) VALUES($1,'Fixture bag') RETURNING id",[owner])).rows[0].id
+  const pin=(await admin.query(`INSERT INTO course_pins(user_id,bag_id,course_name,course_id)
+    VALUES($1,$2,'PDGA course','pdga:4551') RETURNING id`,[owner,bag])).rows[0].id
+  const disc=(await admin.query("INSERT INTO owned_discs(user_id,name) VALUES($1,'Fixture disc') RETURNING id",[owner])).rows[0].id
+  const plannerPool=new pg.Pool({...pool.options,password:process.env.PGAPP_PASSWORD,max:1})
+  t.after(()=>plannerPool.end())
+  const plannerPdga=createPdgaService({...options,pool:plannerPool})
+  services.push(plannerPdga)
+  const request=async(path,method='GET',body)=>{
+    const req=Object.assign(Readable.from(body?[Buffer.from(JSON.stringify(body))]:[]),
+      {method,headers:{'content-type':'application/json'}})
+    return plannerRequest({req,url:new URL(path,'http://localhost'),pool:plannerPool,userId:owner,pdga:plannerPdga,
+      json:(status,value)=>({status,value})})
   }
-  const pin = await writePin({ course_name: 'Ekeberg fixture', course_id: 'pdga:4551', bag_id: bag.id })
-  assert.equal(pin.status, 201)
-  assert.equal(pin.value.course_name, 'PDGA course')
-  const updated = await writePin({ course_name: 'Do not retain provider name' }, pin.value.id)
-  assert.equal(updated.status, 200)
-  assert.equal(updated.value.course_name, 'PDGA course')
-  const persisted = (await admin.query('SELECT course_name,course_id FROM course_pins WHERE id=$1', [pin.value.id])).rows[0]
-  assert.deepEqual(persisted, { course_name: 'PDGA course', course_id: 'pdga:4551' })
-  await assert.rejects(admin.query('UPDATE course_pins SET course_name=$1 WHERE id=$2', ['Ekeberg fixture', pin.value.id]), { code: '23514' })
-  assert.equal((await writePin({ course_name: 'Invalid', course_id: 'pdga:bad', bag_id: bag.id })).status, 400)
-  pdga.clear()
-  const partial = await courseRequest({
-    req: { method: 'GET' }, url: new URL('/api/v1/courses?q=Ekeberg', 'http://localhost'), pool: reader,
-    pdga: { search: async () => { throw Object.assign(new Error('safe'), { code: 'pdga_unavailable' }) } },
-    json: (status, body) => ({ status, body }),
-  })
-  assert.equal(partial.status, 200)
-  assert.equal(partial.body.providers.pdga.status, 'unavailable')
-  assert.ok(partial.body.courses.every(c => c.source === 'osm'))
+  const chosen=await request('/api/v1/planner/event-layout','POST',{course_pin_id:pin,tournament_id:'99',layout_id:'11'})
+  assert.equal(chosen.status,201,'provider planning must work even with one available database connection')
+  const layoutId=chosen.value.layout.id
+  const holes=chosen.value.layout.holes
+  const selections={[holes[0].id]:{disc_ids:[disc],notes:'My own strategy'}}
+  assert.equal((await request(`/api/v1/planner/pins/${pin}`,'PUT',{layout_id:layoutId,version:0,selections})).status,200)
+  const persisted=(await admin.query('SELECT name,holes,provider_ref FROM private_layouts WHERE id=$1',[layoutId])).rows[0]
+  assert.equal(persisted.name,'PDGA event layout')
+  assert.deepEqual(persisted.holes,[])
+  assert.deepEqual(persisted.provider_ref,{course_id:'pdga:4551',tournament_id:'99',layout_id:'11'})
+  assert.ok(!JSON.stringify(persisted).includes('OB fixture'))
+  for(const invalid of [
+    {...persisted.provider_ref,layout_id:null},
+    {...persisted.provider_ref,tournament_id:99},
+    {...persisted.provider_ref,course_id:'pdga:4550'},
+    {...persisted.provider_ref,notes:'Provider facts must not persist here'},
+  ])await assert.rejects(admin.query('UPDATE private_layouts SET provider_ref=$2 WHERE id=$1',[layoutId,JSON.stringify(invalid)]),{code:'23514'})
+  const reloaded=await request(`/api/v1/planner?pin_id=${pin}`)
+  assert.equal(reloaded.value.layouts[0].holes[0].id,holes[0].id)
+  assert.deepEqual(reloaded.value.plan.selections,selections)
+  const api=path=>courseRequest({req:{method:'GET'},url:new URL(path,'http://localhost'),pdga:first,
+    json:(status,value)=>({status,value})})
+  assert.equal((await api('/api/v1/courses/export')).status,404)
+  assert.equal((await api('/api/v1/courses/osm:way:1/holes')).status,404)
+  await pool.query("UPDATE provider_cache.entries SET expires_at=now()-interval '1 second'")
+  rateLimited=true
+  await assert.rejects(first.layouts('pdga:4551'),{code:'pdga_rate_limited'})
+  const failedCount=calls.length
+  await assert.rejects(second.layouts('pdga:4551'),{code:'pdga_rate_limited'})
+  assert.equal(calls.length,failedCount,'provider cooldown applies across replicas, without another upstream call')
+  const unavailable=await request(`/api/v1/planner?pin_id=${pin}`)
+  assert.ok(unavailable.value.layouts[0].provider_error)
+  assert.equal(unavailable.value.layouts[0].name,'PDGA event layout')
+  assert.deepEqual(unavailable.value.plan.selections,selections)
+  assert.ok(!JSON.stringify(logs).includes('PRIVATE'))
+  assert.ok(logs.some(l=>l.httpStatus===429))
+  await pool.query("UPDATE provider_cache.control SET blocked_until=now(),requests=0")
+  rateLimited=false
+  await pool.query('DELETE FROM provider_cache.entries')
+  let release
+  gate=new Promise(resolve=>{release=resolve})
+  const pending=first.course('pdga:4551')
+  const same=first.course('pdga:4551')
+  await new Promise(resolve=>setTimeout(resolve,100))
+  await assert.rejects(second.course('pdga:4551'),{code:'pdga_busy'})
+  release();gate=null
+  assert.deepEqual(await pending,await same)
 })

@@ -22,8 +22,10 @@ def configure():
         raise RuntimeError("Use manual dev provisioning or the protected main release workflow.")
     username = os.environ.get("PDGA_USERNAME", "")
     password = os.environ.get("PDGA_PASSWORD", "")
+    index_template = os.environ.get("PDGA_LAYOUT_INDEX_TEMPLATE", "")
+    overview_template = os.environ.get("PDGA_EVENT_OVERVIEW_TEMPLATE", "")
     sha = os.environ.get("EXPECTED_SOURCE_SHA", "")
-    if not username or not password or len(sha) != 40:
+    if not username or not password or not index_template or not overview_template or len(sha) != 40:
         raise RuntimeError("Configure both PDGA secrets in the selected GitHub environment before running.")
     progress_phase = "azure_context"
     account = json.loads(subprocess.check_output(["az", "account", "show", "-o", "json"], stderr=subprocess.DEVNULL))
@@ -55,11 +57,13 @@ def configure():
         raise RuntimeError("Deploy this exact commit before configuring PDGA credentials.")
     progress_phase = "read_existing_secrets"
     existing = arm("POST", "/listSecrets")["value"]
-    secrets = [v for v in existing if v["name"] not in ("pdga-username", "pdga-password")]
-    secrets += [{"name": "pdga-username", "value": username}, {"name": "pdga-password", "value": password}]
-    containers[0]["env"] = [v for v in env if v["name"] not in ("PDGA_USERNAME", "PDGA_PASSWORD")] + [
-        {"name": "PDGA_USERNAME", "secretRef": "pdga-username"},
-        {"name": "PDGA_PASSWORD", "secretRef": "pdga-password"}]
+    protected = {"PDGA_USERNAME": ("pdga-username", username), "PDGA_PASSWORD": ("pdga-password", password),
+        "PDGA_LAYOUT_INDEX_TEMPLATE": ("pdga-layout-index", index_template),
+        "PDGA_EVENT_OVERVIEW_TEMPLATE": ("pdga-event-overview", overview_template)}
+    secrets = [v for v in existing if v["name"] not in [value[0] for value in protected.values()]]
+    secrets += [{"name": value[0], "value": value[1]} for value in protected.values()]
+    containers[0]["env"] = [v for v in env if v["name"] not in protected] + [
+        {"name": name, "secretRef": value[0]} for name, value in protected.items()]
     template["revisionSuffix"] = "pdga-" + os.environ["GITHUB_RUN_ID"] + "-" + os.environ["GITHUB_RUN_ATTEMPT"]
     progress_phase = "write_provider_configuration"
     arm("PATCH", body={"properties": {"configuration": {"secrets": secrets}, "template": template}})

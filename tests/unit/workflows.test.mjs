@@ -113,9 +113,11 @@ function checkTrustBoundary(files) {
   assert.equal(pdgaStep.if, "${{ github.event_name == 'workflow_dispatch' && inputs.configure_pdga }}",
     'PDGA secrets only enter an explicitly requested manual dev step, never a PR-triggered deployment')
   assert.deepEqual(pdgaStep.env, { PDGA_USERNAME: '${{ secrets.PDGA_USERNAME }}',
+    PDGA_LAYOUT_INDEX_TEMPLATE: '${{ secrets.PDGA_LAYOUT_INDEX_TEMPLATE }}',
+    PDGA_EVENT_OVERVIEW_TEMPLATE: '${{ secrets.PDGA_EVENT_OVERVIEW_TEMPLATE }}',
     PDGA_PASSWORD: '${{ secrets.PDGA_PASSWORD }}', EXPECTED_SOURCE_SHA: '${{ env.SOURCE_SHA }}' })
   assert.equal(pdgaStep.run, 'python3 scripts/configure-pdga-dev.py')
-  assert.equal(files['dev.yml'].match(/secrets\./g)?.length, 2, 'no database or registry secrets added')
+  assert.equal(files['dev.yml'].match(/secrets\./g)?.length, 4, 'only protected provider configuration')
   assert.equal(dev.on.workflow_dispatch.inputs.configure_pdga.default, false)
   assert.ok(!/job-griplock-migrate\b(?!-dev)|app-griplock-staging/.test(files['dev.yml']), 'dev never targets live resources')
   assert.equal(staging.jobs.staging.steps[deployIndex].run.match(/releaseId="\$GITHUB_RUN_ID-\$GITHUB_RUN_ATTEMPT"/g)?.length, 2,

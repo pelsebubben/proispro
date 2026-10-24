@@ -40,7 +40,8 @@ class ProvisionTests(unittest.TestCase):
 
         env = {"GITHUB_ACTIONS": "true", "GITHUB_EVENT_NAME": event, "PDGA_STAGE": stage,
             "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1", "EXPECTED_SOURCE_SHA": sha,
-            "PDGA_USERNAME": "synthetic-user", "PDGA_PASSWORD": "synthetic-pdga-password"}
+            "PDGA_USERNAME": "synthetic-user", "PDGA_PASSWORD": "synthetic-pdga-password",
+            "PDGA_LAYOUT_INDEX_TEMPLATE": "synthetic-private-index", "PDGA_EVENT_OVERVIEW_TEMPLATE": "synthetic-private-overview"}
         if stage == "prod" or event == "workflow_run":
             env.update({"GITHUB_REF": "refs/heads/main",
                 "GITHUB_WORKFLOW_REF": "pelsebubben/proispro/.github/workflows/prod.yml@refs/heads/main"})
@@ -58,6 +59,9 @@ class ProvisionTests(unittest.TestCase):
         self.assertIn({"name": "pdga-password", "value": "synthetic-pdga-password"}, secrets)
         env = body["properties"]["template"]["containers"][0]["env"]
         self.assertIn({"name": "PDGA_PASSWORD", "secretRef": "pdga-password"}, env)
+        self.assertIn({"name": "PDGA_LAYOUT_INDEX_TEMPLATE", "secretRef": "pdga-layout-index"}, env)
+        self.assertIn({"name": "pdga-event-overview", "value": "synthetic-private-overview"}, secrets)
+        self.assertNotIn("synthetic-private", output.getvalue())
         self.assertNotIn("synthetic-pdga-password", output.getvalue())
         self.assertNotIn("synthetic-token", output.getvalue())
 

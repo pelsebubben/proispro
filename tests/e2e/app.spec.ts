@@ -153,7 +153,7 @@ test('new inventory and bags reach other tabs without reload and picker membersh
   await page.getByRole('button', { name: 'Done', exact: true }).click()
   await nav.getByRole('button', { name: /Courses/ }).click()
   await page.getByRole('button', { name: '+ Pin Course', exact: true }).click()
-  await expect(page.locator('select option', { hasText: 'Fresh bag' })).toHaveCount(1)
+  await expect(page.getByLabel('Link to Bag', { exact: true }).locator('option', { hasText: 'Fresh bag' })).toHaveCount(1)
   await expect(page.getByRole('alert')).toHaveCount(0)
   expect(unexpected).toEqual([])
 })

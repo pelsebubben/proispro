@@ -6,8 +6,9 @@ const discId='00000000-0000-4000-8000-000000000003'
 const secondDiscId='00000000-0000-4000-8000-000000000004'
 const layoutId='00000000-0000-4000-8000-000000000005'
 interface Plan {layout_id:string;version:number;selections:Record<string,{disc_ids:string[];notes:string}>}
-async function setup(page:Page){
-  const state:{layouts:PrivateLayout[];plan:Plan|null;failSave:boolean;layoutBodies:object[]}={layouts:[],plan:null,failSave:false,layoutBodies:[]}
+async function setup(page:Page,event=false){
+  const state:{layouts:PrivateLayout[];plan:Plan|null;failSave:boolean;layoutBodies:object[];providerRequests:number;failEvents:boolean}={
+    layouts:[],plan:null,failSave:false,layoutBodies:[],providerRequests:0,failEvents:false}
   await page.addInitScript(()=>{
     sessionStorage.setItem('griplock.devAccessToken',`h.${btoa(JSON.stringify({preferred_username:'planner-fixture'}))}.s`)
   })
@@ -16,6 +17,14 @@ async function setup(page:Page){
   await page.route('**/api/v1/**',route=>{
     const path=new URL(route.request().url()).pathname
     const method=route.request().method()
+    if(path.startsWith('/api/v1/courses/')){
+      state.providerRequests++
+      if(path.endsWith('/layouts'))return state.failEvents?route.fulfill({status:429,json:{error:'pdga_rate_limited'}}):
+        route.fulfill({json:{layouts:[{layout_id:'11',tournament_id:'99',name:'Fixture event layout',hole_count:1,par:3,length:85,
+          units:'Meters',event_name:'Fixture event',event_date:'2026-01-02'}],expiresAt:Date.now()+86400000}})
+      return route.fulfill({json:{course:{name:'Ekeberg fixture',source_url:'https://www.pdga.com/node/27416',active:true},
+        holes:[],coverage:{note:'Choose an event layout.'},expiresAt:Date.now()+86400000}})
+    }
     if(path==='/api/v1/session')return route.fulfill({json:{userId:bagId}})
     if(path==='/api/v1/bags')return route.fulfill({json:{bags:[
       {id:bagId,name:'Everyday bag',disc_ids:[discId]},{id:'00000000-0000-4000-8000-000000000009',name:'Travel bag',disc_ids:[]}]}})
@@ -23,7 +32,16 @@ async function setup(page:Page){
       {id:discId,name:'Buzzz',manufacturer:'Discraft',added_at:new Date().toISOString()},
       {id:secondDiscId,name:'Leopard',manufacturer:'Innova',added_at:new Date().toISOString()}]}})
     if(path==='/api/v1/course_pins')return route.fulfill({json:{course_pins:[
-      {id:pinId,course_name:'My local course',course_id:null,bag_id:bagId,created_at:new Date().toISOString()}]}})
+      {id:pinId,course_name:event?'PDGA course':'My local course',course_id:event?'pdga:4551':null,bag_id:bagId,created_at:new Date().toISOString()}]}})
+    if(path==='/api/v1/planner/event-layout'&&method==='POST'){
+      const layout:PrivateLayout={id:layoutId,name:'Fixture event layout',tee:'',basket:'',description:'',checked_on:null,
+        version:1,holes:[{id:'00000000-0000-4000-8000-000000000008',label:'1A',par:3,distance_m:85,tee:'Long tee',target:'Basket A',notes:'OB fixture'}],
+        provider_ref:{course_id:'pdga:4551',tournament_id:'99',layout_id:'11'},
+        provider_event:{layout_id:'11',tournament_id:'99',name:'Fixture event layout',hole_count:1,par:3,length:85,
+          units:'Meters',event_name:'Fixture event',event_date:'2026-01-02'},expiresAt:Date.now()+86400000}
+      state.layouts=[layout]
+      return route.fulfill({status:201,json:{layout}})
+    }
     if(path==='/api/v1/planner'){
       if(method==='POST'){
         const body=route.request().postDataJSON();state.layoutBodies.push(body)
@@ -57,13 +75,15 @@ async function setup(page:Page){
   })
   await page.goto('/')
   await page.getByRole('navigation').getByRole('button',{name:/Bags/}).click()
-  await expect(page.getByRole('heading',{name:'Courses & plans'})).toBeVisible()
+  await expect(page.getByRole('button',{name:'Courses (1) & plans',exact:true})).toBeVisible()
+  expect(state.providerRequests).toBe(0)
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('griplock-data-error',{detail:'Synthetic provider warning'})))
   await expect(page.getByRole('alert')).toContainText('Synthetic provider warning')
-  await expect(page.locator('.bag-course-links')).toHaveCount(1)
+  await expect(page.locator('.bag-course-shortcut')).toHaveCount(1)
   await page.getByRole('button',{name:'Dismiss',exact:true}).click()
-  await expect(page.locator('.bag-course-links')).toHaveCount(1)
-  await page.getByRole('button',{name:'Open plan',exact:true}).click()
+  await expect(page.locator('.bag-course-shortcut')).toHaveCount(1)
+  await page.getByRole('button',{name:'Courses (1) & plans',exact:true}).click()
+  await page.getByRole('button',{name:'Open private planner',exact:true}).click()
   await expect(page.getByRole('heading',{name:'Private layout & game plan'})).toBeVisible()
   return state
 }
@@ -78,7 +98,7 @@ async function createLayout(page:Page){
   await expect(page.getByRole('heading',{name:'Short tees · My observations'})).toBeVisible()
 }
 
-test('private manual holes keep ordered disc choices through edits and bags show progress and deep-link back',async({page},testInfo)=>{
+test('private manual holes retain choices and compact bag navigation keeps course details in Courses',async({page},testInfo)=>{
   const state=await setup(page)
   await createLayout(page)
   const stableId=state.layouts[0].holes[0].id
@@ -100,12 +120,42 @@ test('private manual holes keep ordered disc choices through edits and bags show
   expect(await page.locator('body').evaluate(body=>body.scrollWidth<=innerWidth)).toBe(true)
   await page.screenshot({path:testInfo.outputPath('private-planner.png'),fullPage:true})
   await page.getByRole('button',{name:'Open linked bag',exact:true}).click()
-  await expect(page.getByText('Short tees · My observations · 1/1 holes planned',{exact:true})).toBeVisible()
-  await page.getByRole('button',{name:'Open plan',exact:true}).click()
+  await expect(page.getByRole('heading',{name:'Courses & plans',exact:true})).toHaveCount(0)
+  expect(await page.locator('body').evaluate(body=>body.scrollWidth<=innerWidth)).toBe(true)
+  await page.screenshot({path:testInfo.outputPath('compact-bag-courses.png'),fullPage:true})
+  await page.getByRole('button',{name:'Courses (1) & plans',exact:true}).click()
+  await page.getByRole('button',{name:'Open private planner',exact:true}).click()
   await expect(page.getByLabel('Strategy for hole 1A',{exact:true})).toHaveValue('Safe forehand, Leopard for calm conditions.')
   await page.getByRole('button',{name:'Open linked bag',exact:true}).click()
-  await page.getByRole('button',{name:'Link another course',exact:true}).click()
+  await page.getByRole('button',{name:'Courses (1) & plans',exact:true}).click()
+  await page.getByRole('button',{name:'+ Pin Course',exact:true}).click()
   await expect(page.getByLabel('Link to Bag',{exact:true})).toHaveValue(bagId)
+})
+
+test('PDGA historical holes display tee target and notes and accept private multi-disc strategy without editing provider facts',async({page},testInfo)=>{
+  const state=await setup(page,true)
+  state.failEvents=true
+  await page.getByRole('button',{name:'Browse PDGA event layouts',exact:true}).click()
+  await expect(page.getByRole('alert').last()).toContainText('pdga_rate_limited')
+  state.failEvents=false
+  await page.getByRole('button',{name:'Dismiss',exact:true}).click()
+  await page.getByRole('button',{name:'Browse PDGA event layouts',exact:true}).click()
+  await page.getByLabel('PDGA event layout',{exact:true}).selectOption('99:11')
+  await page.getByRole('button',{name:'Use event layout',exact:true}).click()
+  await expect(page.getByRole('heading',{name:'Hole 1A',exact:true})).toBeVisible()
+  await expect(page.getByText('Par 3 · 85 m',{exact:true})).toBeVisible()
+  await expect(page.getByText('Tee: Long tee · Target: Basket A',{exact:true})).toBeVisible()
+  await expect(page.getByText('OB fixture',{exact:true})).toBeVisible()
+  await expect(page.getByText(/PDGA event: Fixture event.*2026-01-02/)).toBeVisible()
+  await expect(page.getByRole('button',{name:'Edit layout',exact:true})).toHaveCount(0)
+  await page.getByLabel('Add disc for hole 1A',{exact:true}).selectOption(discId)
+  await page.getByLabel('Add disc for hole 1A',{exact:true}).selectOption(secondDiscId)
+  await page.getByLabel('Strategy for hole 1A',{exact:true}).fill('My private strategy')
+  await page.getByRole('button',{name:'Save game plan',exact:true}).click()
+  expect(Object.values(state.plan!.selections)[0].disc_ids).toEqual([discId,secondDiscId])
+  await expect(page.getByText('Game plan saved.',{exact:true})).toBeVisible()
+  expect(await page.locator('body').evaluate(body=>body.scrollWidth<=innerWidth)).toBe(true)
+  await page.screenshot({path:testInfo.outputPath('event-hole-planner.png'),fullPage:true})
 })
 
 test('failed saves remain explicit and unsaved navigation can be declined',async({page})=>{
