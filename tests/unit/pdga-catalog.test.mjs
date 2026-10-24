@@ -52,7 +52,7 @@ test('temporary cache expires, never serves stale on error, and can be purged im
   api.state.fail = true
   await assert.rejects(service.course('pdga:4551'), { code: 'pdga_unavailable' })
   assert.equal(api.calls.length, 6)
-  assert.deepEqual(logs, [{ event: 'pdga_request_failed', code: 'pdga_unavailable' }])
+  assert.deepEqual(logs, [{ event: 'pdga_request_failed', code: 'pdga_unavailable', phase:'course',reason:'http',httpStatus:502 }])
   api.state.fail = false
   await service.search('Ekeberg')
   service.clear()
@@ -75,6 +75,16 @@ test('concurrent identical searches coalesce; other requests and bursts are boun
   assert.equal(api.calls.length, 3)
   for (let i = 0; i < 19; i++) await service.search(`Course ${i}`)
   await assert.rejects(service.search('More'), { code: 'pdga_rate_limited' })
+})
+test('provider diagnostics expose only allowlisted phase, status and reason, never upstream errors or credentials',async t=>{
+  const logs=[]
+  const service=createPdgaService({...credentials,fetcher:async()=>{throw new Error('PRIVATE '+credentials.password)},
+    logger:event=>logs.push(event)})
+  t.after(()=>service.close())
+  await assert.rejects(service.search('Ekeberg'),{code:'pdga_unavailable'})
+  assert.deepEqual(logs,[{event:'pdga_request_failed',code:'pdga_unavailable',phase:'user/login',reason:'network',httpStatus:null}])
+  assert.ok(!JSON.stringify(logs).includes('PRIVATE'))
+  assert.ok(!JSON.stringify(logs).includes(credentials.password))
 })
 test('PDGA detail needs no SQL, returns no invented layouts, and exposes unavailability', async t => {
   const api = fixture()

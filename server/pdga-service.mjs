@@ -36,8 +36,11 @@ export function createPdgaService({ username, password, fetcher = fetch, now = D
         put(key, value, expiresAt)
         for (const course of Array.isArray(value) ? value : value ? [value] : []) put(course.id, course, expiresAt)
         return { value, expiresAt }
-      } catch {
-        logger({ event: 'pdga_request_failed', code: 'pdga_unavailable' })
+      } catch (error) {
+        logger({ event: 'pdga_request_failed', code: 'pdga_unavailable',
+          phase: ['user/login','course','user/logout'].includes(error?.pdgaPhase) ? error.pdgaPhase : 'validation',
+          reason: ['network','http','invalid_response'].includes(error?.pdgaFailure) ? error.pdgaFailure : 'unexpected_response',
+          httpStatus: Number.isInteger(error?.pdgaHttpStatus) && error.pdgaHttpStatus >= 400 && error.pdgaHttpStatus <= 599 ? error.pdgaHttpStatus : null })
         throw unavailable('pdga_unavailable')
       } finally { inFlight = null }
     })()

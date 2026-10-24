@@ -1,5 +1,6 @@
 const base = 'https://api.pdga.com/services/json/'
 const maxBytes = 2 * 1024 * 1024
+const failure = (message, phase, code, status) => Object.assign(new Error(message), { pdgaPhase: phase, pdgaFailure: code, pdgaHttpStatus: status })
 const validSession = session => session &&
   typeof session.session_name === 'string' && /^[A-Za-z0-9_]{1,128}$/.test(session.session_name) &&
   typeof session.sessid === 'string' && /^[A-Za-z0-9_-]{1,512}$/.test(session.sessid) &&
@@ -13,11 +14,11 @@ async function request(fetcher, endpoint, options = {}) {
       headers: { Accept: 'application/json', ...options.headers },
     })
   } catch {
-    throw new Error('PDGA request failed (network, timeout, or redirect). Response details suppressed.')
+    throw failure('PDGA request failed (network, timeout, or redirect). Response details suppressed.',endpoint.split('?')[0],'network')
   }
   if (!response.ok) {
     await response.body?.cancel()
-    throw new Error(`PDGA request rejected (HTTP ${response.status}). Check API access and credentials; response body suppressed.`)
+    throw failure(`PDGA request rejected (HTTP ${response.status}). Check API access and credentials; response body suppressed.`,endpoint.split('?')[0],'http',response.status)
   }
   try {
     const chunks = []
@@ -30,7 +31,7 @@ async function request(fetcher, endpoint, options = {}) {
     }
     return JSON.parse(Buffer.concat(chunks).toString('utf8'))
   } catch {
-    throw new Error('PDGA returned an invalid or oversized response. Response details suppressed.')
+    throw failure('PDGA returned an invalid or oversized response. Response details suppressed.',endpoint.split('?')[0],'invalid_response')
   }
 }
 
