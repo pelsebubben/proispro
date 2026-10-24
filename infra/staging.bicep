@@ -148,7 +148,7 @@ module verify './job.bicep' = {
     image: image
     registryServer: registryServer
     pullIdentityId: pullIdentityId
-    command: ['node', '--test', 'tests/api/discs.test.mjs']
+    command: ['node', '--test', 'tests/api/discs.test.mjs', 'tests/api/courses.test.mjs']
     databaseHost: database.properties.fullyQualifiedDomainName
     databaseName: testDatabase.name
     adminPassword: postgresAdminPassword

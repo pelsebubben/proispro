@@ -3,7 +3,7 @@ set -euo pipefail
 
 job=${1:?job name required}
 case "$job" in
-  job-griplock-verify|job-griplock-migrate|job-griplock-migrate-dev) ;;
+  job-griplock-verify|job-griplock-migrate|job-griplock-migrate-dev|job-griplock-courses-dev|job-griplock-courses-prod|job-griplock-courses-setup-dev|job-griplock-courses-setup-prod) ;;
   *) echo "Unknown staging job" >&2; exit 1 ;;
 esac
 execution=$(az containerapp job start --resource-group "$RESOURCE_GROUP" --name "$job" --query name -o tsv)

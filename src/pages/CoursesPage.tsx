@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ClientDisc, ClientBag } from '../utils/disc'
-import { useCoursePins, ClientPin, OSMCourse } from '../hooks/useCoursePins'
+import { useCoursePins, ClientPin, CatalogueCourse } from '../hooks/useCoursePins'
+import { readCourseCatalogue } from '../lib/data'
 
 interface CoursesPagesProps {
   allDiscs: ClientDisc[]
@@ -18,20 +19,42 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
     searchCoursesDebounced,
     downloadCourseMap,
     courseLoading,
-    pdgaSuggestions,
+    courseSuggestions,
+    courseError,
+    catalogueUpdatedAt,
+    courseCache,
     getHolesForPin,
   } = useCoursePins()
 
   const [expandedPinId, setExpandedPinId] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [courseQuery, setCourseQuery] = useState('')
-  const [selectedCourse, setSelectedCourse] = useState<OSMCourse | null>(null)
+  const [selectedCourse, setSelectedCourse] = useState<CatalogueCourse | null>(null)
   const [selectedBagId, setSelectedBagId] = useState('')
   const [showGamePlan, setShowGamePlan] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+
+  const exportCatalogue = async () => {
+    setExporting(true)
+    setExportError(null)
+    try {
+      const catalogue = await readCourseCatalogue<unknown>('courses/export')
+      const url = URL.createObjectURL(new Blob([JSON.stringify(catalogue)], { type: 'application/json' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'griplock-norway-osm-catalogue.json'
+      link.click()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'Could not export the course catalogue.')
+    } finally { setExporting(false) }
+  }
 
   const handlePinCourse = () => {
     setShowModal(true)
     setCourseQuery('')
+    searchCoursesDebounced('')
     setSelectedCourse(null)
     setSelectedBagId(allBags[0]?.id || '')
   }
@@ -44,7 +67,7 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
         setShowModal(false)
       }
     } else {
-      const courseId = `osm:${selectedCourse.osmType}:${selectedCourse.osmId}`
+      const courseId = selectedCourse.id
       await createPin(selectedCourse.name, courseId, selectedBagId)
       setShowModal(false)
     }
@@ -52,12 +75,7 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
 
   const handleDownloadMap = async (pin: ClientPin) => {
     if (!pin.courseId) return
-    const [, osmType, osmIdStr] = pin.courseId.split(':')
-    const osmId = parseInt(osmIdStr, 10)
-    const course = pdgaSuggestions.find(c => c.osmId === osmId && c.osmType === osmType)
-    if (course && course.lat && course.lon) {
-      await downloadCourseMap(pin, course.lat, course.lon)
-    }
+    await downloadCourseMap(pin)
   }
 
   const handleDelete = async (pinId: string) => {
@@ -72,7 +90,7 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
     searchCoursesDebounced(value)
   }
 
-  const handleSelectCourse = (course: OSMCourse) => {
+  const handleSelectCourse = (course: CatalogueCourse) => {
     setSelectedCourse(course)
     setCourseQuery(course.name)
   }
@@ -133,6 +151,17 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
         </button>
       </div>
 
+      <p className="bag-hint">
+        Norway course catalogue · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors · ODbL</a>.
+        {' '}Hole mapping may be incomplete; layout variants are not inferred.
+        {catalogueUpdatedAt && <> Last synced {new Date(catalogueUpdatedAt).toLocaleDateString()}.</>}
+      </p>
+      <button type="button" onClick={exportCatalogue} disabled={exporting}>
+        {exporting ? 'Exporting catalogue...' : 'Download ODbL course data'}
+      </button>
+      {exportError && <p role="alert">{exportError}</p>}
+      {courseError && <p role="alert">{courseError} Please retry your search or load the holes again.</p>}
+
       {/* Pin Modal */}
       {showModal && (
         <div
@@ -160,7 +189,7 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
             <h3 style={{ margin: '0 0 1rem', color: 'var(--clr-text)' }}>Pin a Course</h3>
 
             <div style={{ marginBottom: '1rem', position: 'relative' }}>
-              <label
+              <label htmlFor="course-query"
                 style={{
                   display: 'block',
                   marginBottom: '0.5rem',
@@ -168,13 +197,15 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                   color: 'var(--clr-muted)',
                 }}
               >
-                Course Name (search OSM or type custom)
+                Course Name (search Norway catalogue or type custom)
               </label>
               <input
+                id="course-query"
                 type="text"
                 value={courseQuery}
                 onChange={e => handleCourseQueryChange(e.target.value)}
                 placeholder="Start typing course name..."
+                maxLength={100}
                 style={{
                   width: '100%',
                   padding: '0.75rem',
@@ -193,10 +224,13 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                     color: 'var(--clr-muted)',
                   }}
                 >
-                  Searching OSM...
+                  Searching Norway catalogue...
                 </div>
               )}
-              {pdgaSuggestions.length > 0 && !selectedCourse && (
+              {courseError && <p role="alert">{courseError} Try searching again.</p>}
+              {!courseLoading && !courseError && courseQuery.trim().length >= 2 && !selectedCourse && courseSuggestions.length === 0 &&
+                <p className="bag-hint">No matching Norwegian courses found. The catalogue may be incomplete.</p>}
+              {courseSuggestions.length > 0 && !selectedCourse && (
                 <div
                   style={{
                     position: 'absolute',
@@ -212,14 +246,16 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                     zIndex: 10,
                   }}
                 >
-                  {pdgaSuggestions.map((course, idx) => (
-                    <div
-                      key={idx}
+                  {courseSuggestions.map(course => (
+                    <button
+                      type="button"
+                      key={course.id}
                       onClick={() => handleSelectCourse(course)}
                       style={{
                         padding: '0.75rem',
                         cursor: 'pointer',
                         borderBottom: '1px solid var(--clr-border)',
+                        width: '100%', textAlign: 'left', background: 'transparent', borderTop: 0, borderLeft: 0, borderRight: 0,
                       }}
                       onMouseEnter={e => {
                         e.currentTarget.style.background = 'var(--clr-bg)'
@@ -232,16 +268,16 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                         {course.name}
                       </div>
                       <div style={{ fontSize: '0.85rem', color: 'var(--clr-muted)' }}>
-                        {course.city} • {course.holes} holes
+                        {course.city} · {course.mapped_holes} mapped / {course.expected_holes ?? '?'} listed holes
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
             </div>
 
             <div style={{ marginBottom: '1.5rem' }}>
-              <label
+              <label htmlFor="course-bag"
                 style={{
                   display: 'block',
                   marginBottom: '0.5rem',
@@ -252,6 +288,7 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                 Link to Bag
               </label>
               <select
+                id="course-bag"
                 value={selectedBagId}
                 onChange={e => setSelectedBagId(e.target.value)}
                 style={{
@@ -356,7 +393,7 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                     </h3>
                     <div style={{ fontSize: '0.9rem', color: 'var(--clr-muted)' }}>
                       Bag: {bag?.name || 'Unknown'}
-                      {holes && <span> • {holes.length} holes downloaded</span>}
+                      {holes && <span> · {holes.length} mapped holes</span>}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -374,7 +411,7 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                           fontSize: '0.85rem',
                         }}
                       >
-                        ⬇ Download Map
+                        Load holes
                       </button>
                     )}
                     {pin.courseId && (
@@ -397,10 +434,7 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                           🧭
                         </a>
                         <a
-                          href={`https://www.openstreetmap.org/${pin.courseId.replace(
-                            'osm:',
-                            ''
-                          )}`}
+                          href={`https://www.openstreetmap.org/${pin.courseId.replace('osm:', '').replace(':', '/')}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           style={{
@@ -436,6 +470,8 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                 {/* Holes */}
                 {holes && (
                   <div style={{ marginTop: '1rem' }}>
+                    <p className="bag-hint">{courseCache[pin.id]?.coverageNote}</p>
+                    {holes.length === 0 && <p>No confidently associated holes are available. This does not mean the course has no holes.</p>}
                     <button
                       onClick={() => setExpandedPinId(isExpanded ? null : pin.id)}
                       style={{
@@ -474,6 +510,8 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                           >
                             Hole {hole.ref}
                             {hole.name && <span> - {hole.name}</span>}
+                            {hole.par !== null && <span> · Par {hole.par}</span>}
+                            {hole.length_m !== null && <span> · {hole.length_m} m</span>}
                           </div>
                         ))}
                       </div>
@@ -482,7 +520,7 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                 )}
 
                 {/* Game Plan */}
-                {holes && (
+                {holes && holes.length > 0 && (
                   <div style={{ marginTop: '1rem' }}>
                     <button
                       onClick={() => setShowGamePlan(showPlan ? null : pin.id)}

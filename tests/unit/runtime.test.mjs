@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { createApplication } from '../../server/app.mjs'
+import { schemaVersion } from '../../server/migrate.mjs'
 
 test('runtime serves SPA and immutable assets without allowing unauthenticated API or production sign-in', async t => {
   const root = await mkdtemp(join(tmpdir(), 'griplock-runtime-'))
@@ -12,7 +13,7 @@ test('runtime serves SPA and immutable assets without allowing unauthenticated A
   await mkdir(join(root, 'assets'))
   await writeFile(join(root, 'index.html'), '<h1>Griplock fixture</h1>')
   await writeFile(join(root, 'assets', 'app-123.js'), 'console.log("fixture")')
-  let version = 3
+  let version = schemaVersion
   const pool = { query: async () => ({ rows: [{ version }] }) }
   const server = createApplication({ pool, staticRoot: root,
     sourceSha: 'unit-release' }).listen(0, '127.0.0.1')
@@ -20,15 +21,17 @@ test('runtime serves SPA and immutable assets without allowing unauthenticated A
   t.after(() => new Promise(resolve => server.close(resolve)))
   const request = path => fetch(`http://127.0.0.1:${server.address().port}${path}`)
   const ready = await request('/health/ready')
-  assert.deepEqual(await ready.json(), { status: 'ready', sourceSha: 'unit-release', schemaVersion: 3 })
-  for (const incompatible of [1, 2, 4]) {
+  assert.deepEqual(await ready.json(), { status: 'ready', sourceSha: 'unit-release', schemaVersion })
+  for (const incompatible of [1, 2, schemaVersion + 1]) {
     version = incompatible
     const unavailable = await request('/health/ready')
     assert.equal(unavailable.status, 503)
     assert.deepEqual(await unavailable.json(), { status: 'schema_not_ready' })
   }
-  version = 3
+  version = schemaVersion
   assert.equal((await request('/api/v1/discs')).status, 401)
+  assert.equal((await request('/api/v1/courses?q=Norway')).status, 401)
+  assert.equal((await request('/api/v1/courses/osm:way:123/holes')).status, 401)
   const disabled = await fetch(`http://127.0.0.1:${server.address().port}/api/v1/discs`, {
     headers: { Authorization: 'Bearer synthetic-not-a-token' },
   })

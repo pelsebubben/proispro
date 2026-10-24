@@ -12,8 +12,9 @@ A personal disc golf inventory and bag tracker for the owner and friends.
 
 Inventory, bags/history, collections, wishlist, sale listings/share links, course
 pins and hole assignments all use `/api/v1`. Disc search uses a bundled DiscIt
-snapshot, so typing never waits on an external service. Course search/maps use
-OpenStreetMap Overpass. Anonymous sale links disclose only available listings while their
+snapshot, so typing never waits on an external service. Norway course search and
+hole data come from a PostgreSQL catalogue refreshed weekly from OpenStreetMap,
+not browser calls to Overpass. Anonymous sale links disclose only available listings while their
 owner has explicitly enabled public sharing.
 
 ## Adding discs
@@ -63,6 +64,14 @@ does not allocate inventory quantities or move discs out of other configurations
 Rename, flight chart, recent history and an in-page deletion confirmation are
 available beside the configuration name. Deleting a configuration removes its
 course links and history, never its inventory discs.
+
+## Norway courses
+
+Search the shared SQL catalogue, pin a course to a bag, and load its stored hole
+data without contacting Overpass from your device. Coverage warnings and source
+attribution stay visible; the ODbL catalogue can be downloaded separately from
+private user data. [Coverage, licensing and sync operations](docs/course-catalogue.md)
+describe the Norway-only scope and independent weekly Azure job.
 
 ## Local development
 

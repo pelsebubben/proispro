@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 test('deployed release is healthy, private by default and isolated from production data', async ({ page, request }) => {
   const ready = await request.get('/health/ready')
   expect(ready.status()).toBe(200)
-  expect(await ready.json()).toEqual({ status: 'ready', sourceSha: process.env.SOURCE_SHA, schemaVersion: 3 })
+  expect(await ready.json()).toEqual({ status: 'ready', sourceSha: process.env.SOURCE_SHA, schemaVersion: 4 })
   expect((await request.get('/api/v1/discs')).status()).toBe(401)
   const external: string[] = []
   page.on('request', req => {

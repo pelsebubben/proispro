@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
+import { schemaVersion } from '../../server/migrate.mjs'
 
 test('release recorder emits exact provenance and rejects mutable or unidentified releases', async t => {
   const root = await mkdtemp(join(tmpdir(), 'griplock-release-'))
@@ -19,7 +20,7 @@ test('release recorder emits exact provenance and rejects mutable or unidentifie
   assert.equal(result.status, 0, result.stderr)
   assert.deepEqual(JSON.parse(await readFile(join(root, 'staging-release.json'), 'utf8')), {
     sourceSha: env.SOURCE_SHA, image: env.IMAGE, url: env.STAGING_URL,
-    run: 'https://github.com/example/griplock/actions/runs/123', schemaVersion: 3,
+    run: 'https://github.com/example/griplock/actions/runs/123', schemaVersion,
     environment: 'live', identityReady: false,
   })
   assert.match(await readFile(env.GITHUB_STEP_SUMMARY, 'utf8'), /Customer identity configured: false/)

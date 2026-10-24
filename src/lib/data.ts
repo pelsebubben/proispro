@@ -47,6 +47,13 @@ async function request<T>(path: string, method = 'GET', body?: object): Promise<
   }
 }
 
+export function readCourseCatalogue<T>(path: string): Promise<T> {
+  if (!/^courses(?:\/export|\?q=[^#]*|\/osm:(?:node|way|relation):[1-9][0-9]{0,15}\/holes)$/.test(path)) {
+    throw new Error('Invalid course catalogue request')
+  }
+  return request<T>(path)
+}
+
 async function fetchDiscPhoto(path: string, signal: AbortSignal): Promise<Blob> {
   if (!/^\/api\/v1\/discs\/[0-9a-f-]{36}\/photo\?v=[0-9a-f-]{36}$/i.test(path)) {
     throw new Error('Invalid disc photo address.')

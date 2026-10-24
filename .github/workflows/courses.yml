@@ -1,0 +1,94 @@
+name: Sync Norway course catalogue
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: Target database (production requires main)
+        type: choice
+        options: [dev, prod]
+        default: dev
+        required: true
+      configure:
+        description: Provision or rotate the dedicated worker, then sync (requires deployed schema 4)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Share release locks: never rotate a worker's credential during a schema deployment.
+concurrency:
+  group: ${{ inputs.stage == 'dev' && 'griplock-dev' || 'griplock-staging-release' }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: prod
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RESOURCE_GROUP: rg-griplock-staging
+      STAGE: ${{ inputs.stage }}
+      AZURE_CORE_OUTPUT: none
+    steps:
+      - name: Validate target
+        run: |
+          set -euo pipefail
+          test "$STAGE" = dev || test "$STAGE" = prod
+          if [ "$STAGE" = prod ]; then test "$GITHUB_REF" = refs/heads/main; fi
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Configure private scheduled worker
+        id: configure
+        if: ${{ inputs.configure }}
+        env:
+          PG_ADMIN: ${{ secrets.PG_ADMIN_PASSWORD }}
+          REGISTRY_SERVER: ${{ vars.AZURE_REGISTRY_SERVER }}
+          PULL_IDENTITY: ${{ vars.AZURE_PULL_IDENTITY_ID }}
+        run: |
+          set -euo pipefail
+          test "${#PG_ADMIN}" -ge 32
+          az bicep install --version v0.48.1
+          az extension add --name containerapp --upgrade --only-show-errors
+          app=app-griplock-dev
+          if [ "$STAGE" = prod ]; then app=app-griplock-staging; fi
+          az containerapp show -g "$RESOURCE_GROUP" -n "$app" -o json > "$RUNNER_TEMP/course-app.json"
+          image=$(jq -er '.properties.template.containers[0].image' "$RUNNER_TEMP/course-app.json")
+          test "${image#*@sha256:}" != "$image"
+          host=$(jq -er '.properties.template.containers[0].env[] | select(.name=="PGHOST") | .value' "$RUNNER_TEMP/course-app.json")
+          environment=$(jq -er '.properties.environmentId // .properties.managedEnvironmentId' "$RUNNER_TEMP/course-app.json")
+          url="https://$(jq -er '.properties.configuration.ingress.fqdn' "$RUNNER_TEMP/course-app.json")"
+          curl --fail --silent --max-time 30 "$url/health/ready" | jq -e '.status=="ready" and .schemaVersion==4'
+          sync_password=$(openssl rand -hex 32)
+          echo "::add-mask::$sync_password"
+          echo 'bootstrap_attempted=true' >> "$GITHUB_OUTPUT"
+          az deployment group create -g "$RESOURCE_GROUP" -n "courses-$STAGE-$GITHUB_RUN_ID" \
+            --template-file infra/course-sync.bicep \
+            --parameters stage="$STAGE" environmentId="$environment" image="$image" \
+              registryServer="$REGISTRY_SERVER" pullIdentityId="$PULL_IDENTITY" databaseHost="$host" \
+              adminPassword="$PG_ADMIN" syncPassword="$sync_password" --output none
+          bash scripts/run-staging-job.sh "job-griplock-courses-setup-$STAGE"
+      - name: Remove bootstrap administrator credential
+        if: ${{ always() && steps.configure.outputs.bootstrap_attempted == 'true' }}
+        run: |
+          set -euo pipefail
+          exists=$(az containerapp job list -g "$RESOURCE_GROUP" --query "[?name=='job-griplock-courses-setup-$STAGE'].name" -o tsv)
+          if [ -n "$exists" ]; then
+            az containerapp job delete -g "$RESOURCE_GROUP" -n "$exists" --yes
+          fi
+      - name: Sync and require successful completion
+        run: |
+          set -euo pipefail
+          az extension add --name containerapp --upgrade --only-show-errors
+          bash scripts/run-staging-job.sh "job-griplock-courses-$STAGE"
+          printf '### Norway course sync\n\nTarget: %s\n\nWeekly schedule runs privately in Azure, independent of app releases.\n\nCoverage counts are in the course_sync_completed structured job log.\n' "$STAGE" >> "$GITHUB_STEP_SUMMARY"
