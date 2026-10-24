@@ -223,7 +223,10 @@ function checkDependencyMaintenance({ node, manifest, lock, docker, workflows, d
     assert.ok(update['open-pull-requests-limit'] >= 10, `${ecosystem}: do not stall after five PRs`)
     assert.ok(Object.values(update.groups).some(group => group.patterns.includes('*')),
       `${ecosystem}: group interdependent updates, including majors`)
-    assert.equal(update.ignore, undefined, `${ecosystem}: do not suppress outdated dependencies`)
+    const runtimeDependency = ecosystem === 'npm' ? '@types/node' : ecosystem === 'docker' ? 'node' : null
+    assert.deepEqual(update.ignore ?? [], runtimeDependency ? [{
+      'dependency-name': runtimeDependency, 'update-types': ['version-update:semver-major'],
+    }] : [], `${ecosystem}: only coordinated Node LTS major upgrades are manual`)
   }
 }
 
