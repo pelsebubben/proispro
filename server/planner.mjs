@@ -22,13 +22,61 @@ export function validateLayout(body) {
       new Set(body.holes.map(h=>h.id)).size !== body.holes.length) fail(400,'invalid_layout')
 }
 
-export async function plannerRequest({req,url,pool,userId,json}) {
+export async function plannerRequest({req,url,pool,userId,json,pdga=null}) {
   const match = url.pathname.match(/^\/api\/v1\/planner\/(layouts|pins)\/([0-9a-f-]+)$/i)
   const overview = url.pathname === '/api/v1/planner'
-  if ((!match && !overview) || (match && !id(match[2]))) return json(400,{error:'invalid_planner_request'})
+  const provider = url.pathname === '/api/v1/planner/event-layout'
+  if ((!match && !overview && !provider) || (match && !id(match[2]))) return json(400,{error:'invalid_planner_request'})
   try {
+    const materialize = async layout => {
+      if (!layout.provider_ref) return layout
+      if (!pdga) fail(503,'pdga_not_configured')
+      const ref = layout.provider_ref
+      const {value,expiresAt} = await pdga.layout(ref.course_id,ref.tournament_id,ref.layout_id)
+      return {...layout,name:value.name,holes:value.holes,provider_event:value,expiresAt}
+    }
     let body
     if (req.method === 'PUT' || req.method === 'POST') body = await readBody(req,{maxBytes:262144})
+    // Release owner-scoped connections before provider cache/network work uses the same pool.
+    if (overview && req.method==='GET' && url.search) {
+      if ([...url.searchParams.keys()].some(k=>!['pin_id','layout_id'].includes(k)) || !id(url.searchParams.get('pin_id')) ||
+          url.searchParams.has('layout_id')&&!id(url.searchParams.get('layout_id'))) fail(400,'invalid_pin')
+      const {rows,plan}=await asUser(pool,userId,async client=>{
+        const pin=(await client.query('SELECT * FROM course_pins WHERE id=$1',[url.searchParams.get('pin_id')])).rows[0]
+        if(!pin)fail(404,'pin_not_found')
+        return {
+          rows:(await client.query('SELECT * FROM private_layouts WHERE course_key=$1 ORDER BY lower(name),id',[keyFor(pin)])).rows,
+          plan:(await client.query('SELECT * FROM private_plans WHERE course_pin_id=$1',[pin.id])).rows[0]??null,
+        }
+      })
+      const selected=url.searchParams.get('layout_id')??plan?.layout_id
+      const layouts=[]
+      for(const row of rows){
+        if(row.provider_ref&&row.id!==selected){layouts.push(row);continue}
+        try{layouts.push(await materialize(row))}catch(error){
+          if(!row.provider_ref)throw error
+          console.warn(JSON.stringify({event:'planner_provider_details_unavailable',
+            code:['pdga_busy','pdga_rate_limited','pdga_unavailable','pdga_layouts_not_configured'].includes(error.code)?error.code:'provider_unavailable'}))
+          layouts.push({...row,provider_error:'Event details are temporarily unavailable. Saved disc choices are unchanged.'})
+        }
+      }
+      return json(200,{layouts,plan})
+    }
+    let eventDetails, resolvedLayout
+    if(provider&&req.method==='POST'){
+      if(url.search||!exact(body,['course_pin_id','tournament_id','layout_id'])||!id(body.course_pin_id)||
+          ![body.tournament_id,body.layout_id].every(v=>typeof v==='string'&&/^[1-9][0-9]{0,15}$/.test(v)))fail(400,'invalid_event_layout')
+      const pin=await asUser(pool,userId,async client=>(await client.query('SELECT * FROM course_pins WHERE id=$1',[body.course_pin_id])).rows[0])
+      if(!pin)fail(404,'pin_not_found')
+      if(!pin.course_id?.startsWith('pdga:'))fail(400,'invalid_provider_course')
+      if(!pdga)fail(503,'pdga_not_configured')
+      eventDetails={...await pdga.layout(pin.course_id,body.tournament_id,body.layout_id),courseId:pin.course_id}
+    }
+    if(match?.[1]==='pins'&&req.method==='PUT'){
+      if(url.search||!exact(body,['layout_id','version','selections'])||!id(body.layout_id)||!object(body.selections))fail(400,'invalid_plan')
+      const row=await asUser(pool,userId,async client=>(await client.query('SELECT * FROM private_layouts WHERE id=$1',[body.layout_id])).rows[0])
+      if(row?.provider_ref)resolvedLayout=await materialize(row)
+    }
     const result = await asUser(pool,userId,async client=>{
       if (req.method!=='GET') await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,72491926))',[userId])
       if (overview && req.method === 'GET') {
@@ -39,12 +87,22 @@ export async function plannerRequest({req,url,pool,userId,json}) {
             FROM private_plans p JOIN private_layouts l ON l.id=p.layout_id`)).rows
           return {status:200,body:{summaries}}
         }
-        if ([...url.searchParams.keys()].some(k=>k!=='pin_id') || !id(url.searchParams.get('pin_id'))) fail(400,'invalid_pin')
-        const pin = (await client.query('SELECT * FROM course_pins WHERE id=$1',[url.searchParams.get('pin_id')])).rows[0]
+      }
+      if (provider && req.method==='POST') {
+        const pin = (await client.query('SELECT * FROM course_pins WHERE id=$1 FOR UPDATE',[body.course_pin_id])).rows[0]
         if (!pin) fail(404,'pin_not_found')
-        const layouts = (await client.query('SELECT * FROM private_layouts WHERE course_key=$1 ORDER BY lower(name),id',[keyFor(pin)])).rows
-        const plan = (await client.query('SELECT * FROM private_plans WHERE course_pin_id=$1',[pin.id])).rows[0] ?? null
-        return {status:200,body:{layouts,plan}}
+        if (pin.course_id!==eventDetails.courseId) fail(409,'pin_changed_reload')
+        const {value,expiresAt}=eventDetails
+        const ref={course_id:pin.course_id,tournament_id:body.tournament_id,layout_id:body.layout_id}
+        let row=(await client.query(`SELECT * FROM private_layouts WHERE course_key=$1 AND provider_ref=$2`,
+          [keyFor(pin),JSON.stringify(ref)])).rows[0]
+        if (!row) {
+          const count=(await client.query('SELECT count(*)::int AS n FROM private_layouts WHERE user_id=$1',[userId])).rows[0].n
+          if(count>=200)fail(400,'layout_limit_reached')
+          row=(await client.query(`INSERT INTO private_layouts(user_id,course_key,name,provider_ref)
+            VALUES($1,$2,'PDGA event layout',$3) RETURNING *`,[userId,keyFor(pin),JSON.stringify(ref)])).rows[0]
+        }
+        return {status:201,body:{layout:{...row,name:value.name,holes:value.holes,provider_event:value,expiresAt}}}
       }
       if (overview && req.method === 'POST' || match?.[1]==='layouts' && req.method==='PUT') {
         if (url.search) fail(400,'invalid_query')
@@ -61,6 +119,7 @@ export async function plannerRequest({req,url,pool,userId,json}) {
         }
         const previous = (await client.query('SELECT * FROM private_layouts WHERE id=$1 FOR UPDATE',[match[2]])).rows[0]
         if (!previous || previous.course_key !== keyFor(pin)) fail(404,'layout_not_found')
+        if (previous.provider_ref) fail(409,'provider_layout_is_read_only')
         if (body.version !== previous.version) fail(409,'layout_changed_reload')
         const layout = (await client.query(`UPDATE private_layouts SET name=$2,tee=$3,basket=$4,description=$5,
           checked_on=$6,holes=$7,version=version+1,updated_at=now() WHERE id=$1 RETURNING *`,[previous.id,
@@ -79,10 +138,15 @@ export async function plannerRequest({req,url,pool,userId,json}) {
         if (!layout || layout.course_key !== keyFor(pin)) fail(400,'invalid_layout_reference')
         const previous = (await client.query('SELECT * FROM private_plans WHERE course_pin_id=$1 FOR UPDATE',[pin.id])).rows[0]
         if (body.version !== (previous?.version ?? 0)) fail(409,'plan_changed_reload')
-        const holeIds = new Set(layout.holes.map(h=>h.id))
+        if(layout.provider_ref&&JSON.stringify(layout.provider_ref)!==JSON.stringify(resolvedLayout?.provider_ref))fail(409,'layout_changed_reload')
+        const resolved = layout.provider_ref?resolvedLayout:layout
+        const holeIds = new Set(resolved.holes.map(h=>h.id))
         const discIds = new Set()
         for (const [holeId,value] of Object.entries(body.selections)) {
-          if (!holeIds.has(holeId) || !exact(value,['disc_ids','notes']) || !text(value.notes,1000) ||
+          // Keep choices for holes the provider removed, but never add new choices to an unknown hole.
+          const retained = previous?.layout_id===layout.id && previous.selections[holeId] &&
+            JSON.stringify(previous.selections[holeId])===JSON.stringify(value)
+          if ((!holeIds.has(holeId)&&!retained) || !exact(value,['disc_ids','notes']) || !text(value.notes,1000) ||
               !Array.isArray(value.disc_ids) || value.disc_ids.length>12 || !value.disc_ids.every(id) ||
               new Set(value.disc_ids).size!==value.disc_ids.length) fail(400,'invalid_hole_plan')
           value.disc_ids.forEach(d=>discIds.add(d))
@@ -109,7 +173,9 @@ export async function plannerRequest({req,url,pool,userId,json}) {
     })
     return json(result.status,result.body)
   } catch(error) {
-    if ([400,404,405,409,413,415].includes(error.status)) return json(error.status,{error:error.message})
+    if ([400,404,405,409,413,415,503].includes(error.status)) return json(error.status,{error:error.message})
+    if (['pdga_busy','pdga_rate_limited','pdga_unavailable','pdga_layouts_not_configured','layout_not_found','course_not_found'].includes(error.code))
+      return json(error.code==='pdga_rate_limited'?429:503,{error:error.code})
     throw error
   }
 }

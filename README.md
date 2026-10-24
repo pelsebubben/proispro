@@ -12,9 +12,9 @@ A personal disc golf inventory and bag tracker for the owner and friends.
 
 Inventory, bags/history, collections, wishlist, sale listings/share links, course
 pins and hole assignments all use `/api/v1`. Disc search uses a bundled DiscIt
-snapshot, so typing never waits on an external service. Norway course search and
-hole data come from a PostgreSQL catalogue refreshed weekly from OpenStreetMap,
-not browser calls to Overpass. Anonymous sale links disclose only available listings while their
+snapshot, so typing never waits on an external service. Norwegian course search
+and historical event-layout holes come from PDGA through a shared, on-demand
+24-hour PostgreSQL cache. Anonymous sale links disclose only available listings while their
 owner has explicitly enabled public sharing.
 
 ## Adding discs
@@ -67,30 +67,27 @@ course links and history, never its inventory discs.
 
 ## Norway courses
 
-Search the shared SQL catalogue, pin a course to a bag, and load its stored hole
-data without contacting Overpass from your device. Coverage warnings and source
-attribution stay visible; the ODbL catalogue can be downloaded separately from
-private user data. [Coverage, licensing and sync operations](docs/course-catalogue.md)
-describe the Norway-only scope and independent weekly Azure job.
+PDGA is the only external course provider. Requested searches, courses and event
+layouts use a bounded **24-hour PostgreSQL cache**, shared across replicas with
+strict expiry and rate-limit cooldown. There is no bulk catalogue replication.
+The retired OSM directory and scheduled sync are removed.
 
-The PDGA Norway directory integration uses server-side, on-demand search with
-a temporary in-memory cache, not a permanent SQL catalogue or bulk sync.
-Only PDGA matching IDs persist in private bag links. It is disabled until
-server credentials are configured through the opt-in manual dev workflow or
-the protected main production release using each environment's own secrets.
-PDGA entries can link to bag configurations but do not provide
-individual hole layouts through the documented REST API. Approved PDGA API
-access can also be checked separately with the
-[secure local read-only test and deployment guide](docs/pdga-api.md). The test does not save credentials or
-mix PDGA data into the OSM catalogue.
+**Bags → Courses & plans** is a compact shortcut beside the disc list controls.
+It opens Courses filtered to the selected bag, without loading provider data on
+the Bags tab. Course management and the private planner live in Courses.
 
-**Bags → Courses & plans** shows linked courses, selected private layouts and
-hole-planning progress. Open the same private planner from either Bags or Courses.
-Enter your own layout and holes, then choose a primary disc, alternatives and
-strategy notes per hole. Plans warn about selected discs outside the linked bag.
-Layout facts can be reused across your own bag links; disc choices stay specific
-to each link. Existing OSM assignments remain separate. Community publishing and
-map/photo uploads are deferred; do not copy restricted provider layouts.
+Choose a historical PDGA event layout to see its hole labels, par, distance,
+tee/target and notes when supplied. Event name/date remain visible because that
+setup may differ from the current course. Add a primary disc, alternatives and
+private strategy per hole, or enter an independently authored manual layout.
+Plans warn about selected discs outside the linked bag, never changing membership.
+Provider facts stay in the temporary cache; private provider layouts retain IDs
+only. Disc choices stay specific to each link. Community publishing and map/photo
+uploads remain deferred.
+
+See [course behaviour and retention](docs/course-catalogue.md) and the
+[protected provider configuration guide](docs/pdga-api.md). Provider credentials
+and developing routes remain server-only and are never committed.
 See the [approved first-version scope](docs/prd-course-bag-configurations.md).
 
 ## Local development

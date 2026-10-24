@@ -20,7 +20,7 @@ export interface HoleAssignment {
 
 export interface CatalogueCourse {
   id: string
-  source: 'osm' | 'pdga'
+  source: 'pdga'
   source_url: string | null
   expiresAt?: number
   name: string
@@ -31,26 +31,13 @@ export interface CatalogueCourse {
   lon: number | null
 }
 
-export interface ParsedHole {
-  ref: string
-  name: string
-  lat: number | null
-  lon: number | null
-  par: number | null
-  length_m: number | null
-}
-
-interface CourseMapData {
-  lat: number | null
-  lon: number | null
-  holes: ParsedHole[]
-  coverageNote: string
+interface CourseDetails {
   sourceUrl: string | null
   courseName?: string
   expiresAt?: number
 }
 
-export function useCoursePins(detailsForBagId?:string) {
+export function useCoursePins(resolveDetails=false) {
   const { user } = useAuth()
   const [pins, setPins] = useState<ClientPin[]>([])
   const [pinsLoading, setPinsLoading] = useState(true)
@@ -58,10 +45,8 @@ export function useCoursePins(detailsForBagId?:string) {
   const [holeAssignments, setHoleAssignments] = useState<HoleAssignment[]>([])
   const [courseSuggestions, setCourseSuggestions] = useState<CatalogueCourse[]>([])
   const [courseError, setCourseError] = useState<string | null>(null)
-  const [providerNotice, setProviderNotice] = useState<string | null>(null)
-  const [catalogueUpdatedAt, setCatalogueUpdatedAt] = useState<string | null>(null)
   const [courseLoading, setCourseLoading] = useState(false)
-  const [courseCache, setCourseCache] = useState<Record<string, CourseMapData>>({})
+  const [courseCache, setCourseCache] = useState<Record<string, CourseDetails>>({})
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchSequence = useRef(0)
   useEffect(() => () => {
@@ -181,15 +166,10 @@ export function useCoursePins(detailsForBagId?:string) {
     setCourseLoading(true)
     setCourseError(null)
     try {
-      const result = await readCourseCatalogue<{ courses: CatalogueCourse[]; sync: { completed_at: string } | null;
-        providers?: { pdga: { status: string } }; osmAvailable?: boolean }>(
+      const result = await readCourseCatalogue<{ courses: CatalogueCourse[] }>(
         `courses?q=${encodeURIComponent(query.trim())}`)
       if (sequence === searchSequence.current) {
         setCourseSuggestions(result.courses)
-        setCatalogueUpdatedAt(result.sync?.completed_at ?? null)
-        setProviderNotice(result.providers?.pdga.status === 'unavailable' ? 'PDGA search is temporarily unavailable. OSM results are shown; retry to include PDGA.' :
-          result.providers?.pdga.status === 'not_configured' ? 'PDGA search is not configured on this server. OSM results are shown.' :
-          result.osmAvailable === false ? 'The OSM catalogue has not synced yet. Only PDGA results are available.' : null)
       }
     } catch (error) {
       if (sequence === searchSequence.current) {
@@ -210,30 +190,22 @@ export function useCoursePins(detailsForBagId?:string) {
     searchTimeout.current = setTimeout(() => void searchCourses(query), 300)
   }
 
-  const downloadCourseMap = useCallback(async (pin: ClientPin) => {
+  const loadCourseDetails = useCallback(async (pin: ClientPin) => {
     if (!pin.courseId) return
     setCourseLoading(true)
     setCourseError(null)
     try {
       const result = await readCourseCatalogue<{
-        course: { name: string; lat: number | null; lon: number | null; active: boolean; source_url?: string }
-        holes: { ref: string; name: string; par: number | null; length_m: number | null; geometry: [number, number][] }[]
-        coverage: { note: string }
-        sync?: { completed_at: string }
+        course: { name: string; source_url?: string }
         expiresAt?: number
       }>(`courses/${pin.courseId}/holes`)
-      const holes: ParsedHole[] = result.holes.map(h => ({ ref: h.ref, name: h.name,
-        par: h.par, length_m: h.length_m, lat: h.geometry[0]?.[1] ?? null, lon: h.geometry[0]?.[0] ?? null }))
-        .sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }))
       setCourseCache(prev => ({
         ...prev,
-        [pin.id]: { lat: result.course.lat, lon: result.course.lon, holes, sourceUrl: result.course.source_url ?? null,
-          courseName: result.course.name, expiresAt: result.expiresAt,
-          coverageNote: result.course.active ? result.coverage.note : 'This course is no longer present in the latest source catalogue.' },
+        [pin.id]: { sourceUrl: result.course.source_url ?? null,
+          courseName: result.course.name, expiresAt: result.expiresAt },
       }))
-      if (result.sync) setCatalogueUpdatedAt(result.sync.completed_at)
     } catch (error) {
-      setCourseError(error instanceof Error ? error.message : 'Could not load course holes. Please try again.')
+      setCourseError(error instanceof Error ? error.message : 'Could not load course details. Please try again.')
     } finally {
       setCourseLoading(false)
     }
@@ -244,15 +216,11 @@ export function useCoursePins(detailsForBagId?:string) {
     void (async () => {
       for (const pin of pins) {
         if (cancelled) break
-        if (pin.courseId?.startsWith('pdga:')&&(!detailsForBagId||pin.bagId===detailsForBagId)) await downloadCourseMap(pin)
+        if (resolveDetails&&pin.courseId?.startsWith('pdga:')) await loadCourseDetails(pin)
       }
     })()
     return () => { cancelled = true }
-  }, [pins, downloadCourseMap,detailsForBagId])
-
-  const getHolesForPin = (pin: ClientPin): ParsedHole[] | null => {
-    return courseCache[pin.id]?.holes || null
-  }
+  }, [pins, loadCourseDetails,resolveDetails])
 
   const computeDiscUsageStats = (assignments: HoleAssignment[]) => {
     const stats = new Map<string, { count: number; courseCount: Set<string> }>()
@@ -287,15 +255,12 @@ export function useCoursePins(detailsForBagId?:string) {
     clearHoleAssignment,
     searchCourses,
     searchCoursesDebounced,
-    downloadCourseMap,
+    loadCourseDetails,
     courseSearch: searchCourses,
     courseLoading,
     courseSuggestions,
     courseError,
-    providerNotice,
-    catalogueUpdatedAt,
     courseCache,
-    getHolesForPin,
     computeDiscUsageStats,
   }
 }

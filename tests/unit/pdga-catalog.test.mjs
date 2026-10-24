@@ -1,124 +1,70 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { searchPdga, readPdgaCourse } from '../../server/pdga-client.mjs'
+import { layoutConfiguration, readEventLayouts, readEventLayout } from '../../server/pdga-layouts.mjs'
 import { createPdgaService, pdgaCacheMs } from '../../server/pdga-service.mjs'
 import { courseRequest } from '../../server/courses.mjs'
 
-const credentials = { username: 'fixture', password: 'synthetic-test-only' }
-const session = { session_name: 'SSESS_fixture', sessid: 'fixture', token: 'fixture' }
-const record = { course_id: '4551', course_node_nid: '10000', course_name: 'Ekeberg', country: 'Norway',
-  city: 'Oslo', holes: '18', latitude: '59.9', longitude: '10.7', contact_email: 'PRIVATE' }
-function fixture() {
-  const calls = []
-  const state = { fail: false, records: [record] }
-  return { calls, state, fetcher: async (url, options) => {
+const credentials={username:'fixture',password:'synthetic-only'}
+const record={course_id:'4551',course_node_nid:'27416',course_name:'Ekeberg fixture',country:'Norway',holes:'18'}
+test('REST lookup selects exact legacy identity and discards neighbours and contact data',async()=>{
+  const calls=[]
+  const fetcher=async(url,options)=>{
     calls.push(new URL(url))
-    assert.equal(new URL(url).origin, 'https://api.pdga.com')
-    assert.equal(options.redirect, 'error')
-    if (url.endsWith('/login')) return Response.json(session)
-    if (url.endsWith('/logout')) return Response.json(true)
-    assert.equal(new URL(url).searchParams.get('country'), 'NO')
-    assert.equal(new URL(url).searchParams.has('offset'), false)
-    return state.fail ? new Response('PRIVATE', { status: 502 }) : Response.json({ courses: state.records })
-  } }
-}
-test('PDGA uses one bounded user search or exact ID lookup, not country replication or pagination', async () => {
-  const api = fixture()
-  const courses = await searchPdga(credentials, 'Ekeberg', api.fetcher)
-  assert.equal(courses[0].id, 'pdga:4551')
-  assert.equal(courses[0].source_url, 'https://www.pdga.com/node/10000')
-  assert.equal(api.calls.length, 3)
-  assert.equal(api.calls[1].searchParams.get('course_name'), 'Ekeberg')
-  assert.equal(api.calls[1].searchParams.get('limit'), '30')
-  assert.ok(!JSON.stringify(courses).includes('PRIVATE'))
-  assert.equal((await readPdgaCourse(credentials, 'pdga:4551', api.fetcher)).id, 'pdga:4551')
-  assert.equal(api.calls[4].searchParams.get('course_id'), '4551')
-  assert.equal(api.calls[4].searchParams.get('limit'), '30')
-  assert.throws(() => searchPdga(credentials, ''), /Invalid PDGA search/)
-  assert.throws(() => readPdgaCourse(credentials, 'osm:4551'), /Invalid PDGA course/)
-})
-test('cold ID lookup finds only the exact returned ID within one bounded response, never a neighbouring course',async t=>{
-  const api=fixture()
-  api.state.records=[{...record,course_id:'4550',course_name:'Neighbour before'},record,
-    {...record,course_id:'4552',course_name:'Neighbour after'}]
-  const service=createPdgaService({...credentials,fetcher:api.fetcher})
-  t.after(()=>service.close())
-  assert.equal((await service.course('pdga:4551')).value.name,'Ekeberg')
-  assert.equal(api.calls.length,3)
-  assert.equal(api.calls[1].searchParams.get('limit'),'30')
-  api.state.records=[{...record,course_id:'4550',course_name:'Not requested'}]
-  service.clear()
-  await assert.rejects(service.course('pdga:4551'),{code:'pdga_unavailable'})
-  assert.equal(api.calls.length,6)
-})
-test('temporary cache expires, never serves stale on error, and can be purged immediately', async t => {
-  let time = 1000
-  const api = fixture()
-  const logs = []
-  const service = createPdgaService({ ...credentials, fetcher: api.fetcher, now: () => time, logger: event => logs.push(event) })
-  t.after(() => service.close())
-  const first = await service.search('Ekeberg')
-  assert.equal(first.expiresAt, time + pdgaCacheMs)
-  assert.deepEqual(await service.search('ekeberg'), first)
-  assert.equal((await service.course('pdga:4551')).value.name, 'Ekeberg')
-  assert.equal(api.calls.length, 3)
-  time += pdgaCacheMs
-  api.state.fail = true
-  await assert.rejects(service.course('pdga:4551'), { code: 'pdga_unavailable' })
-  assert.equal(api.calls.length, 6)
-  assert.deepEqual(logs, [{ event: 'pdga_request_failed', code: 'pdga_unavailable', phase:'course',reason:'http',httpStatus:502 }])
-  api.state.fail = false
-  await service.search('Ekeberg')
-  service.clear()
-  await service.search('Ekeberg')
-  assert.equal(api.calls.length, 12)
-  assert.equal(createPdgaService(), null)
-  assert.throws(() => createPdgaService({ username: 'one' }), /Both PDGA/)
-})
-test('concurrent identical searches coalesce; other requests and bursts are bounded', async t => {
-  const api = fixture()
-  let release
-  const gate = new Promise(resolve => { release = resolve })
-  const service = createPdgaService({ ...credentials, fetcher: async (...args) => { await gate; return api.fetcher(...args) } })
-  t.after(() => service.close())
-  const first = service.search('Ekeberg')
-  const second = service.search('Ekeberg')
-  await assert.rejects(service.search('Other'), { code: 'pdga_busy' })
-  release()
-  assert.deepEqual(await first, await second)
-  assert.equal(api.calls.length, 3)
-  for (let i = 0; i < 19; i++) await service.search(`Course ${i}`)
-  await assert.rejects(service.search('More'), { code: 'pdga_rate_limited' })
-})
-test('provider diagnostics expose only allowlisted phase, status and reason, never upstream errors or credentials',async t=>{
-  const logs=[]
-  const service=createPdgaService({...credentials,fetcher:async()=>{throw new Error('PRIVATE '+credentials.password)},
-    logger:event=>logs.push(event)})
-  t.after(()=>service.close())
-  await assert.rejects(service.search('Ekeberg'),{code:'pdga_unavailable'})
-  assert.deepEqual(logs,[{event:'pdga_request_failed',code:'pdga_unavailable',phase:'user/login',reason:'network',httpStatus:null}])
-  assert.ok(!JSON.stringify(logs).includes('PRIVATE'))
-  assert.ok(!JSON.stringify(logs).includes(credentials.password))
-})
-test('PDGA detail needs no SQL, returns no invented layouts, and exposes unavailability', async t => {
-  const api = fixture()
-  const service = createPdgaService({ ...credentials, fetcher: api.fetcher })
-  t.after(() => service.close())
-  const call = async (pdga, path = '/api/v1/courses/pdga:4551/holes') => {
-    let result
-    await courseRequest({ req: { method: 'GET' }, url: new URL(path, 'http://localhost'),
-      pool: { connect: () => { throw new Error('PDGA content must not touch SQL') } }, pdga,
-      json: (status, body) => { result = { status, body } } })
-    return result
+    assert.equal(options.redirect,'error')
+    if(url.endsWith('/login'))return Response.json({session_name:'SSESS_fixture',sessid:'fixture',token:'fixture'})
+    if(url.endsWith('/logout'))return Response.json(true)
+    return Response.json({courses:[{...record,course_id:'4550',course_node_nid:'27415',course_name:'Wrong neighbour'},
+      {...record,contact_email:'PRIVATE'}]})
   }
-  const detail = await call(service)
-  assert.equal(detail.status, 200)
-  assert.deepEqual(detail.body.holes, [])
-  assert.equal(detail.body.coverage.layoutsAvailable, false)
-  assert.equal(detail.body.coverage.countMatches, false)
-  assert.equal(detail.body.attribution.text, 'Player, event, and course data provided by PDGA.')
-  assert.equal((await call(null)).body.error, 'pdga_not_configured')
-  service.clear()
-  api.state.fail = true
-  assert.equal((await call(service)).body.error, 'pdga_unavailable')
+  const course=await readPdgaCourse(credentials,'pdga:4551',fetcher)
+  assert.equal(course.source_url,'https://www.pdga.com/node/27416')
+  assert.equal(course.name,'Ekeberg fixture')
+  assert.equal(calls[1].searchParams.get('course_id'),'4551')
+  assert.equal(calls[1].searchParams.get('limit'),'30')
+  assert.ok(!JSON.stringify(course).includes('PRIVATE'))
+  assert.throws(()=>searchPdga(credentials,''),/Invalid PDGA search/)
+  assert.throws(()=>readPdgaCourse(credentials,'invalid'),/Invalid PDGA course/)
+  assert.equal(pdgaCacheMs,86400000)
+  assert.equal(createPdgaService(),null)
+  assert.throws(()=>createPdgaService({username:'one'}),/Both PDGA/)
+})
+
+test('event layouts use the canonical node identity, match course and layout, and normalize bounded hole fields',async()=>{
+  const config=layoutConfiguration('https://www.pdga.com/api/fixture?courseId={courseId}',
+    'https://www.pdga.com/api/fixture/{tournId}')
+  for(const bad of ['http://www.pdga.com/api/{courseId}','https://evil.invalid/api/{courseId}',
+    'https://user:pass@www.pdga.com/api/{courseId}','https://www.pdga.com/not-api/{courseId}']){
+    assert.throws(()=>layoutConfiguration(bad,config.overview))
+  }
+  const row={courseId:27416,layoutId:11,tournId:99,name:'Fixture',holes:1,par:3,length:100,units:'Feet',
+    liveTournament:{tournamentName:'Fixture event',startDate:'2026-01-02'}}
+  let calls=0
+  const index=await readEventLayouts(config,{source_url:'https://www.pdga.com/node/27416'},async url=>{
+    calls++;assert.equal(new URL(url).searchParams.get('courseId'),'27416');return Response.json([row])
+  })
+  const detail={layoutDetailId:1,layoutId:11,holeOrdinal:1,label:'1A',par:3,length:100,tee:'Short',target:'Basket',notes:'OB fixture'}
+  const payload={tournId:99,liveLayouts:[{...row,courseId:999,layoutId:12,liveLayoutDetails:[]},{...row,liveLayoutDetails:[detail]}]}
+  const layout=await readEventLayout(config,index[0],async()=>Response.json(payload))
+  assert.equal(layout.holes[0].distance_m,30.48)
+  assert.equal(layout.holes[0].tee,'Short')
+  assert.equal(layout.holes[0].notes,'OB fixture')
+  assert.match(layout.holes[0].id,/^[0-9a-f-]{36}$/)
+  assert.deepEqual((await readEventLayout(config,index[0],async()=>Response.json(payload))).holes,layout.holes)
+  await assert.rejects(readEventLayout(config,{...index[0],layout_id:'12'},async()=>Response.json(payload)))
+  await assert.rejects(readEventLayout(config,index[0],async()=>Response.json({...payload,tournId:100})))
+  await assert.rejects(readEventLayout(config,index[0],async()=>Response.json({tournId:99,liveLayouts:[row]})))
+  await assert.rejects(readEventLayouts(config,{source_url:'https://www.pdga.com/node/27416'},async()=>Response.json([{...row,courseId:4551}])))
+  await assert.rejects(readEventLayout(config,index[0],async()=>Response.json({tournId:99,
+    liveLayouts:[{...row,liveLayoutDetails:[{...detail,par:999}]}]})))
+  assert.equal(calls,1)
+})
+
+test('provider-only routes reject retired exports, bad queries and disabled access explicitly',async()=>{
+  const call=(path,method='GET')=>courseRequest({req:{method},url:new URL(path,'http://localhost'),
+    json:(status,body)=>({status,body})})
+  assert.equal((await call('/api/v1/courses/export')).status,404)
+  assert.equal((await call('/api/v1/courses?q=Ekeberg')).body.error,'pdga_not_configured')
+  assert.equal((await call('/api/v1/courses?country=NO')).status,400)
+  assert.equal((await call('/api/v1/courses','POST')).status,405)
 })

@@ -179,7 +179,7 @@ jobs:
           printf 'url=%s\nimage=%s\n' "$url" "$IMAGE" >> "$GITHUB_OUTPUT"
           for ((attempt=0; attempt<30; attempt++)); do
             if curl --fail --silent --max-time 15 "$url/health/ready" \
-              | jq -e --arg sha "$SOURCE_SHA" '.status == "ready" and .sourceSha == $sha and .schemaVersion == 6'; then
+              | jq -e --arg sha "$SOURCE_SHA" '.status == "ready" and .sourceSha == $sha and .schemaVersion == 7'; then
               identity_ready=$(curl --fail --silent --max-time 15 "$url/auth/config" | jq -er '.identityReady | tostring')
               printf 'identityReady=%s\n' "$identity_ready" >> "$GITHUB_OUTPUT"
               exit 0
@@ -191,6 +191,8 @@ jobs:
       - name: Configure production PDGA from protected environment
         env:
           PDGA_STAGE: prod
+          PDGA_LAYOUT_INDEX_TEMPLATE: ${{ secrets.PDGA_LAYOUT_INDEX_TEMPLATE }}
+          PDGA_EVENT_OVERVIEW_TEMPLATE: ${{ secrets.PDGA_EVENT_OVERVIEW_TEMPLATE }}
           PDGA_USERNAME: ${{ secrets.PDGA_USERNAME }}
           PDGA_PASSWORD: ${{ secrets.PDGA_PASSWORD }}
           EXPECTED_SOURCE_SHA: ${{ env.SOURCE_SHA }}
@@ -219,6 +221,8 @@ jobs:
       - name: Configure dev PDGA from its own protected environment
         env:
           PDGA_STAGE: dev
+          PDGA_LAYOUT_INDEX_TEMPLATE: ${{ secrets.PDGA_LAYOUT_INDEX_TEMPLATE }}
+          PDGA_EVENT_OVERVIEW_TEMPLATE: ${{ secrets.PDGA_EVENT_OVERVIEW_TEMPLATE }}
           PDGA_USERNAME: ${{ secrets.PDGA_USERNAME }}
           PDGA_PASSWORD: ${{ secrets.PDGA_PASSWORD }}
           EXPECTED_SOURCE_SHA: ${{ env.SOURCE_SHA }}

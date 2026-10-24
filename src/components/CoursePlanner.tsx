@@ -1,14 +1,23 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { plannerData } from '../lib/data'
+import { plannerData, readCourseCatalogue } from '../lib/data'
 import type { ClientPin } from '../hooks/useCoursePins'
 import type { ClientBag, ClientDisc } from '../utils/disc'
 
 export interface ManualHole {
   id: string; label: string; par: number | null; distance_m: number | null; notes: string
+  tee?: string; target?: string; length?: number | null; units?: string
+}
+interface EventLayout {
+  layout_id:string; tournament_id:string; name:string; hole_count:number; par:number|null
+  length:number|null; units:string; event_name:string; event_date:string|null
 }
 export interface PrivateLayout {
   id: string; name: string; tee: string; basket: string; description: string; checked_on: string | null
   holes: ManualHole[]; version: number
+  provider_ref?: {course_id:string;tournament_id:string;layout_id:string} | null
+  provider_event?: EventLayout
+  provider_error?: string
+  expiresAt?: number
 }
 interface HolePlan { disc_ids: string[]; notes: string }
 interface PrivatePlan { layout_id: string; selections: Record<string,HolePlan>; version: number }
@@ -29,8 +38,22 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
   const [busy,setBusy] = useState(false)
   const [error,setError] = useState('')
   const [notice,setNotice] = useState('')
+  const [events,setEvents] = useState<{layouts:EventLayout[];expiresAt:number}|null>(null)
+  const [eventSelection,setEventSelection] = useState('')
   const saving = useRef(false)
   const layout = data?.layouts.find(l=>l.id===layoutId)
+  useEffect(()=>{
+    const expiries=[...(events?[events.expiresAt]:[]),...(data?.layouts.flatMap(l=>l.expiresAt?[l.expiresAt]:[])??[])]
+    if(!expiries.length)return
+    const timer=setTimeout(()=>{
+      const now=Date.now()
+      setEvents(previous=>previous&&previous.expiresAt>now?previous:null)
+      setData(previous=>previous?{...previous,layouts:previous.layouts.map(l=>l.expiresAt&&l.expiresAt<=now?
+        {...l,name:'PDGA event layout',holes:[],provider_event:undefined,expiresAt:undefined,
+          provider_error:'Cached event details expired. Reload saved plan to refresh; your disc choices are unchanged.'}:l)}:null)
+    },Math.max(0,Math.min(...expiries)-Date.now()))
+    return ()=>clearTimeout(timer)
+  },[events,data])
   useEffect(()=>{
     if(!dirty&&!draft)return
     const beforeUnload=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue=''}
@@ -73,7 +96,7 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
   const missing = new Set(Object.values(selections).flatMap(s=>s.disc_ids).filter(id=>!bag?.disc_ids.includes(id)))
   return <section className="course-planner" aria-label={`Private planner for ${pin.courseName}`}>
     <div className="planner-heading">
-      <div><h3>Private layout &amp; game plan</h3><p className="bag-hint">Your own observations, not an official or shared layout.</p></div>
+      <div><h3>Private layout &amp; game plan</h3><p className="bag-hint">Choose a historical event layout or enter your own. Disc choices and strategy stay private.</p></div>
       {bag&&onOpenBag&&<button className="btn" onClick={()=>onOpenBag(bag.id)}>Open bag: {bag.name}</button>}
     </div>
     {error&&<div className="bag-feedback" role="alert">{error} <button className="btn" disabled={busy}
@@ -81,18 +104,60 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
     {notice&&<p role="status">{notice}</p>}
     {!data&&!error&&<p role="status">Loading your layouts...</p>}
     {data&&<>
+      {pin.courseId?.startsWith('pdga:')&&<div className="event-layout-picker">
+        <button className="btn" disabled={busy||!!draft} onClick={()=>void perform(async()=>{
+          const result=await readCourseCatalogue<{layouts:EventLayout[];expiresAt:number}>(`courses/${pin.courseId}/layouts`)
+          setEvents(result);setEventSelection('')
+        })}>Browse PDGA event layouts</button>
+        {events&&<>
+          <p className="bag-hint">Historical event setups, not a guarantee of today&apos;s layout. Each event is kept separate.</p>
+          {!events.layouts.length?<p>No event layouts are available for this course. You can create a private layout instead.</p>:
+          <div className="planner-toolbar">
+            <label htmlFor={`event-${pin.id}`}>PDGA event layout</label><select id={`event-${pin.id}`} value={eventSelection} disabled={busy} onChange={e=>setEventSelection(e.target.value)}>
+              <option value="">Choose an event and layout</option>
+              {events.layouts.map(e=><option key={`${e.tournament_id}:${e.layout_id}`} value={`${e.tournament_id}:${e.layout_id}`}>
+                {e.name} · {e.event_name} · {e.event_date??'Date unknown'} · {e.hole_count} holes · Par {e.par??'?'} · {e.length??'?'} {e.units}
+              </option>)}
+            </select>
+            <button className="btn" disabled={busy||!eventSelection} onClick={()=>{
+              if(dirty&&!confirm('Discard unsaved choices before selecting this event layout?'))return
+              void perform(async()=>{
+                if(events.expiresAt<=Date.now())throw new Error('Event list expired. Browse event layouts again.')
+                const [tournament_id,layout_id]=eventSelection.split(':')
+                const result=await plannerData<{layout:PrivateLayout}>('planner/event-layout','POST',
+                  {course_pin_id:pin.id,tournament_id,layout_id})
+                const next=await load()
+                setLayoutId(result.layout.id)
+                setSelections(next.plan?.layout_id===result.layout.id?next.plan.selections:{})
+                setDirty(next.plan?.layout_id!==result.layout.id)
+                setNotice('Event layout selected. Choose discs and save the game plan to link it to this bag.')
+              })
+            }}>Use event layout</button>
+          </div>}
+        </>}
+      </div>}
       <div className="planner-toolbar">
         <label>Layout<select value={layoutId} disabled={busy||!!draft} onChange={event=>{
           if(dirty&&!confirm('Discard unsaved game-plan changes?'))return
-          setLayoutId(event.target.value);setSelections(event.target.value===data.plan?.layout_id?data.plan.selections:{})
-          setDirty(event.target.value!==(data.plan?.layout_id??''));setNotice('')
+          const selected=event.target.value
+          if(data.layouts.find(l=>l.id===selected)?.provider_ref){
+            void perform(async()=>{
+              const next=await plannerData<PlannerState>(`planner?pin_id=${pin.id}&layout_id=${selected}`)
+              setData(next);setLayoutId(selected);setSelections(selected===next.plan?.layout_id?next.plan.selections:{})
+              setDirty(selected!==(next.plan?.layout_id??''))
+            })
+          }else{
+            setLayoutId(selected);setSelections(selected===data.plan?.layout_id?data.plan.selections:{})
+            setDirty(selected!==(data.plan?.layout_id??''))
+          }
+          setNotice('')
         }}><option value="">Choose a private layout</option>
-          {data.layouts.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}
+          {data.layouts.map(l=><option key={l.id} value={l.id}>{l.name}{l.provider_ref?` · Event ${l.provider_ref.tournament_id} / Layout ${l.provider_ref.layout_id}`:''}</option>)}
         </select></label>
         <button className="btn" disabled={busy||!!draft} onClick={()=>{
           if(!dirty||confirm('Discard unsaved game-plan changes before creating a layout?'))setDraft(emptyLayout())
         }}>Create private layout</button>
-        {layout&&<button className="btn" disabled={busy||!!draft} onClick={()=>{
+        {layout&&!layout.provider_ref&&<button className="btn" disabled={busy||!!draft} onClick={()=>{
           if(!dirty||confirm('Discard unsaved game-plan changes before editing the layout?'))setDraft(structuredClone(layout))
         }}>Edit layout</button>}
         {layout&&<button className="btn" disabled={busy||!!draft} onClick={()=>{
@@ -106,24 +171,35 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
           const result=await plannerData<{layout:PrivateLayout}>(value.id?`planner/layouts/${value.id}`:'planner',
             value.id?'PUT':'POST',{course_pin_id:pin.id,version:value.version,name:value.name,tee:value.tee,
               basket:value.basket,description:value.description,checked_on:value.checked_on,holes:value.holes})
-          const next=await load();setLayoutId(result.layout.id)
+          const next=await load();          setData({...next,layouts:next.layouts.map(l=>l.id===result.layout.id?result.layout:l)})
+          setLayoutId(result.layout.id)
           setSelections(next.plan?.layout_id===result.layout.id?next.plan.selections:{})
           setDirty(next.plan?.layout_id!==result.layout.id);setDraft(null)
           setNotice(next.plan?.layout_id===result.layout.id?'Layout updated. Existing game plans keep their remaining hole choices.':
             'Layout saved. Save the game plan to link it to this bag.')
         })}/>:layout&&<>
         <div className="planner-heading"><div>
-          <h4>{layout.name}</h4><p className="bag-hint">{layout.tee||'Tee not specified'} · {layout.basket||'Basket not specified'}
-            {layout.checked_on&&` · Checked ${layout.checked_on.slice(0,10)}`}</p>
+          <h4>{layout.name}</h4>
+          {layout.provider_event?<p className="bag-hint">PDGA event: {layout.provider_event.event_name} · {layout.provider_event.event_date??'Date unknown'}
+            {' '}· Par {layout.provider_event.par??'?'} · {layout.provider_event.length??'?'} {layout.provider_event.units}.
+            {' '}This historical setup may differ from the current course.</p>:
+          !layout.provider_ref&&<p className="bag-hint">{layout.tee||'Tee not specified'} · {layout.basket||'Basket not specified'}
+            {layout.checked_on&&` · Checked ${layout.checked_on.slice(0,10)}`}</p>}
           {layout.description&&<p>{layout.description}</p>}
         </div><strong>{progress}/{layout.holes.length} holes planned</strong></div>
         {missing.size>0&&<p className="bag-feedback" role="status">{missing.size} selected {missing.size===1?'disc is':'discs are'} missing from this bag. Add them in Bags or change your selections.</p>}
-        {!layout.holes.length&&<p>This layout has no holes yet. Edit the layout to add your first hole.</p>}
+        {layout.provider_error&&<p role="alert">{layout.provider_error} <button className="btn" disabled={busy}
+          onClick={()=>{if(!dirty||confirm('Reload saved choices and discard unsaved changes?'))void perform(async()=>{await load()})}}>Reload saved plan</button></p>}
+        {!layout.holes.length&&!layout.provider_ref&&<p>This layout has no holes yet. Edit the layout to add your first hole.</p>}
+        {Object.keys(selections).some(id=>!layout.holes.some(h=>h.id===id))&&<p role="status">
+          Some saved choices refer to holes not present in the available layout. They are retained, not reassigned to another hole.</p>}
         <ol className="planner-holes">{layout.holes.map((hole,index)=>{
           const choice=selections[hole.id]??emptyChoice()
           const selectedDiscs=choice.disc_ids.map(id=>discs.find(d=>d.id===id)).filter((d):d is ClientDisc=>!!d)
           return <li key={hole.id} className="planner-hole">
-            <div><h4>Hole {hole.label}</h4><p className="bag-hint">{hole.par===null?'Par unknown':`Par ${hole.par}`} · {hole.distance_m===null?'Distance unknown':`${hole.distance_m} m`}</p>
+            <div><h4>Hole {hole.label}</h4><p className="bag-hint">{hole.par===null?'Par unknown':`Par ${hole.par}`} · {hole.distance_m===null?'Distance unknown':
+              hole.units==='Feet'?`${hole.length} ft (${hole.distance_m} m)`:`${hole.distance_m} m`}</p>
+              {(hole.tee||hole.target)&&<p className="bag-hint">Tee: {hole.tee||'Not specified'} · Target: {hole.target||'Not specified'}</p>}
               {hole.notes&&<p>{hole.notes}</p>}
             </div>
             <div className="planner-hole-plan">
@@ -149,7 +225,7 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
           </li>
         })}</ol>
         <div className="planner-toolbar">
-          <button className="btn btn-primary" disabled={busy||!dirty} onClick={()=>void perform(savePlan)}>{busy?'Saving...':'Save game plan'}</button>
+          <button className="btn btn-primary" disabled={busy||!dirty||!!layout.provider_error} onClick={()=>void perform(savePlan)}>{busy?'Saving...':'Save game plan'}</button>
           {dirty&&<span role="status">Unsaved changes</span>}
           {data.plan&&<button className="btn" disabled={busy} onClick={()=>{
             if(confirm('Unlink this layout and remove this bag’s private hole choices? The layout stays available.'))

@@ -21,7 +21,8 @@ if (passcode) {
     warning: 'LOCAL DEV IDENTITY: anyone on this machine can sign in as any test user' }))
 } else if (!identity) console.warn(JSON.stringify({ event: 'customer_identity_not_configured' }))
 const pool = createPool()
-const pdga = createPdgaService({ username: process.env.PDGA_USERNAME, password: process.env.PDGA_PASSWORD })
+const pdga = createPdgaService({ username: process.env.PDGA_USERNAME, password: process.env.PDGA_PASSWORD, pool,
+  indexTemplate: process.env.PDGA_LAYOUT_INDEX_TEMPLATE, overviewTemplate: process.env.PDGA_EVENT_OVERVIEW_TEMPLATE })
 pool.on('error', error => console.error(JSON.stringify({ event: 'database_pool_error', code: error.code })))
 const server = createApplication({
   pool, ...(identity ?? {}), identity, devIdentity, pdga, sourceSha: process.env.SOURCE_SHA ?? 'local',

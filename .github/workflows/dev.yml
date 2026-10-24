@@ -91,6 +91,8 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.configure_pdga }}
         env:
           PDGA_USERNAME: ${{ secrets.PDGA_USERNAME }}
+          PDGA_LAYOUT_INDEX_TEMPLATE: ${{ secrets.PDGA_LAYOUT_INDEX_TEMPLATE }}
+          PDGA_EVENT_OVERVIEW_TEMPLATE: ${{ secrets.PDGA_EVENT_OVERVIEW_TEMPLATE }}
           PDGA_PASSWORD: ${{ secrets.PDGA_PASSWORD }}
           EXPECTED_SOURCE_SHA: ${{ env.SOURCE_SHA }}
         run: python3 scripts/configure-pdga-dev.py

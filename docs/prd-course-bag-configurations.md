@@ -1,13 +1,28 @@
 # PRD: Course-specific bag configurations
 
-Status: Initial bag/course MVP and private manual planning approved. Historical
+Status: PDGA-only cached event layouts and private planning approved. Historical
 discovery below remains context; community publishing is not approved for this release.
+
+## PDGA event planning update
+
+OSM functionality and scheduled sync are retired. Requested PDGA information
+uses a bounded 24-hour PostgreSQL cache, not permanent replication. Protected
+server configuration holds developing provider routes; do not publish them.
+Match legacy course ID to the canonical node ID, then match event and layout
+before using hole details. Keep same-name event variants separate and label
+them with their historical event/date. Provider facts are read-only and expire;
+private plans retain IDs, owned-disc choices and player-authored strategy.
+
+Bags is focused on inventory selection. A compact right-aligned Courses & plans
+shortcut opens Courses filtered to the bag. Course management, event layout
+selection and planning stay in Courses. Manual layouts remain available.
+Existing private content and legacy assignments are preserved, without automatic
+conversion of old source links.
 
 ## Private manual planner: first version
 
-Enter through **Bags → Courses & plans → Open plan**, or **Courses → Open private
-planner**. Bag links show the layout name and the number of holes with selected
-discs. Courses can open the linked bag or link another bag to the same course.
+Enter through **Bags → Courses & plans → Open private planner**, or directly in
+Courses. Courses can open the linked bag or link another bag to the same course.
 
 - Layout facts are private to their author and reusable across their bag links to
   the same course. Name, tee/basket variant, description, date checked, hole label,
@@ -27,8 +42,8 @@ discs. Courses can open the linked bag or link another bag to the same course.
 - Unlinking a course deletes its game plan but retains the reusable layout.
   Deleting an inventory disc removes it from private choices. Layout deletion
   refuses while any game plan still references it; unlink those plans first.
-- Previous OSM hole assignments remain available separately and are not silently
-  rewritten as manual layout facts.
+- Legacy hole assignments are retained in storage, not silently rewritten as
+  event or manual layout facts.
 
 Community submission, approval/publication, public downloads, revisioned shared
 layouts, map/photo uploads and recommendations are deferred. No restricted UDisc
