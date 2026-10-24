@@ -73,6 +73,10 @@ attribution stay visible; the ODbL catalogue can be downloaded separately from
 private user data. [Coverage, licensing and sync operations](docs/course-catalogue.md)
 describe the Norway-only scope and independent weekly Azure job.
 
+Approved PDGA API access can be checked separately with the
+[secure local read-only test](docs/pdga-api.md). It does not save credentials or
+mix PDGA data into the OSM catalogue.
+
 ## Local development
 
 Install Node 22 and PostgreSQL (or use the included Docker Compose configuration).
