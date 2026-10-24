@@ -13,7 +13,6 @@ COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node package.json ./
 COPY --chown=node:node server ./server
 COPY --chown=node:node tests/api ./tests/api
-COPY --chown=node:node tests/fixtures ./tests/fixtures
 USER node
 EXPOSE 8080
 CMD ["node", "server/index.mjs"]
