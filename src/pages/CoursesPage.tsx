@@ -431,7 +431,7 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                           fontSize: '0.85rem',
                         }}
                       >
-                        Load holes
+                        {pin.courseId.startsWith('pdga:') ? 'Load course details' : 'Load holes'}
                       </button>
                     )}
                     {pin.courseId && (

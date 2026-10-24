@@ -2,11 +2,13 @@ import importlib.util
 import io
 import json
 import os
+import sys
 from pathlib import Path
 import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
 
+sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location("provision", Path(__file__).parents[2] / "scripts" / "configure-pdga-dev.py")
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)

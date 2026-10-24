@@ -105,6 +105,7 @@ test('catalogue failures stay visible and empty mapping is not presented as a co
 })
 
 test('PDGA results link to the provider and a bag without inventing layouts, including after reload', async ({ page }) => {
+  await page.clock.install()
   const state = await setup(page, false, true)
   await page.getByRole('button', { name: '+ Pin Course', exact: true }).click()
   await page.getByRole('textbox', { name: /Course Name/ }).fill('Ekeberg')
@@ -123,4 +124,8 @@ test('PDGA results link to the provider and a bag without inventing layouts, inc
   await expect(page.getByText('· Layout unavailable', { exact: true })).toBeVisible()
   expect(await page.locator('body').evaluate(body => body.scrollWidth <= innerWidth)).toBe(true)
   expect(state.external).toEqual([])
+  await page.clock.fastForward(901_000)
+  await expect(page.getByRole('heading', { name: 'PDGA course', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Ekeberg fixture course', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Load course details', exact: true })).toBeVisible()
 })

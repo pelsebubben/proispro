@@ -231,9 +231,14 @@ export function useCoursePins() {
   }, [])
 
   useEffect(() => {
-    for (const pin of pins) {
-      if (pin.courseId?.startsWith('pdga:')) void downloadCourseMap(pin)
-    }
+    let cancelled = false
+    void (async () => {
+      for (const pin of pins) {
+        if (cancelled) break
+        if (pin.courseId?.startsWith('pdga:')) await downloadCourseMap(pin)
+      }
+    })()
+    return () => { cancelled = true }
   }, [pins, downloadCourseMap])
 
   const getHolesForPin = (pin: ClientPin): ParsedHole[] | null => {
