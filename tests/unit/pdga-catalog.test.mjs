@@ -68,3 +68,44 @@ test('provider-only routes reject retired exports, bad queries and disabled acce
   assert.equal((await call('/api/v1/courses?country=NO')).status,400)
   assert.equal((await call('/api/v1/courses','POST')).status,405)
 })
+
+test('browsing sorts actual dates before choosing two distinct events and retains every applicable layout',async()=>{
+  const config=layoutConfiguration('https://www.pdga.com/api/fixture?courseId={courseId}',
+    'https://www.pdga.com/api/fixture/{tournId}')
+  const row={courseId:27416,name:'Same layout name',holes:1,par:3,length:100,units:'Meters'}
+  const event=(tournId,layoutId,startDate)=>({...row,tournId,layoutId,
+    liveTournament:{tournamentName:`Event ${tournId}`,startDate}})
+  const rows=[event(999,1,'28-Sep-2019'),event(200,22,'9-May-2024'),
+    event(100,13,'25-May-2024'),event(100,11,'25-May-2024'),
+    event(800,2,'2023-05-14'),event(100,12,'25-May-2024'),event(900,3,null)]
+  const full=await readEventLayouts(config,{source_url:'https://www.pdga.com/node/27416'},
+    async()=>Response.json(rows))
+  assert.equal(full.length,7,'keep the full index for existing saved provider references')
+  assert.deepEqual(full.map(l=>l.event_date),
+    ['2024-05-25','2024-05-25','2024-05-25','2024-05-09','2023-05-14','2019-09-28',null])
+  const call=layouts=>courseRequest({req:{method:'GET'},url:new URL('http://localhost/api/v1/courses/pdga:4551/layouts'),
+    pdga:{layouts:async id=>{assert.equal(id,'pdga:4551');return {value:layouts,expiresAt:123}}},
+    json:(status,body)=>({status,body})})
+  const response=await call([...full].reverse())
+  assert.equal(response.status,200)
+  assert.equal(response.body.expiresAt,123)
+  assert.deepEqual(response.body.layouts.map(l=>`${l.tournament_id}:${l.layout_id}`),
+    ['100:11','100:12','100:13','200:22'],'cached indexes are sorted before limiting distinct events')
+  assert.deepEqual((await call([])).body.layouts,[])
+  assert.deepEqual((await call(full.filter(l=>l.tournament_id==='100'))).body.layouts.map(l=>l.layout_id),['11','12','13'])
+  const unknown=full.filter(l=>l.event_date===null)
+  assert.deepEqual((await call([unknown[0],full[3]])).body.layouts.map(l=>l.tournament_id),['200','900'])
+  assert.deepEqual((await call([{...full[0],tournament_id:'2'},{...full[0],tournament_id:'10'},
+    {...full[0],tournament_id:'1'}])).body.layouts.map(l=>l.tournament_id),['10','2'],
+    'same-day events have a deterministic numeric identity tie-break, not provider response order')
+  assert.deepEqual((await call([{...unknown[0],tournament_id:'2'},{...unknown[0],tournament_id:'10'},
+    {...unknown[0],tournament_id:'1'}])).body.layouts.map(l=>l.tournament_id),['10','2'])
+  const timestamped=await readEventLayouts(config,{source_url:'https://www.pdga.com/node/27416'},
+    async()=>Response.json([event(1,1,'2026-01-02T00:00:00+02:00')]))
+  assert.equal(timestamped[0].event_date,'2026-01-02','preserve the event calendar day rather than shifting to UTC')
+  await assert.rejects(readEventLayouts(config,{source_url:'https://www.pdga.com/node/27416'},
+    async()=>Response.json([...rows,event(500,99,'not a date')])),/Invalid provider/)
+  await assert.rejects(readEventLayouts(config,{source_url:'https://www.pdga.com/node/27416'},
+    async()=>Response.json([{...rows[0],courseId:27415},...rows])),/Invalid provider/,
+    'a different course must fail validation, never become a recent course event')
+})

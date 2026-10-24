@@ -120,10 +120,12 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
       {pin.courseId?.startsWith('pdga:')&&<div className="event-layout-picker">
         <button className="btn" disabled={busy||!!draft} onClick={()=>void perform(async()=>{
           const result=await readCourseCatalogue<{layouts:EventLayout[];expiresAt:number}>(`courses/${pin.courseId}/layouts`)
-          setEvents(result);setEventSelection('')
+          setEvents(result)
+          const first=result.layouts[0]
+          setEventSelection(first?`${first.tournament_id}:${first.layout_id}`:'')
         })}>Browse PDGA event layouts</button>
         {events&&<>
-          <p className="bag-hint">Historical event setups, not a guarantee of today&apos;s layout. Each event is kept separate.</p>
+          <p className="bag-hint">Layouts from the two most recent events at this course, newest first. Historical setups, not a guarantee of today&apos;s layout.</p>
           {!events.layouts.length?<p>No event layouts are available for this course. You can create a private layout instead.</p>:
           <div className="planner-toolbar">
             <label htmlFor={`event-${pin.id}`}>PDGA event layout</label><select id={`event-${pin.id}`} value={eventSelection} disabled={busy} onChange={e=>setEventSelection(e.target.value)}>

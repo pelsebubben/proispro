@@ -1,4 +1,5 @@
 import { pdgaAttribution } from './pdga-client.mjs'
+import { latestEventLayouts } from './pdga-layouts.mjs'
 
 export async function courseRequest({ req, url, json, pdga = null }) {
   if (req.method !== 'GET') return json(405, { error: 'method_not_allowed' })
@@ -17,7 +18,7 @@ export async function courseRequest({ req, url, json, pdga = null }) {
     }
     if (match[2] === 'layouts') {
       const { value, expiresAt } = await pdga.layouts(match[1])
-      return json(200, { layouts: value, expiresAt, attribution: pdgaAttribution })
+      return json(200, { layouts: latestEventLayouts(value), expiresAt, attribution: pdgaAttribution })
     }
     const { value: course, expiresAt } = await pdga.course(match[1])
     if (!course) return json(404, { error: 'course_not_found' })
