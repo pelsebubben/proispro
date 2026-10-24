@@ -27,6 +27,11 @@ An ID token for the separate browser registration is not an API token.
 The API maps `(issuer, sub)` to its own PostgreSQL user ID; email addresses are
 display-only and never used to link identities.
 
+The current account header displays MSAL's account username. For a federated
+Google user, this can be an Entra-generated `@griplockcustomers.onmicrosoft.com`
+username rather than the Google email address. It does not change which
+identity owns the application data.
+
 The customer sign-in screen redirects to the customer tenant's hosted user flow;
 Google is selected/configured there. Failed/cancelled login is visible.
 Signed-in users see the real inventory, bags, collections, wishlist, sale,
@@ -36,15 +41,23 @@ The owner approved starting fresh. The schema uses application-owned `app_users`
 and PostgreSQL RLS; no old records or identities are copied. The retired remote
 service remains untouched.
 
-## External configuration still needed
+## Production identity configuration
 
-Directory discovery on 2026-10-23 exposed only the workforce directory
-`07d87066-942e-4072-8596-36dd123efc1b`, named `demotroll`, and no Griplock app
-registration. No customer tenant, Google credentials, accounts or new directory
-permissions were created. An inaccessible existing customer tenant may still
-exist; do not assume discovery proves otherwise.
+The owner configured the **Griplock Customers** external tenant
+(`23ed0ae8-6f57-46c5-9b6b-bc223a923224`). Its separate **Griplock Web** and
+**Griplock API** registrations use v2 tokens, SPA redirect URIs and the delegated
+`access_as_user` permission, with tenant-wide admin consent already granted.
+The **GriplockSignIn** user flow is associated with the Web registration and
+offers Google and email/password sign-in. The seven public runtime values below
+are stored in the GitHub `prod` environment; Google's client secret remains
+only in the identity-provider configuration, and the browser needs no secret.
 
-Continue the previously agreed Entra External ID customer-tenant approach:
+The existing release workflow consumes these values. After changing them, run
+**Release Griplock prod** on `main` to deploy the configuration; editing a GitHub
+variable alone does not update a running revision. The shared dev deployment
+continues to use its passcode login instead of customer identity.
+
+For a replacement tenant or application registration, use the same setup:
 
 1. Select the existing **external/customer** tenant, or explicitly authorize a
    new one. Do not use `/common` or a workforce guest invitation as a substitute
@@ -63,8 +76,7 @@ Continue the previously agreed Entra External ID customer-tenant approach:
 5. Obtain issuer and JWKS URL from that tenant's OpenID discovery document.
    Do not guess them or use Microsoft Graph access tokens as app API tokens.
 
-Configure these nonsecret variables in the GitHub environment `prod`. The live
-release passes the same values to the dev app:
+Configure these nonsecret variables in the GitHub environment `prod`:
 
 | Variable | Value |
 |----------|-------|
@@ -80,6 +92,27 @@ All seven values must be supplied together, or all absent. No authentication
 secret is needed in GitHub or in the app for this public-client PKCE flow.
 Current support intentionally uses the standard `ciamlogin.com` host; custom
 identity domains need separate validation before changing that contract.
+
+Use the canonical tenant-ID authority
+`https://23ed0ae8-6f57-46c5-9b6b-bc223a923224.ciamlogin.com/23ed0ae8-6f57-46c5-9b6b-bc223a923224`
+and obtain issuer and JWKS URL from its `/v2.0/.well-known/openid-configuration`.
+Discovery through the friendly `griplockcustomers.ciamlogin.com` hostname
+returns a tenant-ID issuer but a friendly-hostname JWKS URL. Mixing those
+origins is intentionally rejected by the app. Using the canonical hostname
+for all three endpoints preserves the exact-issuer and same-origin checks.
+
+The Google OAuth client's **Authorized redirect URIs** must also include the
+callback for that canonical hostname, exactly (without a trailing slash):
+
+```text
+https://23ed0ae8-6f57-46c5-9b6b-bc223a923224.ciamlogin.com/23ed0ae8-6f57-46c5-9b6b-bc223a923224/federation/oauth2
+```
+
+This is Google's callback to Entra, not the browser app's SPA redirect to
+Griplock. A callback for the workforce tenant or a different hostname does not
+cover this URL; Google rejects the request with `redirect_uri_mismatch`. The
+customer callback was added with owner approval on 2026-10-24, preserving all
+seven existing entries. Keep any existing callbacks needed by other clients.
 
 Deploy normally after configuring the tenant. `/auth/config` returns only public
 runtime configuration; `/runtime-config.js` delivers the same configuration with
@@ -147,9 +180,23 @@ screen loading. Real PostgreSQL tests verify signed API tokens, wrong
 audience/expiry, scope denials, all feature relationships, ownership/RLS,
 transaction context isolation, persistence and token-gated anonymous sale links.
 
-A real customer flow still requires an owner-assisted browser check with a
-dedicated account: sign in with private Gmail, confirm the API-mapped identity,
-reload, sign out, reject expired/incorrect tokens and prove cross-user denial.
+Production acceptance on 2026-10-24 used release `40041880597` (source
+`a62b109`): the owner completed Google sign-in with a passkey in normal Edge
+and reached the authenticated inventory. The owner confirmed that the session
+survived a page refresh. Anonymous session/inventory requests and malformed
+tokens returned 401; the production test-login endpoint returned 404. No
+inventory data was changed. Logout was not exercised because the owner chose
+to remain signed in.
+
+If an embedded browser preview does not expose the user's passkey, open the
+application origin in their normal browser and start a fresh sign-in there.
+Do not copy an in-progress authorization/callback URL between browsers: its
+state and PKCE verifier belong to the browser that started the request.
+
+For future identity changes, repeat an owner-assisted browser check with a
+dedicated account: sign in with Google, confirm the API-mapped identity, reload
+and sign out. Keep automated wrong-audience, expiry, scope and cross-user
+denial coverage separate from evidence of a real provider sign-in.
 CAPTCHA/MFA/consent cannot be bypassed. Never upload tokens, browser storage or
 real identity-provider traces to public CI evidence.
 
