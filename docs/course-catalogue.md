@@ -4,6 +4,8 @@ PDGA is the application's only external course provider. Search Norway, link a
 course to a bag, open its private planner, then choose a historical PDGA event
 layout or create your own manual layout. Primary discs, alternatives and strategy
 notes belong to the individual player's course/bag link.
+Save game plan is available at both the top of the planner and below the holes.
+Both buttons save the same changes and share saving, saved and error states.
 
 **Bags stays focused on discs.** Its compact Courses & plans button beside the
 list controls opens Courses filtered to that bag. Course management, layout

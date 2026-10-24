@@ -94,10 +94,15 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
   }
   const progress = layout?.holes.filter(h=>selections[h.id]?.disc_ids.length).length??0
   const missing = new Set(Object.values(selections).flatMap(s=>s.disc_ids).filter(id=>!bag?.disc_ids.includes(id)))
+  const saveDisabled = busy||!dirty||!!layout?.provider_error
   return <section className="course-planner" aria-label={`Private planner for ${pin.courseName}`}>
     <div className="planner-heading">
       <div><h3>Private layout &amp; game plan</h3><p className="bag-hint">Choose a historical event layout or enter your own. Disc choices and strategy stay private.</p></div>
-      {bag&&onOpenBag&&<button className="btn" onClick={()=>onOpenBag(bag.id)}>Open bag: {bag.name}</button>}
+      <div className="planner-toolbar" role="group" aria-label="Planner actions">
+        {layout&&!draft&&<button className="btn btn-primary" disabled={saveDisabled}
+          onClick={()=>void perform(savePlan)}>{busy?'Saving...':'Save game plan'}</button>}
+        {bag&&onOpenBag&&<button className="btn" onClick={()=>onOpenBag(bag.id)}>Open bag: {bag.name}</button>}
+      </div>
     </div>
     {error&&<div className="bag-feedback" role="alert">{error} <button className="btn" disabled={busy}
       onClick={()=>void perform(async()=>{await load();setDraft(null)})}>Reload saved plan</button></div>}
@@ -225,7 +230,7 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
           </li>
         })}</ol>
         <div className="planner-toolbar">
-          <button className="btn btn-primary" disabled={busy||!dirty||!!layout.provider_error} onClick={()=>void perform(savePlan)}>{busy?'Saving...':'Save game plan'}</button>
+          <button className="btn btn-primary" disabled={saveDisabled} onClick={()=>void perform(savePlan)}>{busy?'Saving...':'Save game plan'}</button>
           {dirty&&<span role="status">Unsaved changes</span>}
           {data.plan&&<button className="btn" disabled={busy} onClick={()=>{
             if(confirm('Unlink this layout and remove this bag’s private hole choices? The layout stays available.'))
