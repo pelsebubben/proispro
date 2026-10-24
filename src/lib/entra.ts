@@ -1,5 +1,6 @@
 import { InteractionRequiredAuthError, PublicClientApplication } from '@azure/msal-browser'
 import { runtime } from './runtime'
+import { customerProfile } from './customerProfile'
 
 let client: Promise<PublicClientApplication> | undefined
 
@@ -61,13 +62,13 @@ export async function entraUser() {
   if (!data || typeof data !== 'object' || !('userId' in data) || typeof data.userId !== 'string') {
     throw new Error('Invalid application session response')
   }
-  return { id: data.userId, email: account.username }
+  return { id: data.userId, ...customerProfile(account) }
 }
 
 export async function entraSignIn() {
   const instance = await getClient()
   if (!runtime.entra) throw new Error('Customer identity is not configured')
-  await instance.loginRedirect({ scopes: [runtime.entra.scope], prompt: 'select_account' })
+  await instance.loginRedirect({ scopes: [runtime.entra.scope, 'openid', 'profile', 'email'], prompt: 'select_account' })
 }
 
 export async function entraSignOut() {

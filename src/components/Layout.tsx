@@ -37,7 +37,9 @@ export function Layout({ activeTab, onTabChange, children }: LayoutProps) {
           <span style={{ fontWeight: 700, color: 'var(--clr-accent)' }}>ProIsPro</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <span style={{ color: 'var(--clr-muted)', fontSize: '0.85rem' }}>{user?.email}</span>
+          <span title={user?.email} style={{ color: 'var(--clr-muted)', fontSize: '0.85rem' }}>
+            {user?.email || user?.name || 'Signed in'}
+          </span>
           <button
             onClick={signOut}
             style={{
