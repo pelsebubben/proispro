@@ -188,7 +188,10 @@ Builds use `npm ci` and the committed lockfile, never unbounded `latest` install
 Actions remain pinned to immutable release SHAs. Node uses the current selected
 LTS line consistently in `.nvmrc`, package engines, CI and the Docker image;
 runtime type definitions match that line rather than an unreleased-to-LTS major.
-Dependabot proposes Docker updates, including newer Node majors, for review.
+Dependabot proposes patch/minor Docker and Node-type updates within that LTS.
+Node and `@types/node` major upgrades are deliberately coordinated manually when
+adopting the next LTS, not independently proposed against an incompatible runtime.
+These are the only ignored major updates; application dependency majors remain enabled.
 `engine-strict=true` rejects installs on an unsupported Node line instead of
 allowing a warning-only build.
 
