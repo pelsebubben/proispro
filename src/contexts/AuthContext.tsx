@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { runtime } from '../lib/runtime'
 import { clearPhotoCache } from '../lib/data'
 
-interface AppUser { id: string; email?: string }
+interface AppUser { id: string; email?: string; name?: string }
 
 interface AuthContextValue {
   user: AppUser | null

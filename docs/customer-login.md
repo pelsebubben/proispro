@@ -27,10 +27,25 @@ An ID token for the separate browser registration is not an API token.
 The API maps `(issuer, sub)` to its own PostgreSQL user ID; email addresses are
 display-only and never used to link identities.
 
-The current account header displays MSAL's account username. For a federated
-Google user, this can be an Entra-generated `@griplockcustomers.onmicrosoft.com`
-username rather than the Google email address. It does not change which
-identity owns the application data.
+The account header uses the email in MSAL's ID-token profile (`email`, or
+`emails` for customer flows), falling back to the person's display name and
+then "Signed in". It never substitutes MSAL's account username or a generated
+`@griplockcustomers.onmicrosoft.com` address for a Google email. Sign-in requests
+the standard `openid`, `profile` and `email` scopes alongside the API scope.
+The tenant must include the email/name in its token claims to display them;
+requesting a scope does not invent a missing claim. Existing sessions may need
+a fresh sign-in to receive newly configured claims.
+
+Collecting Display Name or Username under the user flow's **User attributes**
+does not by itself configure the token. For the email claim, use **App
+registrations > Griplock Web > Token configuration > Add optional claim >
+ID > email**, preserving the existing claims. No extra Graph permissions are
+needed by Griplock to read the profile from its ID token.
+
+Profile labels are presentation only and are not stored as identity keys.
+The API still creates/finds the same application user by verified `(issuer, sub)`,
+so changes to a person's email/name do not create a new account or move their
+inventory, and two identities are never linked just because their emails match.
 
 The customer sign-in screen redirects to the customer tenant's hosted user flow;
 Google is selected/configured there. Failed/cancelled login is visible.

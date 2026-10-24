@@ -46,6 +46,7 @@ test('External ID uses the Microsoft SDK authorization-code flow with PKCE', asy
   expect(params.get('code_challenge_method')).toBe('S256')
   expect(params.get('code_challenge')).toMatch(/^[\w-]{43}$/)
   expect(params.get('scope')?.split(' ')).toContain(scope)
+  expect(params.get('scope')?.split(' ')).toEqual(expect.arrayContaining(['openid', 'profile', 'email']))
   expect(params.get('state')).toBeTruthy()
   expect(params.get('nonce')).toBeTruthy()
   expect(params.get('redirect_uri')).toBe(base)
