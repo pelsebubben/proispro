@@ -1,4 +1,4 @@
-"""Manual GitHub dev-environment provisioning. Never prints ARM bodies or secrets."""
+"""Protected GitHub environment provisioning. Never prints ARM bodies or secrets."""
 import json
 import os
 import subprocess
@@ -8,19 +8,26 @@ import urllib.request
 
 
 def configure():
-    if os.environ.get("GITHUB_ACTIONS") != "true" or os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch":
-        raise RuntimeError("This provisioner requires the manual GitHub workflow.")
+    stage = os.environ.get("PDGA_STAGE", "dev")
+    event = os.environ.get("GITHUB_EVENT_NAME")
+    trusted_release = (os.environ.get("GITHUB_REF") == "refs/heads/main" and
+        os.environ.get("GITHUB_WORKFLOW_REF") == "pelsebubben/proispro/.github/workflows/prod.yml@refs/heads/main" and
+        event in ("workflow_dispatch", "workflow_run"))
+    if (os.environ.get("GITHUB_ACTIONS") != "true" or stage not in ("dev", "prod") or
+            not (trusted_release or stage == "dev" and event == "workflow_dispatch")):
+        raise RuntimeError("Use manual dev provisioning or the protected main release workflow.")
     username = os.environ.get("PDGA_USERNAME", "")
     password = os.environ.get("PDGA_PASSWORD", "")
     sha = os.environ.get("EXPECTED_SOURCE_SHA", "")
     if not username or not password or len(sha) != 40:
-        raise RuntimeError("Configure both PDGA secrets in the dev environment before running.")
+        raise RuntimeError("Configure both PDGA secrets in the selected GitHub environment before running.")
     account = json.loads(subprocess.check_output(["az", "account", "show", "-o", "json"], stderr=subprocess.DEVNULL))
     token = json.loads(subprocess.check_output(
         ["az", "account", "get-access-token", "--resource", "https://management.azure.com/", "-o", "json"],
         stderr=subprocess.DEVNULL))["accessToken"]
     resource = ("https://management.azure.com/subscriptions/" + account["id"] +
-                "/resourceGroups/rg-griplock-staging/providers/Microsoft.App/containerApps/app-griplock-dev")
+                "/resourceGroups/rg-griplock-staging/providers/Microsoft.App/containerApps/" +
+                ("app-griplock-dev" if stage == "dev" else "app-griplock-staging"))
 
     def arm(method, suffix="", body=None):
         request = urllib.request.Request(resource + suffix + "?api-version=2024-03-01",
@@ -34,10 +41,10 @@ def configure():
     template = app["properties"]["template"]
     containers = template["containers"]
     if len(containers) != 1 or containers[0]["name"] != "app":
-        raise RuntimeError("Unexpected dev application template.")
+        raise RuntimeError("Unexpected application template.")
     env = containers[0]["env"]
     if not any(v.get("name") == "SOURCE_SHA" and v.get("value") == sha for v in env):
-        raise RuntimeError("Deploy this exact commit to dev before configuring PDGA credentials.")
+        raise RuntimeError("Deploy this exact commit before configuring PDGA credentials.")
     existing = arm("POST", "/listSecrets")["value"]
     secrets = [v for v in existing if v["name"] not in ("pdga-username", "pdga-password")]
     secrets += [{"name": "pdga-username", "value": username}, {"name": "pdga-password", "value": password}]
@@ -49,13 +56,13 @@ def configure():
     for _ in range(40):
         updated = arm("GET")["properties"]
         if updated.get("provisioningState") in ("Failed", "Canceled"):
-            raise RuntimeError("Dev credential update failed.")
+            raise RuntimeError("Credential update failed.")
         if (updated.get("provisioningState") == "Succeeded" and
                 updated.get("latestReadyRevisionName", "").endswith("--" + template["revisionSuffix"])):
-            print("PDGA credentials configured on the dev server. Production unchanged.")
+            print("PDGA credentials configured on the " + stage + " server.")
             return
         time.sleep(10)
-    raise RuntimeError("Dev revision did not become ready before the deadline.")
+    raise RuntimeError("Revision did not become ready before the deadline.")
 
 
 if __name__ == "__main__":
@@ -63,6 +70,6 @@ if __name__ == "__main__":
         configure()
     except Exception:
         # Azure/HTTP errors may embed credentials or full resource bodies.
-        print("PDGA provisioning failed. Check dev secrets, Azure permissions, and that this commit is deployed. Details suppressed.",
+        print("PDGA provisioning failed. Check environment secrets, Azure permissions, and the deployed commit. Details suppressed.",
               file=sys.stderr)
         sys.exit(1)

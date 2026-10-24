@@ -65,9 +65,9 @@ function discardRemainder(req) {
 }
 
 // Bodies are capped at 16 KiB. Disc writes may read more, but only a body that carries a photo string keeps it.
-export async function readBody(req, { allowPhoto = false } = {}) {
+export async function readBody(req, { allowPhoto = false, maxBytes = bodyLimit } = {}) {
   if (!req.headers['content-type']?.startsWith('application/json')) throw Object.assign(new Error('json_required'), { status: 415 })
-  const limit = allowPhoto ? photoBodyLimit : bodyLimit
+  const limit = allowPhoto ? photoBodyLimit : maxBytes
   const chunks = []
   let size = 0
   let overflow = false
@@ -83,7 +83,7 @@ export async function readBody(req, { allowPhoto = false } = {}) {
   let body
   try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')) }
   catch { throw size > bodyLimit ? tooLarge() : Object.assign(new Error('invalid_json'), { status: 400 }) }
-  if (size > bodyLimit && typeof body?.photo !== 'string') throw tooLarge()
+  if (allowPhoto && size > bodyLimit && typeof body?.photo !== 'string') throw tooLarge()
   return body
 }
 
@@ -131,11 +131,16 @@ export async function featureRequest({ req, url, pool, userId, json, image }) {
   if (spec.readonly) return json(405, { error: 'method_not_allowed' })
   if (req.method === 'DELETE' && (rowId || filters.length)) {
     const result = await asUser(pool, userId, async client => {
+      if (resource === 'discs') await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,72491926))',[userId])
       const deleted = await client.query(
         `DELETE FROM ${table} WHERE user_id=$1${rowId ? ' AND id=$2' : filters.map(([key], i) => ` AND ${key}=$${i + 2}`).join('')}`,
         [userId, ...(rowId ? [rowId] : filters.map(([, value]) => value))])
       if (resource === 'discs' && deleted.rowCount) {
         await client.query('UPDATE bags SET disc_ids=disc_ids - $1::text WHERE user_id=$2 AND disc_ids ? $1', [rowId, userId])
+        await client.query(`UPDATE private_plans p SET selections=(
+          SELECT COALESCE(jsonb_object_agg(key,jsonb_set(value,'{disc_ids}',(value->'disc_ids')-$1::text)),'{}')
+          FROM jsonb_each(p.selections)),version=version+1,updated_at=now() WHERE user_id=$2
+          AND EXISTS(SELECT 1 FROM jsonb_each(p.selections) e WHERE (e.value->'disc_ids') ? $1)`, [rowId,userId])
       }
       return deleted
     })
@@ -181,6 +186,10 @@ export async function featureRequest({ req, url, pool, userId, json, image }) {
         if (sourceId?.startsWith('pdga:')) {
           if (!/^pdga:[1-9][0-9]{0,15}$/.test(sourceId)) throw Object.assign(new Error('invalid_input'), { status: 400 })
           body.course_name = 'PDGA course'
+        }
+        if (previousPin && Object.hasOwn(body,'course_id') && body.course_id !== previousPin.course_id &&
+            (await client.query('SELECT id FROM private_plans WHERE course_pin_id=$1',[rowId])).rowCount) {
+          throw Object.assign(new Error('unlink_plan_before_changing_course'),{status:400})
         }
       }
       const entries = Object.entries(body).filter(([key]) => !(photoWrite && ['photo', 'user_photo_url'].includes(key)))

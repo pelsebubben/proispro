@@ -1,7 +1,43 @@
 # PRD: Course-specific bag configurations
 
-Status: Discovery draft. Confirmed requirements are separated from proposals and
-open decisions. This document is not implementation approval.
+Status: Initial bag/course MVP and private manual planning approved. Historical
+discovery below remains context; community publishing is not approved for this release.
+
+## Private manual planner: first version
+
+Enter through **Bags → Courses & plans → Open plan**, or **Courses → Open private
+planner**. Bag links show the layout name and the number of holes with selected
+discs. Courses can open the linked bag or link another bag to the same course.
+
+- Layout facts are private to their author and reusable across their bag links to
+  the same course. Name, tee/basket variant, description, date checked, hole label,
+  optional par/distance in metres, and hole notes are manually editable.
+- Up to 72 explicit holes have stable UUIDs: changing labels/order does not move
+  assignments. Removing a hole removes that hole's choices from linked plans.
+  There is no automatic hole generation or inferred geometry.
+- Each course/bag link has one selected layout and independent strategy notes,
+  primary disc and up to 11 alternatives per hole, all from owned inventory.
+  Selected discs outside the linked bag are flagged, never silently added.
+- A layout editor starts with no holes and requires confirmation of authorship or
+  permission. Directory data is not copied into private layouts. PDGA links retain
+  only their matching ID and generic label; temporary names stay temporary.
+- Forced owner RLS covers layouts/plans. Parameterized same-origin APIs bound
+  input size and use optimistic versions, transaction locks and ownership checks.
+  Conflicting writes require reloading; unsaved navigation warns the player.
+- Unlinking a course deletes its game plan but retains the reusable layout.
+  Deleting an inventory disc removes it from private choices. Layout deletion
+  refuses while any game plan still references it; unlink those plans first.
+- Previous OSM hole assignments remain available separately and are not silently
+  rewritten as manual layout facts.
+
+Community submission, approval/publication, public downloads, revisioned shared
+layouts, map/photo uploads and recommendations are deferred. No restricted UDisc
+or PDGA guides, images, geometry or layouts may be copied.
+
+Schema 006 adds `private_layouts` and `private_plans` without rewriting applied
+migrations. CI and the disposable Azure verification job exercise the planner
+against real PostgreSQL before production migrations. The production release
+backs up live data when migration code changes and upgrades both live and dev.
 
 ## Product goal
 

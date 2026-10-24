@@ -179,7 +179,7 @@ jobs:
           printf 'url=%s\nimage=%s\n' "$url" "$IMAGE" >> "$GITHUB_OUTPUT"
           for ((attempt=0; attempt<30; attempt++)); do
             if curl --fail --silent --max-time 15 "$url/health/ready" \
-              | jq -e --arg sha "$SOURCE_SHA" '.status == "ready" and .sourceSha == $sha and .schemaVersion == 5'; then
+              | jq -e --arg sha "$SOURCE_SHA" '.status == "ready" and .sourceSha == $sha and .schemaVersion == 6'; then
               identity_ready=$(curl --fail --silent --max-time 15 "$url/auth/config" | jq -er '.identityReady | tostring')
               printf 'identityReady=%s\n' "$identity_ready" >> "$GITHUB_OUTPUT"
               exit 0
@@ -188,10 +188,44 @@ jobs:
           done
           echo "::error::Staging did not serve the expected release and schema"
           exit 1
+      - name: Configure production PDGA from protected environment
+        env:
+          PDGA_STAGE: prod
+          PDGA_USERNAME: ${{ secrets.PDGA_USERNAME }}
+          PDGA_PASSWORD: ${{ secrets.PDGA_PASSWORD }}
+          EXPECTED_SOURCE_SHA: ${{ env.SOURCE_SHA }}
+        run: python3 scripts/configure-pdga-dev.py
+
+  dev-provider:
+    name: Restore dev provider after foundation release
+    needs: staging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Configure dev PDGA from its own protected environment
+        env:
+          PDGA_STAGE: dev
+          PDGA_USERNAME: ${{ secrets.PDGA_USERNAME }}
+          PDGA_PASSWORD: ${{ secrets.PDGA_PASSWORD }}
+          EXPECTED_SOURCE_SHA: ${{ env.SOURCE_SHA }}
+        run: python3 scripts/configure-pdga-dev.py
 
   browser:
     name: Verify deployed desktop and mobile
-    needs: staging
+    needs: [staging, dev-provider]
     runs-on: ubuntu-24.04
     container:
       image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948

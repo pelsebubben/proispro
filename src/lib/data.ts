@@ -51,7 +51,19 @@ export function readCourseCatalogue<T>(path: string): Promise<T> {
   if (!/^courses(?:\/export|\?q=[^#]*|\/(?:osm:(?:node|way|relation):|pdga:)[1-9][0-9]{0,15}\/holes)$/.test(path)) {
     throw new Error('Invalid course catalogue request')
   }
+
   return request<T>(path)
+}
+
+export function plannerData<T>(path: string, method = 'GET', body?: object): Promise<T> {
+  if (!/^planner(?:\?pin_id=[0-9a-f-]{36}|\/(?:layouts|pins)\/[0-9a-f-]{36})?$/i.test(path)) {
+    throw new Error('Invalid planner request')
+  }
+  return request<T>(path, method, body)
+}
+
+export function confirmPlannerNavigation() {
+  return window.dispatchEvent(new Event('griplock-before-navigation', { cancelable: true }))
 }
 
 async function fetchDiscPhoto(path: string, signal: AbortSignal): Promise<Blob> {

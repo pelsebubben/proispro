@@ -50,9 +50,11 @@ interface CourseMapData {
   expiresAt?: number
 }
 
-export function useCoursePins() {
+export function useCoursePins(detailsForBagId?:string) {
   const { user } = useAuth()
   const [pins, setPins] = useState<ClientPin[]>([])
+  const [pinsLoading, setPinsLoading] = useState(true)
+  const [pinsError, setPinsError] = useState('')
   const [holeAssignments, setHoleAssignments] = useState<HoleAssignment[]>([])
   const [courseSuggestions, setCourseSuggestions] = useState<CatalogueCourse[]>([])
   const [courseError, setCourseError] = useState<string | null>(null)
@@ -80,6 +82,9 @@ export function useCoursePins() {
 
   const loadPins = useCallback(async () => {
     if (!user) return
+    setPinsLoading(true)
+    setPinsError('')
+    try {
     const data = await listRows<{ id: string; course_name: string; course_id: string | null; bag_id: string; created_at: string }>('course_pins')
     setPins(
       (data || []).map(p => ({
@@ -90,6 +95,10 @@ export function useCoursePins() {
         createdAt: new Date(p.created_at).getTime(),
       }))
     )
+    } catch(error) {
+      setPinsError(error instanceof Error?error.message:'Could not load course links.')
+      throw error
+    } finally {setPinsLoading(false)}
   }, [user])
 
   const loadHoleAssignments = useCallback(async () => {
@@ -235,11 +244,11 @@ export function useCoursePins() {
     void (async () => {
       for (const pin of pins) {
         if (cancelled) break
-        if (pin.courseId?.startsWith('pdga:')) await downloadCourseMap(pin)
+        if (pin.courseId?.startsWith('pdga:')&&(!detailsForBagId||pin.bagId===detailsForBagId)) await downloadCourseMap(pin)
       }
     })()
     return () => { cancelled = true }
-  }, [pins, downloadCourseMap])
+  }, [pins, downloadCourseMap,detailsForBagId])
 
   const getHolesForPin = (pin: ClientPin): ParsedHole[] | null => {
     return courseCache[pin.id]?.holes || null
@@ -264,6 +273,8 @@ export function useCoursePins() {
   }
 
   return {
+    pinsLoading,
+    pinsError,
     pins: pins.map(pin => pin.courseId?.startsWith('pdga:') ?
       { ...pin, courseName: courseCache[pin.id]?.courseName ?? 'PDGA course' } : pin),
     loadPins,

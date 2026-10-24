@@ -9,7 +9,7 @@ an exception. PDGA record IDs may be retained for back-end matching.
 
 Consequently there is **no PDGA catalogue replication, bulk import or scheduled
 PDGA sync**. The initial disabled bulk-sync implementation was replaced before
-deployment or any live import. Migration 005 has not been deployed: it now
+deployment or any live import. Migration 005
 constrains PDGA-linked pins to a generic name and a source ID, not provider
 content. Never substitute this file for an already-applied migration.
 
@@ -45,7 +45,9 @@ The documented Course Search API supplies course details and a hole count,
 **not** individual holes, pars, distances, tees, baskets or layout variants.
 PDGA courses can link to bag configurations but show **layout unavailable**.
 No numbered holes or hole-by-hole game plans are generated from their counts.
-Additional official API access/written permission is needed for those features.
+The separate private planner accepts independently authored manual holes,
+measurements and notes. It does not populate layouts from PDGA counts or records.
+Additional official API access/written permission is needed to import provider layouts.
 
 ## Dev credentials and deployment
 
@@ -70,10 +72,19 @@ never execute that step or receive its PDGA secret environment.
 No credentials are available from the earlier local API test.
 Activation is not performed merely by adding GitHub secrets.
 
-Ordinary dev image updates preserve this configuration. A full Bicep foundation
-reapplication currently supplies its own complete secret/environment set; run
-the manual dev workflow with PDGA configuration enabled again afterward. Production is not
-targeted by this workflow and remains unconfigured.
+Ordinary dev image updates preserve this configuration. The protected main
+production release automatically provisions the **prod** app from prod environment
+secrets and restores the **dev** app from dev environment secrets after the Bicep
+foundation/app deployment. Both providers must become ready before release
+verification completes. The provisioner allows production only from the exact
+main `prod.yml` workflow (manual dispatch or successful-main-CI workflow run).
+It does not grant PR-triggered dev deployments access to PDGA secrets.
+
+Standalone foundation/app Bicep application still replaces the complete
+secret/environment set: follow it with the protected release, or the opt-in manual
+dev workflow for dev-only work. Do not deploy production from a feature branch.
+Both GitHub environments require the two PDGA secrets; missing credentials fail
+the provider stage explicitly rather than silently publishing a disabled integration.
 
 After activation, verify authenticated Ekeberg search and the corresponding
 PDGA link, a saved bag link after reload, the unavailable-layout explanation,

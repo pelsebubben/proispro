@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useDiscs } from '../hooks/useDiscs'
 import { useBags, formatHistoryTime, type BagHistoryEntry } from '../hooks/useBags'
 import { DiscList } from '../components/DiscList'
+import { BagCourseLinks } from '../components/BagCourseLinks'
 import { FlightChart } from '../components/FlightChart'
 import { ClientBag, DISC_TYPES, DiscFilters, filterAndSort, groupByType, SortOption } from '../utils/disc'
 
@@ -10,10 +11,10 @@ const initialFilters: DiscFilters = {
   filterWeightMin: null, filterWeightMax: null, activeTagFilter: '', sortBy: 'name-asc', groupBy: 'none',
 }
 
-export function BagsPage() {
+export function BagsPage({initialBagId,onOpenCourses}:{initialBagId?:string;onOpenCourses?:(bagId:string,pinId?:string)=>void}) {
   const { discs, isLoading: discsLoading, error: discsError, loadDiscs } = useDiscs()
   const { bags, isLoading, error: bagsError, loadBags, createBag, renameBag, deleteBag, toggleDiscInBag, loadBagHistory } = useBags()
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(initialBagId??null)
   const [scope, setScope] = useState<'bag' | 'inventory'>('bag')
   const [filters, setFilters] = useState(initialFilters)
   const [nameForm, setNameForm] = useState<{ bag?: ClientBag } | null>(null)
@@ -150,6 +151,7 @@ export function BagsPage() {
           </section>}
 
           {error && <p className="bag-feedback" role="alert">{error}</p>}
+          {onOpenCourses&&<BagCourseLinks key={bag.id} bagId={bag.id} onOpenCourses={onOpenCourses}/>}
           {showChart && <section aria-label="Bag flight chart"><FlightChart discs={bagDiscs} /></section>}
           {history && <section className="bag-history" aria-label="Bag history">
             <h3>Recent changes</h3>

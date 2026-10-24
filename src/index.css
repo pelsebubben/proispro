@@ -13,6 +13,35 @@ body {
 
 :root { --utility: var(--clr-muted); }
 
+.bag-course-links,.course-planner { margin-block:1.5rem; padding-block:1.25rem; border-block:1px solid var(--clr-border); }
+.planner-heading { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; margin-bottom:1rem; }
+.planner-heading h3,.planner-heading h4 { margin:0; }
+.planner-toolbar { display:flex; align-items:center; gap:.65rem; flex-wrap:wrap; margin-block:.75rem; }
+.planner-toolbar label { flex:1; min-width:12rem; }
+.planner-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,12rem),1fr)); gap:.75rem; }
+.course-planner label { display:block; margin-block:.5rem; }
+.course-planner input:not([type=checkbox]),.course-planner select,.course-planner textarea {
+  display:block; width:100%; min-height:44px; padding:.65rem; border:1px solid var(--clr-border);
+  border-radius:6px; background:var(--clr-bg); color:var(--clr-text); font:inherit;
+}
+.course-planner textarea { resize:vertical; min-height:5rem; }
+.planner-holes,.layout-edit-holes,.bag-linked-courses,.planner-choices { list-style:none; padding:0; margin:0; }
+.planner-hole { display:grid; grid-template-columns:minmax(8rem,1fr) minmax(0,3fr); gap:1.5rem; padding-block:1.25rem; border-top:1px solid var(--clr-border); }
+.planner-hole h4 { margin:.5rem 0; }
+.planner-hole p { overflow-wrap:anywhere; }
+.planner-choices li,.bag-linked-courses li { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; padding-block:.65rem; border-bottom:1px solid var(--clr-border); }
+.planner-choices li span,.bag-linked-courses li>div:first-child { flex:1; min-width:10rem; overflow-wrap:anywhere; }
+.layout-editor fieldset { border:0; padding:0; margin:0; min-width:0; }
+.layout-editor legend { font-size:1.1rem; font-weight:600; margin-block:1rem; }
+.layout-edit-holes>li { padding-block:1rem; border-top:1px solid var(--clr-border); }
+.course-planner .planner-consent { display:flex; align-items:flex-start; gap:.65rem; margin-block:1.25rem; max-width:65ch; }
+.planner-consent input { flex:none; width:1.25rem; height:1.25rem; }
+.course-planner :focus-visible,.bag-course-links :focus-visible { outline:2px solid var(--clr-accent); outline-offset:3px; }
+@media(max-width:600px) {
+  .planner-hole { grid-template-columns:1fr; gap:.25rem; }
+  .planner-toolbar>.btn { flex:1 1 auto; }
+}
+
 .disc-search label, .disc-edition-field label {
   display: block;
   margin-bottom: .35rem;

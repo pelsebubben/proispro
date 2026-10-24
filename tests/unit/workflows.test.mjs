@@ -128,7 +128,14 @@ function checkTrustBoundary(files) {
     'AUTH_AUDIENCE', 'AUTH_JWKS_URL', 'AUTH_REQUIRED_SCOPE']) {
     assert.equal(staging.jobs.staging.steps[deployIndex].env[name], `\${{ vars.${name} }}`)
   }
-  assert.equal(staging.jobs.browser.needs, 'staging')
+  assert.deepEqual(staging.jobs.browser.needs, ['staging','dev-provider'])
+  const prodPdga=staging.jobs.staging.steps.find(step=>step.name==='Configure production PDGA from protected environment')
+  assert.equal(prodPdga.env.PDGA_STAGE,'prod')
+  assert.equal(prodPdga.env.PDGA_PASSWORD,'${{ secrets.PDGA_PASSWORD }}')
+  assert.equal(staging.jobs['dev-provider'].environment,'dev')
+  assert.equal(staging.jobs['dev-provider'].needs,'staging')
+  assert.equal(staging.jobs['dev-provider'].permissions['id-token'],'write')
+  assert.equal(staging.jobs['dev-provider'].steps.find(step=>step.run?.includes('configure-pdga-dev.py')).env.PDGA_STAGE,'dev')
   assert.ok(staging.jobs.browser.steps.some(step => step.run === 'npm run test:staging'))
   const recording = staging.jobs.browser.steps.findIndex(step => step.name === 'Record verified release')
   const verification = staging.jobs.browser.steps.findIndex(step => step.run === 'npm run test:staging')

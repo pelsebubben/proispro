@@ -76,12 +76,22 @@ describe the Norway-only scope and independent weekly Azure job.
 The PDGA Norway directory integration uses server-side, on-demand search with
 a temporary in-memory cache, not a permanent SQL catalogue or bulk sync.
 Only PDGA matching IDs persist in private bag links. It is disabled until
-server credentials are configured through the manual dev workflow.
+server credentials are configured through the opt-in manual dev workflow or
+the protected main production release using each environment's own secrets.
 PDGA entries can link to bag configurations but do not provide
 individual hole layouts through the documented REST API. Approved PDGA API
 access can also be checked separately with the
 [secure local read-only test and deployment guide](docs/pdga-api.md). The test does not save credentials or
 mix PDGA data into the OSM catalogue.
+
+**Bags → Courses & plans** shows linked courses, selected private layouts and
+hole-planning progress. Open the same private planner from either Bags or Courses.
+Enter your own layout and holes, then choose a primary disc, alternatives and
+strategy notes per hole. Plans warn about selected discs outside the linked bag.
+Layout facts can be reused across your own bag links; disc choices stay specific
+to each link. Existing OSM assignments remain separate. Community publishing and
+map/photo uploads are deferred; do not copy restricted provider layouts.
+See the [approved first-version scope](docs/prd-course-bag-configurations.md).
 
 ## Local development
 

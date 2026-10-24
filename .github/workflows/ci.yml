@@ -105,7 +105,7 @@ jobs:
           docker run --rm --network host \
             -e NODE_ENV -e PGHOST -e PGDATABASE -e PGUSER \
             -e PGPASSWORD -e PGAPP_PASSWORD -e PGSSLMODE \
-            griplock:ci node --test tests/api/discs.test.mjs
+            griplock:ci node --test tests/api/discs.test.mjs tests/api/courses.test.mjs tests/api/planner.test.mjs
 
   infrastructure:
     name: Infrastructure checks
