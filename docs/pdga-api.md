@@ -56,8 +56,11 @@ Upstream 429 cooldown and a miss budget are shared across replicas; valid cached
 reads do not make upstream requests. Expired data is not served on error.
 
 Private pins retain generic labels plus matching IDs. A private provider layout
-retains course/event/layout IDs, while its displayed name and hole facts resolve
-from the cache. User-authored strategy and owned-disc choices persist separately
+retains course/event/layout IDs and optionally a user-authored private plan name,
+while provider names and hole facts resolve from the cache. Named duplicates
+copy saved user choices, never provider facts; original and copied choices remain
+independent when switching the active plan for a course/bag link.
+User-authored strategy and owned-disc choices persist separately
 under forced owner RLS. Do not copy provider facts into permanent manual layouts.
 
 Display **"Player, event, and course data provided by PDGA."** linking to PDGA

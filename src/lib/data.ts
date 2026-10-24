@@ -56,7 +56,7 @@ export function readCourseCatalogue<T>(path: string): Promise<T> {
 }
 
 export function plannerData<T>(path: string, method = 'GET', body?: object): Promise<T> {
-  if (!/^planner(?:\?pin_id=[0-9a-f-]{36}(?:&layout_id=[0-9a-f-]{36})?|\/event-layout|\/(?:layouts|pins)\/[0-9a-f-]{36})?$/i.test(path)) {
+  if (!/^planner(?:\?pin_id=[0-9a-f-]{36}(?:&layout_id=[0-9a-f-]{36})?|\/(?:event-layout|duplicate)|\/(?:layouts|pins)\/[0-9a-f-]{36})?$/i.test(path)) {
     throw new Error('Invalid planner request')
   }
   return request<T>(path, method, body)
