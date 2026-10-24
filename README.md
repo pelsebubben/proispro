@@ -27,8 +27,12 @@ describe the bundled data and its deliberately limited special-edition coverage.
 
 The Type selector and inventory filters include Utility. A personal JPEG, PNG
 or WebP photo can be added, replaced or removed in Add/Edit Disc. Choosing a
-file opens a square crop step: drag to move, zoom with the slider, mouse wheel,
-pinch or arrow keys, then Use photo. Adjust crop reopens it later. Files up to
+file opens a circular crop preview: align the disc's rim with the circle, drag to move, zoom with the slider, mouse wheel,
+pinch or arrow keys, then Use photo. Adjust crop reopens it later. Personal photos
+use a circular mask and the same padding as stock illustrations in every view,
+including existing photos. The bounding square is still stored as JPEG; this
+hides the background outside the circle, rather than automatically detecting
+the disc edge or producing a transparent image file. Files up to
 10 MB are cropped and resized in the browser before upload. The server validates
 and re-encodes them to metadata-free JPEGs, at most 1024 pixels and 256 KiB.
 Photos are private to their owner and stored in PostgreSQL, not a new cloud

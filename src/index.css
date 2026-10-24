@@ -92,7 +92,8 @@ body {
 }
 .disc-thumb-lg { width: 96px; }
 .disc-photo, .disc-art { display: block; width: 100%; height: 100%; }
-.disc-photo { object-fit: cover; }
+.disc-photo-frame { display: block; width: 100%; height: 100%; padding: 8.84%; }
+.disc-photo { object-fit: cover; border-radius: 50%; }
 .disc-art { padding: 8%; }
 .disc-photo-error, .disc-photo-loading {
   display: grid;
@@ -123,7 +124,7 @@ body {
   outline-offset: 2px;
 }
 
-/* Photo cropper: the stage is the saved square */
+/* The circular viewport matches the photo mask used throughout the inventory. */
 .photo-cropper { display: flex; flex-direction: column; gap: .9rem; }
 .photo-cropper-title { margin: 0; color: var(--clr-text); font-size: 1.25rem; }
 .photo-cropper-hint { margin: 0; color: var(--clr-muted); font-size: .85rem; text-wrap: balance; }
@@ -134,7 +135,7 @@ body {
   margin: 0 auto;
   overflow: hidden;
   border: 1px solid var(--clr-border);
-  border-radius: 12px;
+  border-radius: 50%;
   background: var(--clr-bg);
   touch-action: none;
   user-select: none;
@@ -144,7 +145,7 @@ body {
 .photo-cropper-stage img { position: absolute; max-width: none; pointer-events: none; user-select: none; }
 .photo-cropper-guide {
   position: absolute;
-  inset: 6%;
+  inset: 0;
   border: 2px dashed #fff;
   border-radius: 50%;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, .55), inset 0 0 0 1px rgba(0, 0, 0, .55);

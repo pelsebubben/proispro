@@ -13,7 +13,7 @@ interface PhotoCropperProps {
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
 const KEY_ZOOM = 1.1
 
-// The visible square is exactly what gets saved: drag the photo, pinch or scroll to zoom.
+// Store the bounding square; the same circular mask is used here and in DiscPhoto.
 export function PhotoCropper({ source, initial, titleId, onCancel, onDone }: PhotoCropperProps) {
   const { width, height } = source
   const [crop, setCrop] = useState<CropState>(() => clampCrop(initial ?? initialCrop(), width, height))
@@ -116,7 +116,7 @@ export function PhotoCropper({ source, initial, titleId, onCancel, onDone }: Pho
   return (
     <div className="photo-cropper" onKeyDown={onPaneKeyDown}>
       <h2 id={titleId} className="photo-cropper-title">Crop photo</h2>
-      <p className="photo-cropper-hint">Drag to move, pinch or scroll to zoom. Everything inside the square is saved.</p>
+      <p className="photo-cropper-hint">Align the disc's rim with the circle. Drag to move, pinch or scroll to zoom. Only the circle is shown in your inventory.</p>
       <div
         ref={stage}
         className="photo-cropper-stage"
