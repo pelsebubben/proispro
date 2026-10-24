@@ -58,6 +58,11 @@ async function setup(page:Page){
   await page.goto('/')
   await page.getByRole('navigation').getByRole('button',{name:/Bags/}).click()
   await expect(page.getByRole('heading',{name:'Courses & plans'})).toBeVisible()
+  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('griplock-data-error',{detail:'Synthetic provider warning'})))
+  await expect(page.getByRole('alert')).toContainText('Synthetic provider warning')
+  await expect(page.locator('.bag-course-links')).toHaveCount(1)
+  await page.getByRole('button',{name:'Dismiss',exact:true}).click()
+  await expect(page.locator('.bag-course-links')).toHaveCount(1)
   await page.getByRole('button',{name:'Open plan',exact:true}).click()
   await expect(page.getByRole('heading',{name:'Private layout & game plan'})).toBeVisible()
   return state

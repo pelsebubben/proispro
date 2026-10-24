@@ -151,7 +151,7 @@ export function BagsPage({initialBagId,onOpenCourses}:{initialBagId?:string;onOp
           </section>}
 
           {error && <p className="bag-feedback" role="alert">{error}</p>}
-          {onOpenCourses&&<BagCourseLinks key={bag.id} bagId={bag.id} onOpenCourses={onOpenCourses}/>}
+          {onOpenCourses&&<BagCourseLinks key={`courses-${bag.id}`} bagId={bag.id} onOpenCourses={onOpenCourses}/>}
           {showChart && <section aria-label="Bag flight chart"><FlightChart discs={bagDiscs} /></section>}
           {history && <section className="bag-history" aria-label="Bag history">
             <h3>Recent changes</h3>
