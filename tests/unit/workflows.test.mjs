@@ -134,6 +134,8 @@ function checkTrustBoundary(files) {
   assert.equal(prodPdga.env.PDGA_PASSWORD,'${{ secrets.PDGA_PASSWORD }}')
   assert.equal(staging.jobs['dev-provider'].environment,'dev')
   assert.equal(staging.jobs['dev-provider'].needs,'staging')
+  assert.equal(staging.jobs['dev-provider'].if,"${{ always() && needs.staging.outputs.url != '' }}",
+    'restore dev after a completed app rollout even if the independent production provider stage fails')
   assert.equal(staging.jobs['dev-provider'].permissions['id-token'],'write')
   assert.equal(staging.jobs['dev-provider'].steps.find(step=>step.run?.includes('configure-pdga-dev.py')).env.PDGA_STAGE,'dev')
   assert.ok(staging.jobs.browser.steps.some(step => step.run === 'npm run test:staging'))
