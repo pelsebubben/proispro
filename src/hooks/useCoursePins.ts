@@ -20,6 +20,8 @@ export interface HoleAssignment {
 
 export interface CatalogueCourse {
   id: string
+  source: 'osm' | 'pdga'
+  source_url: string | null
   name: string
   expected_holes: number | null
   mapped_holes: number
@@ -38,10 +40,11 @@ export interface ParsedHole {
 }
 
 interface CourseMapData {
-  lat: number
-  lon: number
+  lat: number | null
+  lon: number | null
   holes: ParsedHole[]
   coverageNote: string
+  sourceUrl: string | null
 }
 
 export function useCoursePins() {
@@ -179,13 +182,13 @@ export function useCoursePins() {
     searchTimeout.current = setTimeout(() => void searchCourses(query), 300)
   }
 
-  const downloadCourseMap = async (pin: ClientPin) => {
+  const downloadCourseMap = useCallback(async (pin: ClientPin) => {
     if (!pin.courseId) return
     setCourseLoading(true)
     setCourseError(null)
     try {
       const result = await readCourseCatalogue<{
-        course: { lat: number; lon: number; active: boolean }
+        course: { lat: number | null; lon: number | null; active: boolean; source_url?: string }
         holes: { ref: string; name: string; par: number | null; length_m: number | null; geometry: [number, number][] }[]
         coverage: { note: string }
         sync: { completed_at: string }
@@ -195,8 +198,8 @@ export function useCoursePins() {
         .sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }))
       setCourseCache(prev => ({
         ...prev,
-        [pin.id]: { lat: result.course.lat, lon: result.course.lon, holes,
-          coverageNote: result.course.active ? result.coverage.note : 'This course is no longer present in the latest OSM catalogue.' },
+        [pin.id]: { lat: result.course.lat, lon: result.course.lon, holes, sourceUrl: result.course.source_url ?? null,
+          coverageNote: result.course.active ? result.coverage.note : 'This course is no longer present in the latest source catalogue.' },
       }))
       setCatalogueUpdatedAt(result.sync.completed_at)
     } catch (error) {
@@ -204,7 +207,13 @@ export function useCoursePins() {
     } finally {
       setCourseLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    for (const pin of pins) {
+      if (pin.courseId?.startsWith('pdga:')) void downloadCourseMap(pin)
+    }
+  }, [pins, downloadCourseMap])
 
   const getHolesForPin = (pin: ClientPin): ParsedHole[] | null => {
     return courseCache[pin.id]?.holes || null

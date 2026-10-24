@@ -153,12 +153,14 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
 
       <p className="bag-hint">
         Norway course catalogue · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors · ODbL</a>.
+        {' '}<a href="https://www.pdga.com/" target="_blank" rel="noopener noreferrer">Course data provided by PDGA</a>.
         {' '}Hole mapping may be incomplete; layout variants are not inferred.
         {catalogueUpdatedAt && <> Last synced {new Date(catalogueUpdatedAt).toLocaleDateString()}.</>}
       </p>
       <button type="button" onClick={exportCatalogue} disabled={exporting}>
         {exporting ? 'Exporting catalogue...' : 'Download ODbL course data'}
       </button>
+      <p className="bag-hint">The ODbL download contains OSM data only, not PDGA records. PDGA course details do not include hole layouts.</p>
       {exportError && <p role="alert">{exportError}</p>}
       {courseError && <p role="alert">{courseError} Please retry your search or load the holes again.</p>}
 
@@ -247,9 +249,9 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                   }}
                 >
                   {courseSuggestions.map(course => (
+                    <div key={course.id}>
                     <button
                       type="button"
-                      key={course.id}
                       onClick={() => handleSelectCourse(course)}
                       style={{
                         padding: '0.75rem',
@@ -269,8 +271,12 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                       </div>
                       <div style={{ fontSize: '0.85rem', color: 'var(--clr-muted)' }}>
                         {course.city} · {course.mapped_holes} mapped / {course.expected_holes ?? '?'} listed holes
+                        {' '}· {course.source === 'pdga' ? 'PDGA · layout unavailable' : 'OSM'}
                       </div>
                     </button>
+                    {course.source === 'pdga' && course.source_url && <a href={course.source_url}
+                      target="_blank" rel="noopener noreferrer">{course.name} on PDGA</a>}
+                    </div>
                   ))}
                 </div>
               )}
@@ -389,11 +395,13 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                 >
                   <div style={{ flex: 1 }}>
                     <h3 style={{ margin: '0 0 0.5rem', color: 'var(--clr-text)' }}>
-                      {pin.courseName}
+                      {pin.courseId?.startsWith('pdga:') && courseCache[pin.id]?.sourceUrl ?
+                        <a href={courseCache[pin.id].sourceUrl!} target="_blank"
+                          rel="noopener noreferrer">{pin.courseName}</a> : pin.courseName}
                     </h3>
                     <div style={{ fontSize: '0.9rem', color: 'var(--clr-muted)' }}>
                       Bag: {bag?.name || 'Unknown'}
-                      {holes && <span> · {holes.length} mapped holes</span>}
+                      {holes && <span> · {pin.courseId?.startsWith('pdga:') ? 'Layout unavailable' : `${holes.length} mapped holes`}</span>}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -433,8 +441,9 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                         >
                           🧭
                         </a>
-                        <a
-                          href={`https://www.openstreetmap.org/${pin.courseId.replace('osm:', '').replace(':', '/')}`}
+                        {(!pin.courseId.startsWith('pdga:') || courseCache[pin.id]?.sourceUrl) && <a
+                          href={pin.courseId.startsWith('pdga:') ? courseCache[pin.id].sourceUrl! :
+                            `https://www.openstreetmap.org/${pin.courseId.replace('osm:', '').replace(':', '/')}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           style={{
@@ -447,7 +456,7 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                           }}
                         >
                           🗺
-                        </a>
+                        </a>}
                       </>
                     )}
                     <button
@@ -471,8 +480,9 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                 {holes && (
                   <div style={{ marginTop: '1rem' }}>
                     <p className="bag-hint">{courseCache[pin.id]?.coverageNote}</p>
-                    {holes.length === 0 && <p>No confidently associated holes are available. This does not mean the course has no holes.</p>}
-                    <button
+                    {holes.length === 0 && !pin.courseId?.startsWith('pdga:') &&
+                      <p>No confidently associated holes are available. This does not mean the course has no holes.</p>}
+                    {holes.length > 0 && <button
                       onClick={() => setExpandedPinId(isExpanded ? null : pin.id)}
                       style={{
                         width: '100%',
@@ -486,7 +496,7 @@ export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
                       }}
                     >
                       {isExpanded ? '▼' : '▶'} Holes ({holes.length})
-                    </button>
+                    </button>}
                     {isExpanded && (
                       <div
                         style={{

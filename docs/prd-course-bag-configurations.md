@@ -82,6 +82,15 @@ These are draft criteria to refine and approve, not measured performance claims.
 Research checked: 2026-10-23. Provider availability, terms, and coverage require
 verification before implementation.
 
+Implementation update: approved PDGA REST access has been verified against
+Ekeberg. The application now has a separate SQL-backed PDGA directory path and
+provider-aware pins; live caching is still gated on agreement terms and secret
+provisioning. The documented endpoint supplies hole counts, not individual
+layouts. Layout/tee planning therefore remains a separate capability gate, not
+an inferred feature of the directory integration. The current course search uses
+the same-origin API backed by PostgreSQL, not browser Overpass requests. The
+repository observations below describe the earlier discovery baseline.
+
 ### Current repository
 
 `src/hooks/useCoursePins.ts` queries OpenStreetMap through Overpass endpoints.

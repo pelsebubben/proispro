@@ -3,10 +3,12 @@ import { readFile } from 'node:fs/promises'
 
 const bagId = '00000000-0000-4000-8000-000000000001'
 const pinId = '00000000-0000-4000-8000-000000000002'
-const course = { id: 'osm:way:123', name: 'Norway fixture course', city: 'Oslo', expected_holes: 18,
+const course = { id: 'osm:way:123', source: 'osm', source_url: null, name: 'Norway fixture course', city: 'Oslo', expected_holes: 18,
   mapped_holes: 2, lat: 60, lon: 10, active: true }
 const sync = { completed_at: '2026-10-24T12:00:00Z' }
-async function setup(page: Page, existing = false) {
+async function setup(page: Page, existing = false, pdga = false) {
+  const entry = pdga ? { ...course, id: 'pdga:4551', source: 'pdga', name: 'Ekeberg fixture course',
+    source_url: 'https://www.pdga.com/node/10000', mapped_holes: 0 } : course
   const state = { pins: existing ? [{ id: pinId, course_name: course.name, course_id: course.id, bag_id: bagId,
     created_at: sync.completed_at }] : [], failSearch: false, failHoles: false, empty: false, external: [] as string[] }
   await page.addInitScript(() => {
@@ -24,14 +26,16 @@ async function setup(page: Page, existing = false) {
     if (url.pathname === '/api/v1/bags') return route.fulfill({ json: { bags: [{ id: bagId, name: 'Main', disc_ids: [] }] } })
     if (url.pathname === '/api/v1/courses') return state.failSearch
       ? route.fulfill({ status: 503, json: { error: 'course_catalogue_not_synced' } })
-      : route.fulfill({ json: { courses: [course], sync } })
+      : route.fulfill({ json: { courses: [entry], sync } })
     if (url.pathname === '/api/v1/courses/export') return route.fulfill({ json: {
       courses: [course], holes: [], sync, attribution: { license: 'ODbL-1.0' },
     } })
     if (url.pathname.endsWith('/holes')) return state.failHoles
       ? route.fulfill({ status: 503, json: { error: 'service_unavailable' } })
-      : route.fulfill({ json: { course, sync, coverage: { note: 'OSM mapping may be incomplete. No tee/layout variants are inferred.' },
-        holes: state.empty ? [] : [
+      : route.fulfill({ json: { course: entry, sync, coverage: {
+        note: pdga ? 'PDGA supplies course details and a hole count, not individual layouts through this API. Hole-by-hole planning is unavailable for this source.' :
+          'OSM mapping may be incomplete. No tee/layout variants are inferred.' },
+        holes: state.empty || pdga ? [] : [
           { ref: '10', name: 'Long hole', par: 4, length_m: 180, geometry: [[10, 60], [10.001, 60.001]] },
           { ref: '2', name: 'Short hole', par: 3, length_m: 90, geometry: [[10, 60], [10.001, 60.001]] },
         ] } })
@@ -97,5 +101,25 @@ test('catalogue failures stay visible and empty mapping is not presented as a co
   state.failSearch = false
   await page.getByRole('textbox', { name: /Course Name/ }).fill('Norway fixture')
   await expect(page.getByRole('button', { name: /Norway fixture course.*mapped/ })).toBeVisible()
+  expect(state.external).toEqual([])
+})
+
+test('PDGA results link to the provider and a bag without inventing layouts, including after reload', async ({ page }) => {
+  const state = await setup(page, false, true)
+  await page.getByRole('button', { name: '+ Pin Course', exact: true }).click()
+  await page.getByRole('textbox', { name: /Course Name/ }).fill('Ekeberg')
+  await expect(page.getByRole('link', { name: 'Ekeberg fixture course on PDGA' })).toHaveAttribute('href', 'https://www.pdga.com/node/10000')
+  await page.getByRole('button', { name: /Ekeberg fixture course.*layout unavailable/ }).click()
+  await page.getByRole('button', { name: 'Save Pin', exact: true }).click()
+  await expect(page.getByText(/PDGA supplies course details/)).toBeVisible()
+  expect(state.pins[0].course_id).toBe('pdga:4551')
+  expect(state.pins[0].bag_id).toBe(bagId)
+  await page.reload()
+  await page.getByRole('navigation').getByRole('button', { name: /Courses/ }).click()
+  await expect(page.getByRole('heading', { name: 'Ekeberg fixture course' }).getByRole('link')).toHaveAttribute('href', 'https://www.pdga.com/node/10000')
+  await expect(page.getByText(/PDGA supplies course details/)).toBeVisible()
+  await expect(page.getByRole('button', { name: /Game Plan|Holes \(0\)/ })).toHaveCount(0)
+  await expect(page.getByText('· Layout unavailable', { exact: true })).toBeVisible()
+  expect(await page.locator('body').evaluate(body => body.scrollWidth <= innerWidth)).toBe(true)
   expect(state.external).toEqual([])
 })

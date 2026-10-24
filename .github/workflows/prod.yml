@@ -179,7 +179,7 @@ jobs:
           printf 'url=%s\nimage=%s\n' "$url" "$IMAGE" >> "$GITHUB_OUTPUT"
           for ((attempt=0; attempt<30; attempt++)); do
             if curl --fail --silent --max-time 15 "$url/health/ready" \
-              | jq -e --arg sha "$SOURCE_SHA" '.status == "ready" and .sourceSha == $sha and .schemaVersion == 4'; then
+              | jq -e --arg sha "$SOURCE_SHA" '.status == "ready" and .sourceSha == $sha and .schemaVersion == 5'; then
               identity_ready=$(curl --fail --silent --max-time 15 "$url/auth/config" | jq -er '.identityReady | tostring')
               printf 'identityReady=%s\n' "$identity_ready" >> "$GITHUB_OUTPUT"
               exit 0

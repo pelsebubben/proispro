@@ -4,7 +4,7 @@ import { testPdga } from '../../scripts/pdga-test.mjs'
 
 const credentials = { username: 'synthetic-user', password: 'synthetic-password-not-a-real-secret' }
 const session = { session_name: 'SSESS_fixture', sessid: 'synthetic-session', token: 'synthetic-csrf' }
-const course = { course_id: '123', course_name: 'Ekeberg fixture', holes: '18', latitude: '59.9', longitude: '10.7',
+const course = { course_id: '123', course_node_nid: '999', course_name: 'Ekeberg fixture', holes: '18', latitude: '59.9', longitude: '10.7',
   city: 'Oslo', country: 'Norway', contact_name: 'PRIVATE', contact_home_phone: 'PRIVATE', token: 'PRIVATE' }
 
 test('PDGA test uses fixed HTTPS API, bounded read-only searches, in-memory auth, and verified logout', async () => {
@@ -32,7 +32,7 @@ test('PDGA test uses fixed HTTPS API, bounded read-only searches, in-memory auth
   assert.equal(calls.length, 4)
   assert.equal(new URL(calls[1].url).searchParams.get('course_name'), 'Ekeberg')
   assert.equal(result.ekeberg[0].holes, 18)
-  assert.deepEqual(Object.keys(result.ekeberg[0]).sort(), ['city', 'country', 'holes', 'id', 'latitude', 'longitude', 'name'])
+  assert.deepEqual(Object.keys(result.ekeberg[0]).sort(), ['city', 'country', 'holes', 'id', 'latitude', 'longitude', 'name', 'source_url'])
   for (const value of [...Object.values(credentials), ...Object.values(session), 'PRIVATE']) {
     assert.ok(!JSON.stringify(result).includes(value))
   }

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 import { createPool } from './database.mjs'
 
-export const schemaVersion = 4
+export const schemaVersion = 5
 
 export async function migrate(pool, appPassword, appRole = 'griplock_app') {
   if (!appPassword || appPassword.length < 32) throw new Error('PGAPP_PASSWORD must contain at least 32 characters')
@@ -14,7 +14,7 @@ export async function migrate(pool, appPassword, appRole = 'griplock_app') {
     await client.query("SELECT pg_advisory_xact_lock(72491922)")
     await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
       version integer PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`)
-    for (const [index, file] of ['001_initial.sql', '002_features.sql', '003_disc_photos.sql', '004_course_catalog.sql'].entries()) {
+    for (const [index, file] of ['001_initial.sql', '002_features.sql', '003_disc_photos.sql', '004_course_catalog.sql', '005_pdga_catalog.sql'].entries()) {
       const sql = await readFile(new URL(`./migrations/${file}`, import.meta.url), 'utf8')
       const checksum = createHash('sha256').update(sql).digest('hex')
       const version = index + 1
@@ -46,6 +46,8 @@ export async function migrate(pool, appPassword, appRole = 'griplock_app') {
     await client.query(`GRANT SELECT ON schema_migrations TO ${appRole}`)
     await client.query(`GRANT USAGE ON SCHEMA course_catalog TO ${appRole}`)
     await client.query(`GRANT SELECT ON ALL TABLES IN SCHEMA course_catalog TO ${appRole}`)
+    await client.query(`GRANT USAGE ON SCHEMA pdga_catalog TO ${appRole}`)
+    await client.query(`GRANT SELECT ON ALL TABLES IN SCHEMA pdga_catalog TO ${appRole}`)
     await client.query('COMMIT')
   } catch (error) {
     await client.query('ROLLBACK')

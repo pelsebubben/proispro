@@ -77,7 +77,7 @@ The same API can serve a future mobile application.
 
 ## Deployment and operations
 
-First deploy the application/schema 4 using the existing release pipeline.
+First deploy the application/schema 5 using the existing release pipeline.
 Then run **Sync Norway course catalogue** (`.github/workflows/courses.yml`),
 select `dev`, and enable `configure`. New workflows must exist on the default
 branch before GitHub offers manual dispatch; a normal dev application deploy

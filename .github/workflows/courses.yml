@@ -10,7 +10,7 @@ on:
         default: dev
         required: true
       configure:
-        description: Provision or rotate the dedicated worker, then sync (requires deployed schema 4)
+        description: Provision or rotate the dedicated worker, then sync (requires deployed schema 5)
         type: boolean
         default: false
 
@@ -68,7 +68,7 @@ jobs:
           host=$(jq -er '.properties.template.containers[0].env[] | select(.name=="PGHOST") | .value' "$RUNNER_TEMP/course-app.json")
           environment=$(jq -er '.properties.environmentId // .properties.managedEnvironmentId' "$RUNNER_TEMP/course-app.json")
           url="https://$(jq -er '.properties.configuration.ingress.fqdn' "$RUNNER_TEMP/course-app.json")"
-          curl --fail --silent --max-time 30 "$url/health/ready" | jq -e '.status=="ready" and .schemaVersion==4'
+          curl --fail --silent --max-time 30 "$url/health/ready" | jq -e '.status=="ready" and .schemaVersion==5'
           sync_password=$(openssl rand -hex 32)
           echo "::add-mask::$sync_password"
           echo 'bootstrap_attempted=true' >> "$GITHUB_OUTPUT"
