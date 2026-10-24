@@ -92,7 +92,16 @@ test('real SQL catalogue is atomic, searchable, idempotent, and isolated from ru
 
 test('on-demand PDGA search does not create SQL content and ODbL exports exclude it', async t => {
   const admin = createPool()
-  t.after(() => admin.end())
+  let userId
+  t.after(async () => {
+    try {
+      if (userId) {
+        await admin.query('DELETE FROM course_pins WHERE user_id=$1', [userId])
+        await admin.query('DELETE FROM bags WHERE user_id=$1', [userId])
+        await admin.query('DELETE FROM app_users WHERE id=$1', [userId])
+      }
+    } finally { await admin.end() }
+  })
   await migrate(admin, process.env.PGAPP_PASSWORD, 'griplock_pdga_test_app')
   const reader = createPool({ ...process.env, PGUSER: 'griplock_pdga_test_app', PGPASSWORD: process.env.PGAPP_PASSWORD })
   t.after(() => reader.end())
@@ -128,7 +137,8 @@ test('on-demand PDGA search does not create SQL content and ODbL exports exclude
   assert.equal(exported.status, 200)
   assert.ok(exported.body.courses.every(c => c.id.startsWith('osm:')))
   assert.ok(!JSON.stringify(exported.body).includes('PDGA'))
-  const userId = (await admin.query("INSERT INTO app_users(issuer,subject) VALUES('pdga-fixture','test') RETURNING id")).rows[0].id
+  userId = (await admin.query("INSERT INTO app_users(issuer,subject) VALUES('pdga-fixture',$1) RETURNING id",
+    [randomBytes(16).toString('hex')])).rows[0].id
   const bag = (await admin.query("INSERT INTO bags(user_id,name) VALUES($1,'Fixture bag') RETURNING id", [userId])).rows[0]
   const writePin = async (body, rowId) => {
     let response
