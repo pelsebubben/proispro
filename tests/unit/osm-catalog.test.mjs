@@ -58,6 +58,9 @@ test('a hole segment crossing outside a concave boundary is not assigned despite
   const result = normalizeNorway(fixture)
   assert.equal(result.holes.length, 0)
   assert.equal(result.report.unassociatedHoles, 1)
+  // Boundary-touching paths are withheld conservatively, including collinear vertices.
+  fixture.elements.at(-1).geometry = [{ lat: 60.002, lon: 10.001 }, { lat: 60.002, lon: 10.005 }]
+  assert.equal(normalizeNorway(fixture).holes.length, 0)
 })
 
 test('rejects partial, stale, invalid metadata and out-of-region snapshots', () => {
@@ -74,7 +77,7 @@ test('rejects partial, stale, invalid metadata and out-of-region snapshots', () 
   }
 })
 
-test('bounded fetch retries a provider failure and rejects incomplete results from both providers', async () => {
+test('bounded fetch retries a provider failure and rejects incomplete results from all fixed providers', async () => {
   let calls = 0
   const fixture = norwayFixture()
   const result = await fetchNorwaySnapshot(async (url, options) => {
@@ -86,6 +89,11 @@ test('bounded fetch retries a provider failure and rejects incomplete results fr
   })
   assert.equal(calls, 2)
   assert.equal(result.elements.length, fixture.elements.length)
-  await assert.rejects(fetchNorwaySnapshot(async () => Response.json({ remark: 'timeout', elements: [] })),
+  const failedHosts = []
+  await assert.rejects(fetchNorwaySnapshot(async url => {
+    failedHosts.push(new URL(url).host)
+    return Response.json({ remark: 'timeout', elements: [] })
+  }),
     /existing catalogue unchanged/)
+  assert.deepEqual(failedHosts, ['overpass-api.de', 'overpass.kumi.systems', 'overpass.private.coffee'])
 })

@@ -36,7 +36,7 @@ are not rewritten by a sync.
 
 ## Architecture and security
 
-`server/osm-catalog.mjs` bounds external requests to two fixed HTTPS Overpass
+`server/osm-catalog.mjs` bounds external requests to three fixed HTTPS Overpass
 providers, 115 seconds/provider, and 32 MiB. Redirects and partial/error responses
 are rejected. Source IDs, versions, timestamps, and hole geometry are retained;
 contributor usernames and other unrelated OSM metadata are not stored.

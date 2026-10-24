@@ -11,7 +11,8 @@ area["ISO3166-1"="NO"]["admin_level"="2"]->.no;
  way(area.no)["disc_golf"="hole"];);
 out meta geom;`
 
-const endpoints = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']
+const endpoints = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter']
 const maxBytes = 32 * 1024 * 1024
 const key = element => `osm:${element.type}:${element.id}`
 const text = (value, max) => typeof value === 'string' ? value.trim().slice(0, max) : ''
@@ -45,7 +46,9 @@ function containsPath(ring, path) {
     for (let j = 1; j < ring.length; j++) {
       const a = path[i - 1], b = path[i], c = ring[j - 1], d = ring[j]
       // Reject a crossing even when both endpoints lie inside a concave boundary.
-      if (cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0) return false
+      if (Math.max(a.lat, b.lat) >= Math.min(c.lat, d.lat) && Math.max(c.lat, d.lat) >= Math.min(a.lat, b.lat) &&
+          Math.max(a.lon, b.lon) >= Math.min(c.lon, d.lon) && Math.max(c.lon, d.lon) >= Math.min(a.lon, b.lon) &&
+          cross(a, b, c) * cross(a, b, d) <= 0 && cross(c, d, a) * cross(c, d, b) <= 0) return false
     }
   }
   return true
