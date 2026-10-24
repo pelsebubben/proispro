@@ -51,6 +51,19 @@ pencil button opens Edit Disc.
 Discs without a photo show a generated stock illustration, not a manufacturer
 photograph. [Catalogue sources](docs/disc-catalog.md) explains why.
 
+## Bag configurations
+
+Create Bag opens an in-page name form, not a browser prompt. Select a saved bag
+from the configuration selector. Its disc list uses the same type groups,
+sorting, search and photo preview as Inventory List. Switch to All inventory
+and check discs to include them; uncheck to remove them from this configuration.
+Changes save immediately, with a saving indicator and visible failures.
+The same inventory entry can be included in multiple configurations. Membership
+does not allocate inventory quantities or move discs out of other configurations.
+Rename, flight chart, recent history and an in-page deletion confirmation are
+available beside the configuration name. Deleting a configuration removes its
+course links and history, never its inventory discs.
+
 ## Local development
 
 Install Node 22 and PostgreSQL (or use the included Docker Compose configuration).

@@ -3,7 +3,7 @@ import { createRow, deleteRows, listRows, subscribeToChanges, updateRow } from '
 import { useAuth } from '../contexts/AuthContext'
 import { ClientBag, ClientDisc } from '../utils/disc'
 
-interface BagHistoryEntry {
+export interface BagHistoryEntry {
   id: string
   bag_id: string
   disc_id: string
@@ -27,17 +27,24 @@ export function formatHistoryTime(ts: string): string {
 export function useBags() {
   const { user } = useAuth()
   const [bags, setBags] = useState<ClientBag[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   const loadBags = useCallback(async () => {
-    if (!user) return
-    const data = await listRows<ClientBag>('bags')
-    setBags(
-      (data || []).map(b => ({
+    if (!user) { setBags([]); setIsLoading(false); return }
+    try {
+      const data = await listRows<ClientBag>('bags')
+      setBags(data.map(b => ({
         id: b.id,
         name: b.name || '',
         disc_ids: Array.isArray(b.disc_ids) ? b.disc_ids : [],
-      }))
-    )
+      })))
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Failed to load bags')
+    } finally {
+      setIsLoading(false)
+    }
   }, [user])
 
   useEffect(() => {
@@ -46,18 +53,20 @@ export function useBags() {
   }, [loadBags])
 
   const createBag = async (name: string) => {
-    if (!user) return
+    if (!user) throw new Error('Please sign in before creating a bag.')
     const newBag: ClientBag = {
       id: crypto.randomUUID(),
       name,
       disc_ids: [],
     }
-    await createRow('bags', {
+    const saved = await createRow<ClientBag>('bags', {
       id: newBag.id,
       name: newBag.name,
       disc_ids: [],
     })
-    setBags(prev => [...prev, newBag])
+    // A change notification can reload the new bag before this request returns.
+    setBags(prev => [...prev.filter(b => b.id !== saved.id), saved])
+    return saved
   }
 
   const renameBag = async (id: string, name: string) => {
@@ -100,6 +109,8 @@ export function useBags() {
 
   return {
     bags,
+    isLoading,
+    error,
     loadBags,
     createBag,
     renameBag,
