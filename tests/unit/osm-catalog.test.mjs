@@ -34,6 +34,21 @@ test('only uniquely containing closed course boundaries associate unreferenced h
   assert.equal(result.holes.length, 2)
 })
 
+test('standard sport-tagged courses are imported but explicitly tagged course equipment is excluded', () => {
+  const fixture = norwayFixture()
+  const base = { type: 'node', version: 1, timestamp: fixture.osm3s.timestamp_osm_base, lat: 60, lon: 10 }
+  fixture.elements.push({ ...base, id: 800, tags: { sport: 'disc_golf', leisure: 'pitch', name: 'Sport-tagged course' } })
+  for (const [index, kind] of ['hole', 'tee', 'basket', 'target'].entries()) {
+    fixture.elements.push({ ...base, id: 801 + index,
+      tags: { sport: 'disc_golf', leisure: 'disc_golf_course', disc_golf: kind, name: `Equipment ${kind}` } })
+  }
+  const result = normalizeNorway(fixture)
+  assert.equal(result.courses.length, 14)
+  assert.equal(result.courses.find(c => c.id === 'osm:node:800').name, 'Sport-tagged course')
+  assert.equal(result.courses.some(c => c.name.startsWith('Equipment')), false)
+  assert.match(norwayQuery, /nwr\(area\.no\)\["sport"="disc_golf"\]/)
+})
+
 test('duplicate hole numbers and missing refs are reported, never invented or silently overwritten', () => {
   const fixture = norwayFixture()
   fixture.elements.find(e => e.id === 102).tags.ref = '1'

@@ -5,7 +5,8 @@
 The catalogue uses OpenStreetMap only. It does not import UDisc data, identifiers,
 layouts, or data from a UDisc subscriber account.
 
-A complete Norway-area Overpass query, run from Azure on 2026-10-24, returned:
+The initial Norway-area query using `leisure=disc_golf_course` and course
+relations, run from Azure on 2026-10-24, returned the following baseline:
 
 | Measure | Count |
 |---|---:|
@@ -25,6 +26,13 @@ These are **OSM object counts, not all Norwegian courses or verified distinct
 facilities**. A node and area can describe the same facility. Matching a stated
 hole count does not certify layout completeness, accuracy, or current availability.
 Sync reports remain available through the API and structured worker logs.
+
+The importer also accepts the standard `sport=disc_golf` tagging (including
+`leisure=pitch`). Explicit `disc_golf=hole/tee/basket/target` objects are excluded
+from course results even if they also carry course-level tags. The initial
+baseline above predates this expanded selection; use the latest successful
+sync report for current counts. Missing popular courses are not proof that
+they do not exist, and no entries are fabricated to fill source gaps.
 
 Hole membership requires explicit course-relation membership or a single closed
 course-way boundary containing the entire hole path. Nearby holes, tees, or

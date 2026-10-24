@@ -7,6 +7,7 @@ export const osmAttribution = {
 export const norwayQuery = `[out:json][timeout:90];
 area["ISO3166-1"="NO"]["admin_level"="2"]->.no;
 (nwr(area.no)["leisure"="disc_golf_course"];
+ nwr(area.no)["sport"="disc_golf"];
  relation(area.no)["type"="disc_golf_course"];
  way(area.no)["disc_golf"="hole"];);
 out meta geom;`
@@ -98,8 +99,10 @@ export function normalizeNorway(snapshot, now = Date.now()) {
     if (elements.has(key(element))) throw new Error('Duplicate OSM element')
     elements.set(key(element), element)
   }
-  const candidates = [...elements.values()].filter(e => e.tags?.leisure === 'disc_golf_course' ||
-    (e.type === 'relation' && e.tags?.type === 'disc_golf_course'))
+  const candidates = [...elements.values()].filter(e =>
+    !['hole', 'tee', 'basket', 'target'].includes(e.tags?.disc_golf) &&
+    (e.tags?.leisure === 'disc_golf_course' || e.tags?.sport === 'disc_golf' ||
+      (e.type === 'relation' && e.tags?.type === 'disc_golf_course')))
   const courses = []
   const sourceCourses = new Map()
   let skippedCourses = 0
