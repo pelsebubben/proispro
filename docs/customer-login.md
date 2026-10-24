@@ -58,6 +58,30 @@ service remains untouched.
 
 ## Production identity configuration
 
+### Production website domain
+
+`infra/app.bicep` retains the `griplock.no` hostname and SNI binding on the live
+app only. It references the existing Azure-managed certificate
+`griplock.no-cae-grip-261024191340` under the supplied Container Apps environment.
+Azure owns issuance and automatic renewal; the template does not replace the
+certificate or create a domain on dev. The certificate must finish provisioning
+before deploying the binding. If the environment or certificate is deliberately
+replaced, update this reference as part of that migration.
+
+The public `griplock.no` DNS zone is in resource group `p-dns`, subscription
+`test-security-cdc`, separate from the app subscription. Keep its apex A record
+pointing at the existing environment's static inbound IP `57.174.102.41` and its
+`asuid` TXT verification record. These externally managed DNS records, mail
+records and Entra settings are not modified by the application release template.
+Deleting/recreating the environment can change the IP and verification value.
+
+The Griplock Web registration must allow the SPA redirect `https://griplock.no/`.
+Keep the Azure-origin redirect during transition. Browser login and logout use
+the current origin; this website hostname does not change the API audience,
+scope, issuer, client registrations or Google-to-Entra federation callback.
+After release, check HTTPS, login/logout and an authenticated inventory request
+at the custom origin. Do not remove the Azure redirect until that succeeds.
+
 The owner configured the **Griplock Customers** external tenant
 (`23ed0ae8-6f57-46c5-9b6b-bc223a923224`). Its separate **Griplock Web** and
 **Griplock API** registrations use v2 tokens, SPA redirect URIs and the delegated
