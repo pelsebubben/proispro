@@ -36,15 +36,23 @@ The owner approved starting fresh. The schema uses application-owned `app_users`
 and PostgreSQL RLS; no old records or identities are copied. The retired remote
 service remains untouched.
 
-## External configuration still needed
+## Production identity configuration
 
-Directory discovery on 2026-10-23 exposed only the workforce directory
-`07d87066-942e-4072-8596-36dd123efc1b`, named `demotroll`, and no Griplock app
-registration. No customer tenant, Google credentials, accounts or new directory
-permissions were created. An inaccessible existing customer tenant may still
-exist; do not assume discovery proves otherwise.
+The owner configured the **Griplock Customers** external tenant
+(`23ed0ae8-6f57-46c5-9b6b-bc223a923224`). Its separate **Griplock Web** and
+**Griplock API** registrations use v2 tokens, SPA redirect URIs and the delegated
+`access_as_user` permission, with tenant-wide admin consent already granted.
+The **GriplockSignIn** user flow is associated with the Web registration and
+offers Google and email/password sign-in. The seven public runtime values below
+are stored in the GitHub `prod` environment; Google's client secret remains
+only in the identity-provider configuration, and the browser needs no secret.
 
-Continue the previously agreed Entra External ID customer-tenant approach:
+The existing release workflow consumes these values. After changing them, run
+**Release Griplock prod** on `main` to deploy the configuration; editing a GitHub
+variable alone does not update a running revision. The shared dev deployment
+continues to use its passcode login instead of customer identity.
+
+For a replacement tenant or application registration, use the same setup:
 
 1. Select the existing **external/customer** tenant, or explicitly authorize a
    new one. Do not use `/common` or a workforce guest invitation as a substitute
@@ -63,8 +71,7 @@ Continue the previously agreed Entra External ID customer-tenant approach:
 5. Obtain issuer and JWKS URL from that tenant's OpenID discovery document.
    Do not guess them or use Microsoft Graph access tokens as app API tokens.
 
-Configure these nonsecret variables in the GitHub environment `prod`. The live
-release passes the same values to the dev app:
+Configure these nonsecret variables in the GitHub environment `prod`:
 
 | Variable | Value |
 |----------|-------|
@@ -80,6 +87,26 @@ All seven values must be supplied together, or all absent. No authentication
 secret is needed in GitHub or in the app for this public-client PKCE flow.
 Current support intentionally uses the standard `ciamlogin.com` host; custom
 identity domains need separate validation before changing that contract.
+
+Use the canonical tenant-ID authority
+`https://23ed0ae8-6f57-46c5-9b6b-bc223a923224.ciamlogin.com/23ed0ae8-6f57-46c5-9b6b-bc223a923224`
+and obtain issuer and JWKS URL from its `/v2.0/.well-known/openid-configuration`.
+Discovery through the friendly `griplockcustomers.ciamlogin.com` hostname
+returns a tenant-ID issuer but a friendly-hostname JWKS URL. Mixing those
+origins is intentionally rejected by the app. Using the canonical hostname
+for all three endpoints preserves the exact-issuer and same-origin checks.
+
+The Google OAuth client's **Authorized redirect URIs** must also include the
+callback for that canonical hostname, exactly (without a trailing slash):
+
+```text
+https://23ed0ae8-6f57-46c5-9b6b-bc223a923224.ciamlogin.com/23ed0ae8-6f57-46c5-9b6b-bc223a923224/federation/oauth2
+```
+
+This is Google's callback to Entra, not the browser app's SPA redirect to
+Griplock. If only a friendly-hostname callback is registered, Google rejects
+the canonical-hostname flow with `redirect_uri_mismatch`. Keep any existing
+callbacks needed by other clients.
 
 Deploy normally after configuring the tenant. `/auth/config` returns only public
 runtime configuration; `/runtime-config.js` delivers the same configuration with
