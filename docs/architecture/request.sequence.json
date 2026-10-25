@@ -7,7 +7,7 @@
     "locale": "en",
     "output": "architecture-report/request.html",
     "quality_profile": "showcase",
-    "viewBox": [1080, 680],
+    "viewBox": [1080, 690],
     "column_fit": "spread"
   },
   "participants": [
@@ -19,17 +19,17 @@
   ],
   "messages": [
     {"id": "get", "from": "browser", "to": "http", "y": 160, "label": "GET discs + bearer", "variant": "emphasis"},
-    {"id": "jwks", "from": "http", "to": "keys", "y": 200, "label": "JWKS if needed", "variant": "security"},
-    {"id": "key", "from": "keys", "to": "http", "y": 240, "label": "Verification keys", "variant": "return"},
-    {"id": "map-user", "from": "http", "to": "db", "y": 280, "label": "Map verified issuer + subject", "variant": "security"},
-    {"id": "app-owner", "from": "db", "to": "http", "y": 320, "label": "Application-owned user ID", "variant": "return"},
-    {"id": "dispatch", "from": "http", "to": "feature", "y": 360, "label": "Dispatch with userId", "variant": "emphasis"},
-    {"id": "read", "from": "feature", "to": "db", "y": 400, "label": "BEGIN; owner; SELECT", "variant": "security"},
-    {"id": "rows", "from": "db", "to": "feature", "y": 440, "label": "RLS-filtered rows", "variant": "return"},
-    {"id": "commit", "from": "feature", "to": "db", "y": 480, "label": "COMMIT"},
-    {"id": "done", "from": "db", "to": "feature", "y": 520, "label": "Transaction ends", "variant": "return"},
-    {"id": "json", "from": "feature", "to": "http", "y": 560, "label": "Owner-only result", "variant": "return"},
-    {"id": "response", "from": "http", "to": "browser", "y": 600, "label": "200 JSON", "variant": "return"}
+    {"id": "jwks", "from": "http", "to": "keys", "y": 198, "label": "JWKS if needed", "variant": "security"},
+    {"id": "key", "from": "keys", "to": "http", "y": 236, "label": "Verification keys", "variant": "return"},
+    {"id": "map-user", "from": "http", "to": "db", "y": 274, "label": "Map verified issuer + subject", "variant": "security"},
+    {"id": "app-owner", "from": "db", "to": "http", "y": 312, "label": "Application-owned user ID", "variant": "return"},
+    {"id": "dispatch", "from": "http", "to": "feature", "y": 350, "label": "Dispatch with userId", "variant": "emphasis"},
+    {"id": "read", "from": "feature", "to": "db", "y": 388, "label": "BEGIN; owner; SELECT", "variant": "security"},
+    {"id": "rows", "from": "db", "to": "feature", "y": 426, "label": "RLS-filtered rows", "variant": "return"},
+    {"id": "commit", "from": "feature", "to": "db", "y": 464, "label": "COMMIT"},
+    {"id": "done", "from": "db", "to": "feature", "y": 502, "label": "Transaction ends", "variant": "return"},
+    {"id": "json", "from": "feature", "to": "http", "y": 540, "label": "Owner-only result", "variant": "return"},
+    {"id": "response", "from": "http", "to": "browser", "y": 578, "label": "200 JSON", "variant": "return"}
   ],
   "cards": [
     {"dot": "rose", "title": "Before dispatch", "items": ["Signature, issuer, audience and delegated scope verified", "Missing/invalid tokens return 401; missing scope returns 403", "JWKS lookup is conditional; signature verification is local"]},
