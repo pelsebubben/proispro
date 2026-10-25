@@ -43,6 +43,16 @@ test('malformed optional claims are skipped without losing a valid email', () =>
     { email: undefined, name: undefined })
 })
 
+test('placeholder display names never become the customer label', () => {
+  for (const name of ['unknown', ' UNKNOWN ', 'Unknown', technical]) {
+    assert.deepEqual(customerProfile({ name, idTokenClaims: { name } }),
+      { email: undefined, name: undefined })
+    assert.deepEqual(customerProfile({ name: 'Google Golfer', idTokenClaims: { name, email: 'golfer@example.test' } }),
+      { email: 'golfer@example.test', name: 'Google Golfer' })
+  }
+  assert.equal(customerProfile({ name: 'Unknown Player' }).name, 'Unknown Player')
+})
+
 test('the actual Entra client keeps the API user ID when the display profile changes', async () => {
   const originalFetch = globalThis.fetch
   const originalWindow = globalThis.window
@@ -83,6 +93,9 @@ test('the actual Entra client keeps the API user ID when the display profile cha
     assert.deepEqual(await entraUser(), { id: fixture.userId, email: 'first@example.test', name: 'First Name' })
     fixture.account.idTokenClaims = { email: 'updated@example.test', name: 'Updated Name' }
     assert.deepEqual(await entraUser(), { id: fixture.userId, email: 'updated@example.test', name: 'Updated Name' })
+    fixture.account.idTokenClaims = { name: 'unknown' }
+    assert.deepEqual(await entraUser(), { id: fixture.userId, email: undefined, name: undefined })
+    fixture.account.idTokenClaims = { email: 'updated@example.test', name: 'Updated Name' }
     fixture.userId = '33333333-3333-4333-8333-333333333333'
     assert.equal((await entraUser()).id, fixture.userId, 'same email cannot override a different API identity')
     fixture.status = 401

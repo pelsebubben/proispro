@@ -49,12 +49,85 @@ inventory, and two identities are never linked just because their emails match.
 
 The customer sign-in screen redirects to the customer tenant's hosted user flow;
 Google is selected/configured there. Failed/cancelled login is visible.
+Before redirecting, Griplock explains Google and email-account registration,
+identifies the hosted page as **Griplock Customers**, and explains why returning
+Google users should keep using Google rather than creating a separate email
+identity. The customer instructions are hidden for dev login and when customer
+identity is unconfigured.
 Signed-in users see the real inventory, bags, collections, wishlist, sale,
 course and analytics screens, all backed by the authenticated Node API.
 
 The owner approved starting fresh. The schema uses application-owned `app_users`
 and PostgreSQL RLS; no old records or identities are copied. The retired remote
 service remains untouched.
+
+### Account labels and hosted-page trust
+
+Reusable upload-ready branding assets are in `public/img/entra-branding/`.
+They preserve the artwork's proportions on a white background; the original
+`img/logo.png` and `public/img/logo.png` are unchanged.
+
+| Entra branding field | File | Dimensions | Upload limit |
+|----------------------|------|------------|--------------|
+| Banner logo | `griplock-banner.png` | 245 × 36 px | 50 KB |
+| Square logo (light and dark) | `griplock-square.png` | 240 × 240 px | 50 KB |
+| Favicon | `griplock-favicon.png` | 32 × 32 px | 5 KB |
+| Background image (optional) | `griplock-background.jpg` | 1920 × 1080 px | 300 KB |
+
+There are two distinct surfaces: Griplock's account header, and the
+Microsoft-hosted **Pick an account** page. The app rejects the exact placeholder
+display name `unknown` (case-insensitive), uses a real email/name when available,
+and otherwise displays **Signed in**. This changes presentation only, not the
+API user ID, authentication or account ownership. It cannot change a name in
+Microsoft's account picker: that page and its remembered labels are outside
+the application's DOM.
+
+Tenant-side follow-up is required to fix the screenshot's hosted picker:
+
+1. In the **Griplock Customers** external tenant, inspect the affected customer's
+   display name under **Users**. If it is missing or `unknown`, correct it to a
+   name confirmed by that customer. Do not delete/recreate the user or link
+   identities by email; that can disconnect an existing inventory.
+2. In **External Identities > User flows > GriplockSignIn > User attributes**,
+   review collection of **Display Name** for new registrations. Check a fresh
+   Google sign-up as well as an email sign-up; do not assume Google supplies a
+   usable name or that collecting a name repairs existing users. Token claim
+   configuration and the directory display name are separate concerns.
+3. In **Entra ID > Custom Branding > Default sign-in > Edit**, add the Griplock
+   banner/square logo and descriptive **Sign-in page text**. Suggested text:
+   "Welcome to Griplock. Continue with Google, or sign in with your Griplock
+   email account. New here? Choose Create one. Already used Google? Choose
+   Google again to return to your bag."
+4. Review the tenant name under **Tenant properties**. Keep the app's explanation
+   in sync if the hosted banner changes from **Griplock Customers** to **Griplock**.
+   Branding applies across the tenant, so review existing apps before saving.
+
+These are administrative identity changes, not effects of deploying this repo.
+After an approved change, start a fresh browser sign-in and check the remembered
+picker again; its previous session can retain an old label. Verify both an
+existing Google account (same inventory after refresh) and a new registration,
+then sign out. Do not describe the hosted `unknown` label as fixed until this
+real-provider check passes. No tenant branding or customer records were modified
+by the application-side UX change.
+
+### Does a Microsoft account work?
+
+Not automatically. The configured flow offers **Google** and **email/password**,
+not federated Microsoft account sign-in. An Outlook/Hotmail address can register
+a separate Griplock email/password account; its password is the Griplock account
+password, not the person's Microsoft password. Work/school Microsoft federation
+is also not currently offered. Never advertise "Continue with Microsoft" just
+because Entra hosts the screen.
+
+Personal Microsoft account federation requires a separately configured OIDC
+identity provider and enabling it in this user flow. This is a tenant/provider
+change, not a new label on the existing email field. If approved and implemented
+later, update the app's help copy and verify returning-account behavior before
+advertising the option.
+
+References: [External tenant branding](https://learn.microsoft.com/entra/external-id/customers/how-to-customize-branding-customers),
+[user flow attributes and sign-in methods](https://learn.microsoft.com/entra/external-id/customers/how-to-user-flow-sign-up-sign-in-customers),
+and [Microsoft account federation](https://learn.microsoft.com/entra/external-id/customers/how-to-microsoft-accounts-federation-customers).
 
 ## Production identity configuration
 
