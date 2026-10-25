@@ -31,7 +31,7 @@ function commit(root) {
   return git(root, 'rev-parse', 'HEAD')
 }
 
-test('the committed architecture ledger covers actual sources and all three views', async () => {
+test('the reviewed architecture ledger covers actual sources and all three views', async () => {
   const { snapshot, specs } = await checkArchitecture(repository)
   assert.deepEqual(specs.map(spec => spec.type), ['architecture', 'sequence', 'workflow'])
   for (const path of ['src/App.tsx', 'server/database.mjs', 'server/migrations/008_named_gameplans.sql',

@@ -1,5 +1,20 @@
 # Architecture review history
 
+## 2026-10-25 - Decouple documentation from production
+
+Moved architecture checks, their contract tests and rendering into an independent
+PR/main/manual workflow. Required CI still gates application, browser, API and
+infrastructure checks; production starts from the exact successful main CI SHA
+without waiting for or rebuilding documentation. Main documentation artifacts
+retain exact-commit provenance. Documentation failures stay visible rather than
+being masked with continue-on-error. Updated the delivery drawing and source
+citations. No runtime, schema or cloud-resource change.
+
+Separated the shell assignment/export to preserve renderer-path failures and
+avoid ShellCheck SC2155. The documentation runner uses Ubuntu 22.04 rather than
+the Ubuntu 24.04 runner whose AppArmor policy prevented Chromium sandbox startup.
+The renderer's browser inspection gate remains enabled.
+
 ## 2026-10-25 - First-version maintenance baseline
 
 Reviewed the React/Node composition, MSAL/JWT ownership path, resource/planner

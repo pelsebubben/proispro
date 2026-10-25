@@ -49,10 +49,10 @@ function checkTrustBoundary(files) {
   for (const job of Object.values(ci.jobs).filter(job => !job.uses)) assert.equal(job['runs-on'], 'ubuntu-24.04')
   assert.ok(Object.hasOwn(ci.on, 'pull_request'))
   assert.equal(ci.on.pull_request, null, 'all PR changes get the same required check')
-  assert.deepEqual(ci.jobs.required.needs, ['application', 'browser', 'api', 'infrastructure', 'architecture'])
+  assert.deepEqual(ci.jobs.required.needs, ['application', 'browser', 'api', 'infrastructure'])
   assert.equal(ci.jobs.required.if, '${{ always() }}')
   const requiredGuard = ci.jobs.required.steps[0].run
-  for (const result of ['APPLICATION', 'BROWSER', 'API', 'INFRASTRUCTURE', 'ARCHITECTURE']) {
+  for (const result of ['APPLICATION', 'BROWSER', 'API', 'INFRASTRUCTURE']) {
     assert.ok(requiredGuard.includes(`test "$${result}" = success`), `required gate checks ${result}`)
   }
   for (const name of ['application', 'browser', 'api', 'infrastructure']) {
@@ -158,43 +158,55 @@ function checkTrustBoundary(files) {
   const verification = staging.jobs.browser.steps.findIndex(step => step.run === 'npm run test:staging')
   assert.ok(recording > verification && verification >= 0, 'record only after deployed tests pass')
   assert.equal(staging.jobs.browser.steps[recording].run, 'node scripts/record-staging-release.mjs')
-  assert.equal(ci.jobs.architecture.uses, './.github/workflows/architecture.yml')
-  assert.deepEqual(ci.jobs.architecture.with, {
-    source_sha: '${{ github.sha }}',
-    base_sha: "${{ github.event.pull_request.base.sha || github.event.before || '' }}",
-  })
-  assert.equal(ci.jobs.required.steps[0].env.ARCHITECTURE, '${{ needs.architecture.result }}')
-  assert.equal(staging.jobs.architecture.uses, './.github/workflows/architecture.yml')
-  assert.equal(staging.jobs.architecture.with.source_sha, '${{ github.event.workflow_run.head_sha || github.sha }}')
-  assert.equal(staging.jobs.architecture.if, staging.jobs.build.if)
-  assert.equal(staging.jobs.build.needs, 'architecture', 'documentation failure blocks publication and migrations')
+  assert.equal(ci.jobs.architecture, undefined, 'docs run independently of application CI')
+  assert.equal(ci.jobs.required.steps[0].env.ARCHITECTURE, undefined)
+  assert.equal(staging.jobs.architecture, undefined, 'production never regenerates drawings')
+  assert.equal(staging.jobs.build.needs, undefined, 'documentation cannot delay the trusted build')
   const architecture = workflows['architecture.yml']
-  assert.deepEqual(Object.keys(architecture.on), ['workflow_call'])
-  assert.equal(architecture.on.workflow_call.inputs.source_sha.required, true)
+  assert.deepEqual(Object.keys(architecture.on), ['pull_request', 'push', 'workflow_dispatch'])
+  assert.equal(architecture.on.pull_request, null)
+  assert.deepEqual(architecture.on.push.branches, ['main'])
+  assert.deepEqual(architecture.concurrency, {
+    group: 'architecture-${{ github.event.pull_request.number || github.ref }}',
+    'cancel-in-progress': true,
+  })
   assert.deepEqual(architecture.permissions, { contents: 'read' })
   assert.deepEqual(Object.keys(architecture.jobs), ['diagrams'])
   const diagrams = architecture.jobs.diagrams
-  assert.equal(diagrams['runs-on'], 'ubuntu-24.04')
+  assert.equal(diagrams['runs-on'], 'ubuntu-22.04', 'use a runner without Ubuntu 24 Chromium user-namespace restrictions')
   assert.equal(diagrams.environment, undefined)
   assert.equal(diagrams.permissions, undefined)
-  assert.equal(diagrams.steps[0].with.ref, '${{ inputs.source_sha }}')
+  assert.equal(diagrams.steps[0].with.ref, '${{ github.sha }}')
   assert.equal(diagrams.steps[0].with['fetch-depth'], 0)
   const reviewIndex = diagrams.steps.findIndex(step => step.run === 'npm run docs:check -- --base "$BASE_SHA"')
   const toolIndex = diagrams.steps.findIndex(step => step.with?.repository === 'tt-a1i/archify')
   const renderIndex = diagrams.steps.findIndex(step => step.run?.includes('npm run docs:build'))
   assert.ok(reviewIndex > 0 && toolIndex > reviewIndex && renderIndex > toolIndex)
-  assert.deepEqual(diagrams.steps[reviewIndex].env, { BASE_SHA: '${{ inputs.base_sha }}' })
+  assert.ok(diagrams.steps.some(step => step.run === 'npm run test:docs'))
+  assert.deepEqual(diagrams.steps[reviewIndex].env, {
+    BASE_SHA: "${{ github.event.pull_request.base.sha || github.event.before || '' }}",
+  })
   assert.equal(diagrams.steps[toolIndex].with.ref, '51a291770851ad27a400cca73c753c166b5e0c65')
   assert.ok(diagrams.steps.some(step => step.run === 'npx --no-install playwright install --with-deps chromium'))
   const artifact = diagrams.steps.find(step => step.uses?.startsWith('actions/upload-artifact@'))
   assert.equal(artifact.with.path, 'architecture-report/')
-  assert.equal(artifact.with.name, 'architecture-${{ inputs.source_sha }}-${{ github.run_id }}')
+  assert.equal(artifact.with.name, 'architecture-${{ github.sha }}-${{ github.run_id }}')
   assert.equal(artifact.with['if-no-files-found'], 'error')
   assert.ok(!/secrets\.|azure\/login|id-token:/.test(files['architecture.yml']), 'read-only documentation boundary')
 }
 
 test('delivery workflows enforce their source-level trust and deployment contracts', () => {
   checkTrustBoundary(sources)
+})
+
+test('documentation content checks run outside application unit tests', async () => {
+  const manifest = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'))
+  assert.equal(manifest.scripts['test:unit'], 'node --test tests/unit/*.test.mjs')
+  assert.equal(manifest.scripts['test:docs'], 'node --test tests/docs/*.test.mjs')
+  const unitFiles = await readdir(new URL('./', import.meta.url))
+  assert.ok(!unitFiles.includes('architecture-docs.test.mjs'), 'stale documentation must not fail application CI')
+  const docsFiles = await readdir(new URL('../docs/', import.meta.url))
+  assert.ok(docsFiles.includes('architecture-docs.test.mjs'), 'retain independent documentation contract coverage')
 })
 
 test('gates reject real workflow mutations that grant PR OIDC or remove apply protection', () => {
@@ -204,11 +216,12 @@ test('gates reject real workflow mutations that grant PR OIDC or remove apply pr
     ['infra.yml', 'test "$ENABLED" = true', 'echo enabled'],
     ['ci.yml', 'test "$BROWSER" = success', 'echo browser-skipped'],
     ['ci.yml', 'test "$API" = success', 'echo api-skipped'],
-    ['ci.yml', 'test "$ARCHITECTURE" = success', 'echo docs-skipped'],
-    ['ci.yml', 'infrastructure, architecture]', 'infrastructure]'],
-    ['prod.yml', '    needs: architecture', '    needs: []'],
-    ['prod.yml', '      source_sha: ${{ github.event.workflow_run.head_sha || github.sha }}', '      source_sha: main'],
-    ['architecture.yml', '          ref: ${{ inputs.source_sha }}', '          ref: main'],
+    ['ci.yml', 'browser, api, infrastructure]', 'browser, api, infrastructure, architecture]'],
+    ['ci.yml', '  application:', '  architecture:\n    uses: ./.github/workflows/architecture.yml\n\n  application:'],
+    ['prod.yml', '    name: Build trusted release', '    name: Build trusted release\n    needs: architecture'],
+    ['architecture.yml', '          ref: ${{ github.sha }}', '          ref: main'],
+    ['architecture.yml', '    branches: [main]', '    branches: [dev]'],
+    ['architecture.yml', 'run: npm run test:docs', 'run: npm run test:unit'],
     ['architecture.yml', 'run: npm run docs:check -- --base "$BASE_SHA"', 'run: echo docs-skipped'],
     ['architecture.yml', '          fetch-depth: 0', '          fetch-depth: 1'],
     ['architecture.yml', '51a291770851ad27a400cca73c753c166b5e0c65', 'main'],

@@ -14,7 +14,7 @@ sections of other plans are not instructions for the current deployment.
 | [Authenticated request](request.sequence.json) | Who verifies identity, establishes the owner and applies row-level security? |
 | [Production delivery](delivery.workflow.json) | Which checks, image, jobs and evidence gate a production release? |
 
-Every node cites source lines. CI and production generate standalone interactive
+Every node cites source lines. An independent documentation workflow generates standalone interactive
 HTML drawings from these sources using the pinned Archify renderer. Download the
 `architecture-<source-sha>-<run-id>` artifact from the Actions run, extract it and
 open `index.html`. The bundle contains the drawings, prepared source-linked JSON,
@@ -114,8 +114,10 @@ identity. ACR and its pull identity/RBAC are administrator-bootstrapped.
 The provisioned locked storage account has no active application photo/upload
 path. Photos live in PostgreSQL. Do not draw it as an active dependency.
 
-Main push CI must succeed for the exact source commit. Production regenerates
-architecture drawings **before** building or obtaining a cloud identity. It
+Main push application CI must succeed for the exact source commit. Architecture
+review/tests/rendering run separately on PRs and main, never as a production
+dependency. Main drawings identify the exact merged commit without delaying
+delivery; documentation failures remain visible in their own Actions run. Production
 publishes one image to ACR, deploys by digest, verifies the disposable private
 database, conditionally backs up live before schema changes, migrates live/dev,
 then rolls out live/dev and waits for matching SHA/schema readiness. Protected
@@ -134,7 +136,7 @@ Consult the health SHA and [delivery runbook](../github-pipelines.md).
 | Priority | Finding | Maintenance response |
 | --- | --- | --- |
 | Now | Architecture knowledge was split across obsolete stack notes and historical release plans | Use this reference plus executable evidence; historical material is explicitly marked, not silently treated as current |
-| Now | No documentation gate or source-linked production diagrams | Required CI plus pre-build production generation; no docs-not-needed bypass for integrity checks |
+| Now | Source-linked drawings must not delay production | Independent PR/main documentation workflow with visible failures and commit-linked artifacts; no production dependency |
 | Next | Generic CRUD and planner handlers contain several domains; hooks can independently reload the same data | Preserve current boundaries; extract small tested domain helpers when touching them, rather than replacing the stack |
 | Next | Migration history is guarded, but recovery still needs a documented restore rehearsal | Rehearse restore on a disposable database before relying on recovery time; deployment success is not a restore test |
 | Next | One shared host/environment and no database HA are deliberate single-instance-scale tradeoffs | Revisit availability and independent dev isolation if usage/criticality grows; do not provision a second stack in a docs change |
@@ -156,7 +158,7 @@ infrastructure replacement or live configuration change is part of this work.
    `npm run docs:check`. Refresh records reviewed hashes; it does not infer
    architecture or prove that the prose is accurate.
 5. Commit the reviewed sources, specs, prose and evidence together. Generate the
-   exact-commit bundle locally or let required CI generate it. Inspect the
+   exact-commit bundle locally or let the documentation workflow generate it. Inspect the
    downloadable drawings before merging a topology change.
 
 The evidence ledger includes architecture-relevant `src`, `server`, `infra`,
@@ -164,6 +166,10 @@ The evidence ledger includes architecture-relevant `src`, `server`, `infra`,
 It detects modified, added and deleted inputs (with CRLF normalized), edited
 specs/prose and missing or out-of-range citations. The PR/main-diff guard also
 requires a Markdown impact assessment, so refreshing hashes alone is not enough.
+These checks and `npm run test:docs` belong to the independent documentation
+workflow, not application unit tests or Required CI. Do not make the architecture
+check required in branch protection/rulesets. Documentation failures do not block
+production, and production does not regenerate the drawings.
 Full history is needed for `--base`. No labels, cloud credentials or live PDGA
 queries are needed. Semantic correctness still requires human review.
 
