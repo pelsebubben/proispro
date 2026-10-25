@@ -74,3 +74,12 @@ test('PDGA validates response shape and reports failed logout rather than claimi
     return Response.json({ courses: [] })
   }), /did not confirm API logout/)
 })
+
+test('PDGA preserves the provider Retry-After instead of imposing the fallback cooldown', async () => {
+  for (const retryAfter of ['60',new Date(Date.now()+120_000).toUTCString()]) {
+    await assert.rejects(testPdga(credentials, async url => {
+      if (url.endsWith('/login')) return new Response(null,{status:429,headers:{'Retry-After':retryAfter}})
+      throw new Error('A rejected login must not trigger more provider requests')
+    }), error => error.pdgaHttpStatus===429 && error.retryAfterMs>59_000 && error.retryAfterMs<=120_000)
+  }
+})

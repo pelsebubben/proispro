@@ -46,7 +46,6 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
   const [eventsError,setEventsError] = useState('')
   const [copyName,setCopyName] = useState<string|null>(null)
   const [discQuery,setDiscQuery] = useState('')
-  const [courseMaps,setCourseMaps] = useState<CourseMap[]>([])
   const saving = useRef(false)
   const layout = data?.layouts.find(l=>l.id===layoutId)
   useEffect(()=>{
@@ -185,7 +184,7 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
           </div>}
         </>}
       </div>}
-      {pin.courseId?.startsWith('pdga:')&&<CourseMaps courseId={pin.courseId} courseName={pin.courseName} onMaps={setCourseMaps}/>}
+      {pin.courseId?.startsWith('pdga:')&&<CourseMaps courseId={pin.courseId} courseName={pin.courseName}/>}
       <div className="planner-toolbar">
         <label>Layout<select aria-label="Layout" value={layoutId} disabled={busy||!!draft} onChange={event=>{
           if(dirty&&!confirm('Discard unsaved game-plan changes?'))return
@@ -270,10 +269,6 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
               hole.units==='Feet'?`${hole.length} ft (${hole.distance_m} m)`:`${hole.distance_m} m`}</p>
               {(hole.tee||hole.target)&&<p className="bag-hint">Tee: {hole.tee||'Not specified'} · Target: {hole.target||'Not specified'}</p>}
               {hole.notes&&<p>{hole.notes}</p>}
-              {courseMaps.length>0&&<div className="hole-maps">
-                <p className="bag-hint">Course overview, not a hole-specific diagram.</p>
-                {courseMaps.map(map=><CourseMapPreview key={map.url} map={map} title={`${pin.courseName} · Hole ${hole.label}`}/>)}
-              </div>}
             </div>
             <div className="planner-hole-plan">
               <ol className="planner-choices">{selectedDiscs.map((disc,i)=><li key={disc.id}>
@@ -327,23 +322,23 @@ function CourseMapPreview({map,title}:{map:CourseMap;title:string}) {
   </details>
 }
 
-function CourseMaps({courseId,courseName,onMaps}:{courseId:string;courseName:string;onMaps:(maps:CourseMap[])=>void}) {
+function CourseMaps({courseId,courseName}:{courseId:string;courseName:string}) {
   const [result,setResult]=useState<{maps:CourseMap[];expiresAt:number}|null>(null)
   const [error,setError]=useState('')
   const [retry,setRetry]=useState(0)
   useEffect(()=>{
     let active=true
-    setResult(null);setError('');onMaps([])
+    setResult(null);setError('')
     void readCourseCatalogue<{maps:CourseMap[];expiresAt:number}>(`courses/${courseId}/maps`)
-      .then(value=>{if(active){setResult(value);onMaps(value.maps)}})
+      .then(value=>{if(active)setResult(value)})
       .catch(reason=>{if(active)setError(reason instanceof Error?reason.message:'Course maps unavailable.')})
     return ()=>{active=false}
-  },[courseId,retry,onMaps])
+  },[courseId,retry])
   useEffect(()=>{
     if(!result)return
-    const timer=setTimeout(()=>{setResult(null);onMaps([]);setError('Course maps expired. Reload to refresh.')},Math.max(0,result.expiresAt-Date.now()))
+    const timer=setTimeout(()=>{setResult(null);setError('Course maps expired. Reload to refresh.')},Math.max(0,result.expiresAt-Date.now()))
     return ()=>clearTimeout(timer)
-  },[result,onMaps])
+  },[result])
   return <div className="course-maps">
     <h4>Course maps</h4>
     {error?<p role="status">{error} <button className="btn" onClick={()=>setRetry(value=>value+1)}>Retry maps</button></p>:

@@ -15,6 +15,23 @@ Layout choices load automatically; no separate event-browsing action is required
 The compact bottom disclaimer warns that course data may vary and retains the
 required provider credit.
 
+The course library shows one compact row per course, with its linked bag
+configurations in a selector rather than duplicate course cards. Search the
+library by course or bag name and filter by bag. Each bag keeps its independent
+private game plan; linking an already-linked course/bag opens the existing link.
+The server serializes creation per owner and reuses the existing link, including
+when two tabs pin the same course and bag. Existing saved links and plans are not deleted.
+The selected bag's saved plan shows planned holes and how many unique selected
+discs (including alternatives) still need packing. This checks bag membership,
+not whether every hole has been planned. Bag links can be managed under **More**.
+
+PDGA search runs only when **Search PDGA** is pressed, not on each typing pause.
+The same button retries the unchanged query. A cache miss creates an authenticated
+PDGA login/search/logout cycle, so even one user can generate multiple upstream
+requests. The shared app budget and any provider cooldown apply across users and
+replicas; where available, the error gives the remaining wait. Do not repeatedly
+retry during an upstream cooldown. Custom course entry remains available.
+
 ## Event layouts
 
 Course matching uses the exact REST course ID. The separate canonical course
@@ -52,7 +69,8 @@ Only normalized map links enter the same bounded 24-hour PostgreSQL cache.
 Map files remain on PDGA; they are not downloaded into permanent application storage.
 Unexpected page structure or unsupported media produces an explicit error with retry.
 
-Available maps can be expanded in the planner and beneath each hole's details.
+Available maps can be expanded once in the course-level section above the private
+layout selector. Whole-course maps are not repeated beneath every hole.
 They are labelled **whole-course overviews**, not hole-specific diagrams or a
 guaranteed match for the chosen historical layout. Previews load only when expanded;
 full-size links remain available for PDF viewers that cannot render inline.

@@ -3,7 +3,7 @@ import { devAccessToken, devSignOut } from './devAuth'
 import { entraAccessToken } from './entra'
 
 type Filters = Record<string, string>
-type Resource = 'discs' | 'bags' | 'bag_history' | 'collections' | 'collection_discs' |
+type Resource = 'discs' | 'bags' | 'bag_history' | 'collections' | 'collection_discs' | 'planner' |
   'wishlist_items' | 'forsale_listings' | 'sale_tokens' | 'course_pins' | 'hole_assignments'
 
 export const sessionExpiredMessage = 'Your session expired. Please sign in again.'
@@ -32,6 +32,10 @@ async function request<T>(path: string, method = 'GET', body?: object): Promise<
     if (response.status === 401) sessionExpired()
     if (!response.ok) {
       const detail = await response.json()
+      if (detail.error === 'pdga_rate_limited') {
+        const wait = typeof detail.retryAfterSeconds === 'number' ? ` Try again in ${Math.max(1,Math.ceil(detail.retryAfterSeconds / 60))} minute(s).` : ' Please wait before retrying.'
+        throw new Error(`PDGA requests are temporarily limited (pdga_rate_limited). The shared provider limit is not a per-user allowance.${wait}`)
+      }
       throw new Error(`Could not ${method === 'GET' ? 'load' : 'save'} data (${response.status}: ${detail.error})`)
     }
     const result = await response.json()

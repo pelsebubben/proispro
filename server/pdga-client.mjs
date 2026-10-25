@@ -17,8 +17,12 @@ async function request(fetcher, endpoint, options = {}) {
     throw failure('PDGA request failed (network, timeout, or redirect). Response details suppressed.',endpoint.split('?')[0],'network')
   }
   if (!response.ok) {
+    const retryAfter = response.headers.get('retry-after')
+    const retryAfterMs = retryAfter === null ? NaN : /^\d+$/.test(retryAfter) ?
+      Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now()
     await response.body?.cancel()
-    throw failure(`PDGA request rejected (HTTP ${response.status}). Check API access and credentials; response body suppressed.`,endpoint.split('?')[0],'http',response.status)
+    throw Object.assign(failure(`PDGA request rejected (HTTP ${response.status}). Check API access and credentials; response body suppressed.`,endpoint.split('?')[0],'http',response.status),
+      Number.isFinite(retryAfterMs) && retryAfterMs > 0 ? { retryAfterMs } : {})
   }
   try {
     const chunks = []

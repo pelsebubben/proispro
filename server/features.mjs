@@ -180,6 +180,14 @@ export async function featureRequest({ req, url, pool, userId, json, image }) {
         if (owned.rowCount !== body.disc_ids.length) throw Object.assign(new Error('invalid_reference'), { status: 400 })
       }
       if (resource === 'course_pins') {
+        if (!rowId) {
+          await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,72491926))',[userId])
+          const existing=await client.query(`SELECT * FROM course_pins WHERE user_id=$1 AND bag_id=$2
+            AND (course_id IS NOT DISTINCT FROM $3 AND ($3::text IS NOT NULL OR lower(btrim(course_name))=lower(btrim($4)))
+              OR $3::text='custom:'||id::text)
+            ORDER BY created_at,id LIMIT 1`,[userId,body.bag_id,body.course_id??null,body.course_name])
+          if(existing.rowCount)return existing
+        }
         const previousPin = rowId ? (await client.query(
           'SELECT course_id FROM course_pins WHERE id=$1 AND user_id=$2 FOR UPDATE', [rowId, userId])).rows[0] : null
         const sourceId = Object.hasOwn(body, 'course_id') ? body.course_id : previousPin?.course_id

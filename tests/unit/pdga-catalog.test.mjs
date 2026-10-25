@@ -69,6 +69,14 @@ test('provider-only routes reject retired exports, bad queries and disabled acce
   assert.equal((await call('/api/v1/courses','POST')).status,405)
 })
 
+test('rate-limit responses expose the remaining cooldown so the same search can be retried later',async()=>{
+  const result=await courseRequest({req:{method:'GET'},url:new URL('http://localhost/api/v1/courses?q=Karidalen'),
+    pdga:{search:async()=>{throw Object.assign(new Error('limited'),{code:'pdga_rate_limited',retryAfterSeconds:60})}},
+    json:(status,body)=>({status,body})})
+  assert.equal(result.status,429)
+  assert.deepEqual(result.body,{error:'pdga_rate_limited',retryAfterSeconds:60})
+})
+
 test('browsing sorts actual dates before choosing two distinct events and retains every applicable layout',async()=>{
   const config=layoutConfiguration('https://www.pdga.com/api/fixture?courseId={courseId}',
     'https://www.pdga.com/api/fixture/{tournId}')
