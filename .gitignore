@@ -24,3 +24,5 @@ staging-report/
 infra/main.json
 *.local
 .squad/.cache/
+architecture-report/
+.architecture-tools/

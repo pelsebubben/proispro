@@ -1,5 +1,26 @@
 # Griplock GitHub delivery foundation
 
+> **Maintainer entrypoint:** [Current architecture, diagrams and change workflow](architecture/README.md).
+> This runbook includes historical rollout evidence and earlier proposals.
+> Do not treat its historical status/SHA/schema examples as the current live
+> release. The active workflows and the latest matching health/release evidence
+> are authoritative.
+
+## Architecture evidence gate
+
+`architecture.yml` is a read-only reusable workflow called by required CI and by
+`prod.yml` for the exact release source SHA. It checks the reviewed source ledger
+and citations, then uses a commit-pinned Archify renderer and Chromium to generate
+runtime, authenticated-request and production-delivery drawings. The downloadable
+`architecture-<source-sha>-<run-id>` artifact contains an `index.html`, interactive
+HTML, diagram sources, checks, the maintenance reference and provenance hashes.
+
+Production's trusted build depends on that job: documentation failure prevents
+image build/publication, migrations and rollout. It runs without environment
+secrets, OIDC permission or Azure login. Artifact-generation success is not a
+deployed-release assertion. See the architecture reference for review/refresh
+commands and the distinction between source drift checks and semantic review.
+
 ## Current operating scope
 
 The owner clarified that this is one live environment for personal use/friends,

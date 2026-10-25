@@ -1,0 +1,21 @@
+# Architecture review history
+
+## 2026-10-25 - First-version maintenance baseline
+
+Reviewed the React/Node composition, MSAL/JWT ownership path, resource/planner
+handlers, schema migrations, PDGA cache, Bicep deployment and active CI/dev/prod
+workflows. Retained the modular monolith and current cloud footprint.
+
+Added runtime, authenticated-request and delivery diagram sources. Required CI
+and pre-build production generation share one read-only workflow, with reviewed
+source hashes and exact-commit artifact provenance. The reference pattern is
+`C:\git\infra\.github\workflows\agentic-docs-check.yml` and its PowerShell guard;
+this adaptation uses the application's existing Node toolchain, detects source
+content drift (not only existing line ranges), and actually generates drawings
+during production delivery. There is no label bypass for stale evidence.
+
+Legacy plans are historical; this reference is the current maintainer entrypoint.
+The review records shared dev/live failure boundaries, handler growth, analytics
+split and restore-rehearsal work without changing runtime behavior or cloud
+resources. Drawing validation demonstrates the documentation artifact, not a
+successful live release.

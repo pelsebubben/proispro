@@ -15,6 +15,9 @@
     "test:api": "node --test tests/api/*.test.mjs",
     "test:staging": "playwright test --config playwright.staging.config.ts",
     "check": "tsc --noEmit && tsc --project tsconfig.tests.json",
+    "docs:check": "node scripts/architecture-docs.mjs check",
+    "docs:refresh": "node scripts/architecture-docs.mjs refresh",
+    "docs:build": "node scripts/architecture-docs.mjs build",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "node --test tests/unit/*.test.mjs",
     "test:e2e": "playwright test"

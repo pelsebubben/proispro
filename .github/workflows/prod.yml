@@ -20,8 +20,16 @@ env:
   RESOURCE_GROUP: rg-griplock-staging
 
 jobs:
+  architecture:
+    name: Release architecture drawings
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
+    uses: ./.github/workflows/architecture.yml
+    with:
+      source_sha: ${{ github.event.workflow_run.head_sha || github.sha }}
+
   build:
     name: Build trusted release
+    needs: architecture
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20

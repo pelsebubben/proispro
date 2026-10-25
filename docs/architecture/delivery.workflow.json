@@ -1,0 +1,43 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Production delivery and architecture evidence",
+    "subtitle": "Release source SHA stays fixed; no cloud credentials enter documentation jobs",
+    "locale": "en",
+    "output": "architecture-report/delivery.html",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    {"id": "checks", "label": "Read-only source and build"},
+    {"id": "cloud", "label": "Protected prod environment"},
+    {"id": "evidence", "label": "Read-only deployed checks"}
+  ],
+  "mainPath": ["source", "required", "docs", "image", "publish", "database", "rollout", "browser", "manifest"],
+  "nodes": [
+    {"id": "source", "lane": "checks", "col": 0, "type": "external", "label": "Main push", "sublabel": "or main dispatch", "width": 160, "sources": [{"path": ".github/workflows/prod.yml", "line": 1, "end_line": 28}]},
+    {"id": "required", "lane": "checks", "col": 1, "type": "security", "label": "Required CI", "sublabel": "tests + docs gate", "width": 160, "sources": [{"path": ".github/workflows/ci.yml", "line": 156, "end_line": 175}, {"path": ".github/workflows/prod.yml", "line": 37, "end_line": 44}]},
+    {"id": "docs", "lane": "checks", "col": 2, "type": "backend", "label": "Draw architecture", "sublabel": "exact release SHA", "width": 160, "sources": [{"path": ".github/workflows/architecture.yml", "line": 17, "end_line": 57}, {"path": ".github/workflows/prod.yml", "line": 23, "end_line": 32}]},
+    {"id": "image", "lane": "checks", "col": 3, "type": "backend", "label": "Build OCI image", "sublabel": "CI-verified commit", "width": 160, "sources": [{"path": ".github/workflows/prod.yml", "line": 30, "end_line": 56}, {"path": "Dockerfile", "line": 1, "end_line": 18}]},
+    {"id": "publish", "lane": "cloud", "col": 3, "type": "cloud", "label": "OIDC + ACR", "sublabel": "publish image digest", "width": 160, "sources": [{"path": ".github/workflows/prod.yml", "line": 95, "end_line": 135}]},
+    {"id": "database", "lane": "cloud", "col": 4, "type": "database", "label": "Private DB jobs", "sublabel": "verify, backup, migrate", "width": 180, "sources": [{"path": ".github/workflows/prod.yml", "line": 137, "end_line": 150}, {"path": "infra/job.bicep", "line": 16, "end_line": 49}]},
+    {"id": "rollout", "lane": "cloud", "col": 5, "type": "cloud", "label": "Live + dev", "sublabel": "digest, probes, PDGA", "width": 160, "sources": [{"path": ".github/workflows/prod.yml", "line": 152, "end_line": 213}, {"path": ".github/workflows/prod.yml", "line": 215, "end_line": 243}]},
+    {"id": "browser", "lane": "evidence", "col": 5, "type": "frontend", "label": "Deployed checks", "sublabel": "desktop + mobile", "width": 160, "sources": [{"path": ".github/workflows/prod.yml", "line": 245, "end_line": 264}]},
+    {"id": "manifest", "lane": "evidence", "col": 4, "type": "database", "label": "Release evidence", "sublabel": "record only on pass", "width": 160, "sources": [{"path": ".github/workflows/prod.yml", "line": 265, "end_line": 273}, {"path": "scripts/record-staging-release.mjs", "line": 1, "end_line": 18}]}
+  ],
+  "edges": [
+    {"id": "ci", "from": "source", "to": "required", "variant": "security"},
+    {"id": "doc-gate", "from": "required", "to": "docs", "variant": "security"},
+    {"id": "build-gate", "from": "docs", "to": "image", "variant": "emphasis"},
+    {"id": "publish-gate", "from": "image", "to": "publish", "variant": "security"},
+    {"id": "db-gate", "from": "publish", "to": "database", "variant": "emphasis"},
+    {"id": "release-gate", "from": "database", "to": "rollout", "variant": "emphasis"},
+    {"id": "deployed-test", "from": "rollout", "to": "browser", "variant": "emphasis"},
+    {"id": "record", "from": "browser", "to": "manifest"}
+  ],
+  "cards": [
+    {"dot": "cyan", "title": "Documentation is a release gate", "items": ["CI checks reviewed fingerprints and renders the drawings", "Production regenerates for SOURCE_SHA before trusted build", "Pinned renderer + Chromium produce source-linked HTML evidence"]},
+    {"dot": "rose", "title": "Protected operations", "items": ["No OIDC or environment secrets in documentation jobs", "Private verify DB precedes conditional live backup and migrations", "Non-cancelling release lock; shared dev has a separate lock"]},
+    {"dot": "emerald", "title": "Separate evidence", "items": ["Architecture artifact records source SHA and output hashes", "Browser checks record verified release only after rollout", "No claim that a diagram artifact proves live release success"]}
+  ]
+}

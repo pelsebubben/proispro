@@ -4,7 +4,7 @@ import test from 'node:test'
 import { parse } from 'yaml'
 import { schemaVersion } from '../../server/migrate.mjs'
 
-const names = ['ci.yml', 'infra.yml', 'prod.yml', 'dev.yml', 'squad-ci.yml']
+const names = ['ci.yml', 'infra.yml', 'prod.yml', 'dev.yml', 'squad-ci.yml', 'architecture.yml']
 const sources = Object.fromEntries(await Promise.all(names.map(async name => [
   name, (await readFile(new URL(`../../.github/workflows/${name}`, import.meta.url), 'utf8')).replaceAll('\r\n','\n'),
 ])))
@@ -15,6 +15,12 @@ function checkTrustBoundary(files) {
     assert.equal(workflow.permissions['id-token'], undefined, `${name}: no workflow-wide OIDC`)
     assert.equal(workflow.on.pull_request_target, undefined, `${name}: no privileged PR event`)
     for (const job of Object.values(workflow.jobs)) {
+      if (job.uses) {
+        assert.equal(job.uses, './.github/workflows/architecture.yml', `${name}: known local reusable workflow`)
+        assert.equal(job.secrets, undefined, `${name}: no forwarded secrets`)
+        assert.equal(job.permissions?.['id-token'], undefined, `${name}: no documentation OIDC`)
+        continue
+      }
       assert.ok(job['timeout-minutes'] > 0, `${name}: bounded jobs`)
       for (const step of job.steps ?? []) {
         if (!step.uses) continue
@@ -40,13 +46,13 @@ function checkTrustBoundary(files) {
     assert.equal(browser.permissions?.['id-token'], undefined, 'browser gets no cloud identity')
     assert.equal(browser.environment, undefined, 'browser gets no environment secrets')
   }
-  for (const job of Object.values(ci.jobs)) assert.equal(job['runs-on'], 'ubuntu-24.04')
+  for (const job of Object.values(ci.jobs).filter(job => !job.uses)) assert.equal(job['runs-on'], 'ubuntu-24.04')
   assert.ok(Object.hasOwn(ci.on, 'pull_request'))
   assert.equal(ci.on.pull_request, null, 'all PR changes get the same required check')
-  assert.deepEqual(ci.jobs.required.needs, ['application', 'browser', 'api', 'infrastructure'])
+  assert.deepEqual(ci.jobs.required.needs, ['application', 'browser', 'api', 'infrastructure', 'architecture'])
   assert.equal(ci.jobs.required.if, '${{ always() }}')
   const requiredGuard = ci.jobs.required.steps[0].run
-  for (const result of ['APPLICATION', 'BROWSER', 'API', 'INFRASTRUCTURE']) {
+  for (const result of ['APPLICATION', 'BROWSER', 'API', 'INFRASTRUCTURE', 'ARCHITECTURE']) {
     assert.ok(requiredGuard.includes(`test "$${result}" = success`), `required gate checks ${result}`)
   }
   for (const name of ['application', 'browser', 'api', 'infrastructure']) {
@@ -83,7 +89,7 @@ function checkTrustBoundary(files) {
   assert.equal(staging.jobs.staging.needs, 'build')
   assert.equal(staging.jobs.staging.environment, 'prod')
   assert.equal(staging.jobs.staging.permissions['id-token'], 'write')
-  for (const job of Object.values(staging.jobs)) assert.equal(job['runs-on'], 'ubuntu-24.04')
+  for (const job of Object.values(staging.jobs).filter(job => !job.uses)) assert.equal(job['runs-on'], 'ubuntu-24.04')
   assert.match(staging.jobs.staging.steps[0].run, /test "\$ENABLED" = true/)
   const publish = staging.jobs.staging.steps.find(step => step.name === 'Publish exact image to private ACR')
   assert.match(publish.run, /griplock@%s/)
@@ -152,6 +158,39 @@ function checkTrustBoundary(files) {
   const verification = staging.jobs.browser.steps.findIndex(step => step.run === 'npm run test:staging')
   assert.ok(recording > verification && verification >= 0, 'record only after deployed tests pass')
   assert.equal(staging.jobs.browser.steps[recording].run, 'node scripts/record-staging-release.mjs')
+  assert.equal(ci.jobs.architecture.uses, './.github/workflows/architecture.yml')
+  assert.deepEqual(ci.jobs.architecture.with, {
+    source_sha: '${{ github.sha }}',
+    base_sha: "${{ github.event.pull_request.base.sha || github.event.before || '' }}",
+  })
+  assert.equal(ci.jobs.required.steps[0].env.ARCHITECTURE, '${{ needs.architecture.result }}')
+  assert.equal(staging.jobs.architecture.uses, './.github/workflows/architecture.yml')
+  assert.equal(staging.jobs.architecture.with.source_sha, '${{ github.event.workflow_run.head_sha || github.sha }}')
+  assert.equal(staging.jobs.architecture.if, staging.jobs.build.if)
+  assert.equal(staging.jobs.build.needs, 'architecture', 'documentation failure blocks publication and migrations')
+  const architecture = workflows['architecture.yml']
+  assert.deepEqual(Object.keys(architecture.on), ['workflow_call'])
+  assert.equal(architecture.on.workflow_call.inputs.source_sha.required, true)
+  assert.deepEqual(architecture.permissions, { contents: 'read' })
+  assert.deepEqual(Object.keys(architecture.jobs), ['diagrams'])
+  const diagrams = architecture.jobs.diagrams
+  assert.equal(diagrams['runs-on'], 'ubuntu-24.04')
+  assert.equal(diagrams.environment, undefined)
+  assert.equal(diagrams.permissions, undefined)
+  assert.equal(diagrams.steps[0].with.ref, '${{ inputs.source_sha }}')
+  assert.equal(diagrams.steps[0].with['fetch-depth'], 0)
+  const reviewIndex = diagrams.steps.findIndex(step => step.run === 'npm run docs:check -- --base "$BASE_SHA"')
+  const toolIndex = diagrams.steps.findIndex(step => step.with?.repository === 'tt-a1i/archify')
+  const renderIndex = diagrams.steps.findIndex(step => step.run?.includes('npm run docs:build'))
+  assert.ok(reviewIndex > 0 && toolIndex > reviewIndex && renderIndex > toolIndex)
+  assert.deepEqual(diagrams.steps[reviewIndex].env, { BASE_SHA: '${{ inputs.base_sha }}' })
+  assert.equal(diagrams.steps[toolIndex].with.ref, '51a291770851ad27a400cca73c753c166b5e0c65')
+  assert.ok(diagrams.steps.some(step => step.run === 'npx --no-install playwright install --with-deps chromium'))
+  const artifact = diagrams.steps.find(step => step.uses?.startsWith('actions/upload-artifact@'))
+  assert.equal(artifact.with.path, 'architecture-report/')
+  assert.equal(artifact.with.name, 'architecture-${{ inputs.source_sha }}-${{ github.run_id }}')
+  assert.equal(artifact.with['if-no-files-found'], 'error')
+  assert.ok(!/secrets\.|azure\/login|id-token:/.test(files['architecture.yml']), 'read-only documentation boundary')
 }
 
 test('delivery workflows enforce their source-level trust and deployment contracts', () => {
@@ -165,6 +204,15 @@ test('gates reject real workflow mutations that grant PR OIDC or remove apply pr
     ['infra.yml', 'test "$ENABLED" = true', 'echo enabled'],
     ['ci.yml', 'test "$BROWSER" = success', 'echo browser-skipped'],
     ['ci.yml', 'test "$API" = success', 'echo api-skipped'],
+    ['ci.yml', 'test "$ARCHITECTURE" = success', 'echo docs-skipped'],
+    ['ci.yml', 'infrastructure, architecture]', 'infrastructure]'],
+    ['prod.yml', '    needs: architecture', '    needs: []'],
+    ['prod.yml', '      source_sha: ${{ github.event.workflow_run.head_sha || github.sha }}', '      source_sha: main'],
+    ['architecture.yml', '          ref: ${{ inputs.source_sha }}', '          ref: main'],
+    ['architecture.yml', 'run: npm run docs:check -- --base "$BASE_SHA"', 'run: echo docs-skipped'],
+    ['architecture.yml', '          fetch-depth: 0', '          fetch-depth: 1'],
+    ['architecture.yml', '51a291770851ad27a400cca73c753c166b5e0c65', 'main'],
+    ['architecture.yml', '          if-no-files-found: error', '          if-no-files-found: warn'],
     ['prod.yml', '.conclusion == "success"', '.conclusion != "success"'],
     ['prod.yml', 'test "$ENABLED" = true', 'echo enabled'],
     ['prod.yml', 'releaseId="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"', 'releaseId="constant"'],
