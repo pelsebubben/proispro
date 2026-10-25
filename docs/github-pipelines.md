@@ -6,17 +6,22 @@
 > release. The active workflows and the latest matching health/release evidence
 > are authoritative.
 
-## Architecture evidence gate
+## Independent architecture evidence
 
-`architecture.yml` is a read-only reusable workflow called by required CI and by
-`prod.yml` for the exact release source SHA. It checks the reviewed source ledger
+`architecture.yml` is a read-only workflow triggered independently on PRs, main
+pushes and manual dispatch. It checks the reviewed source ledger
 and citations, then uses a commit-pinned Archify renderer and Chromium to generate
 runtime, authenticated-request and production-delivery drawings. The downloadable
 `architecture-<source-sha>-<run-id>` artifact contains an `index.html`, interactive
 HTML, diagram sources, checks, the maintenance reference and provenance hashes.
 
-Production's trusted build depends on that job: documentation failure prevents
-image build/publication, migrations and rollout. It runs without environment
+Documentation failures are visible in their own workflow, but do not gate
+Required CI, image build/publication, migrations or rollout. Do not configure
+the architecture check as a required branch/ruleset check. Main builds produce
+drawings linked to the merged commit alongside delivery, not before it.
+`npm run test:docs` owns ledger/citation tests separately from application unit
+tests. The docs runner uses Ubuntu 22.04 to avoid the Ubuntu 24.04 Chromium
+sandbox failure; browser inspection remains enabled. It runs without environment
 secrets, OIDC permission or Azure login. Artifact-generation success is not a
 deployed-release assertion. See the architecture reference for review/refresh
 commands and the distinction between source drift checks and semantic review.
