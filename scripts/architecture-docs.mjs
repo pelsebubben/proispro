@@ -154,7 +154,9 @@ export async function buildArchitecture(root, archify) {
   await copyFile(resolve(root, snapshotPath), resolve(output, 'evidence.json'))
   await copyFile(resolve(root, directory, 'README.md'), resolve(output, 'README.md'))
   const artifacts = {}
-  for (const { name } of specs) artifacts[`${name}.html`] = digest(await read(output, `${name}.html`))
+  for (const { name } of specs) {
+    artifacts[`${name}.html`] = createHash('sha256').update(await readFile(resolve(output, `${name}.html`))).digest('hex')
+  }
   await writeFile(resolve(output, 'release.json'), `${JSON.stringify({ sourceSha, repository: origin.href,
     renderer, reviewedEvidenceSha256: digest(JSON.stringify(snapshot)), artifacts }, null, 2)}\n`)
   const reference = await read(root, `${directory}/README.md`)

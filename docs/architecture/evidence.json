@@ -16,7 +16,7 @@
     "infra/staging.bicep": "46f00167938909a9fe0aa8774adf4b2b57e3c0fcbfad542be7dbd30e60da8230",
     "package-lock.json": "3665aaa9c63a591969b84cac95df7adaa9c8a69b6eb0b276a467d21bcdb3b10a",
     "package.json": "f47044a523d546493ba733fdab69fb9bf37fe80c082f6e341af938eecd2a6c57",
-    "scripts/architecture-docs.mjs": "deee97e6d92d0826da95c444cd92c103d2ce71d3f322c82a1219f94a9d83579f",
+    "scripts/architecture-docs.mjs": "9fcac1936155e5d050d7921c57c0a8c40097ecfe5ffac9989fec96f94a7ef49e",
     "scripts/backup-live-database.sh": "c8252773c5c6e3a47e9c2334d0e7aebc725b83ac5a39a8db4941a068e0b47bc9",
     "scripts/configure-pdga-dev.py": "77b488a8e890513cfdf2f0d94bfcc0b1483f471958e2e0111190c5697a438068",
     "scripts/dev-server.mjs": "e3e74a6557a5ff5e09098f557a48c6a636b16fafb37fc8dc6bca35dab771cdd2",
@@ -96,7 +96,7 @@
   },
   "diagrams": {
     "docs/architecture/runtime.architecture.json": "98edc2be568da8b6a296b5a099ca3a6b81e626447975df22a9bd514e67c7a67b",
-    "docs/architecture/request.sequence.json": "e4ac82900528a561e3b2bccefe724d89c6f77ade200e9ddd3e573b189271c96a",
+    "docs/architecture/request.sequence.json": "9e071ed6c57b27e3c00bbf51aca99fec94050d35d583052791fa051db7922366",
     "docs/architecture/delivery.workflow.json": "ec9a1b3436155c584530462071c66d81134b6e358f61280f71fda7a7544de470"
   },
   "documents": {
