@@ -3,7 +3,7 @@ import { latestEventLayouts } from './pdga-layouts.mjs'
 
 export async function courseRequest({ req, url, json, pdga = null }) {
   if (req.method !== 'GET') return json(405, { error: 'method_not_allowed' })
-  const match = url.pathname.match(/^\/api\/v1\/courses\/(pdga:[1-9][0-9]{0,15})\/(holes|layouts)$/)
+  const match = url.pathname.match(/^\/api\/v1\/courses\/(pdga:[1-9][0-9]{0,15})\/(holes|layouts|maps)$/)
   const search = url.pathname === '/api/v1/courses'
   if (!match && !search) return json(404, { error: 'course_not_found' })
   if ([...url.searchParams.keys()].some(k => !search || k !== 'q')) return json(400, { error: 'invalid_query' })
@@ -15,6 +15,10 @@ export async function courseRequest({ req, url, json, pdga = null }) {
       if (query.length < 2) return json(200, { courses: [], attribution: pdgaAttribution })
       const { value, expiresAt } = await pdga.search(query)
       return json(200, { courses: value.map(c => ({ ...c, expiresAt })), attribution: pdgaAttribution })
+    }
+    if (match[2] === 'maps') {
+      const { value, expiresAt } = await pdga.maps(match[1])
+      return json(200, { maps: value, expiresAt, attribution: pdgaAttribution })
     }
     if (match[2] === 'layouts') {
       const { value, expiresAt } = await pdga.layouts(match[1])

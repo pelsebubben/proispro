@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { searchPdga, readPdgaCourse } from './pdga-client.mjs'
 import { layoutConfiguration, readEventLayouts, readEventLayout } from './pdga-layouts.mjs'
+import { readCourseMaps } from './pdga-maps.mjs'
 
 export const pdgaCacheMs = 24 * 60 * 60_000
 const unavailable = code => Object.assign(new Error(code), { code })
@@ -95,6 +96,11 @@ export function createPdgaService({ username, password, pool, fetcher = fetch, n
   return {
     search: query => read(`search:${query.trim().toLowerCase()}`, () => searchPdga(credentials, query, fetcher)),
     course, layouts,
+    maps: async id => {
+      const found = await course(id)
+      if (!found.value) throw unavailable('course_not_found')
+      return read(`maps:v1:${id}`, () => readCourseMaps(found.value, fetcher))
+    },
     layout: async (id, tournamentId, layoutId) => {
       const index = await layouts(id)
       const selected = index.value.find(l => l.tournament_id === tournamentId && l.layout_id === layoutId)

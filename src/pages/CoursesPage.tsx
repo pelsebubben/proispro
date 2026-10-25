@@ -45,9 +45,6 @@ export function CoursesPage({allDiscs,allBags,initialBagId,initialPinId,onOpenBa
         setShowForm(true);setQuery('');setSelected(null);setBagId(filterBagId||allBags[0]?.id||'');searchCoursesDebounced('')
       }}>+ Pin Course</button>
     </div>
-    <p className="bag-hint"><a href="https://www.pdga.com/" target="_blank" rel="noopener noreferrer">
-      Player, event, and course data provided by PDGA.</a> Requested data is cached for 24 hours.
-      {' '}Event layouts are historical and may differ from the current course.</p>
     <label className="planner-toolbar">Bag configuration
       <select aria-label="Filter courses by bag" value={filterBagId} onChange={event=>{
         if(confirmPlannerNavigation()){setFilterBagId(event.target.value);setPlannerPinId(null)}
@@ -59,8 +56,9 @@ export function CoursesPage({allDiscs,allBags,initialBagId,initialPinId,onOpenBa
       event.preventDefault()
       void perform(async()=>{
         if(selected?.expiresAt&&selected.expiresAt<=Date.now())throw new Error('Search results expired. Search again before saving.')
-        await createPin(selected?.name??query.trim(),selected?.id??null,bagId)
-        setShowForm(false)
+        if(!confirmPlannerNavigation())return
+        const id=await createPin(selected?.name??query.trim(),selected?.id??null,bagId)
+        setFilterBagId(bagId);setPlannerPinId(id);setShowForm(false)
       })
     }}>
       <h3>Pin a Course</h3>
@@ -93,7 +91,9 @@ export function CoursesPage({allDiscs,allBags,initialBagId,initialPinId,onOpenBa
       const details=courseCache[pin.id]
       return <section key={pin.id} className="course-link" aria-label={`Course ${pin.courseName}`}>
         <div className="planner-heading">
-          <div><h3>{details?.sourceUrl?<a href={details.sourceUrl} target="_blank" rel="noopener noreferrer">{pin.courseName}</a>:pin.courseName}</h3>
+          <div><h3><button className="course-name-link" aria-expanded={plannerPinId===pin.id} onClick={()=>{
+            if(confirmPlannerNavigation())setPlannerPinId(pin.id)
+          }}>{pin.courseName}</button></h3>
             <p className="bag-hint">Bag: {bag?.name??'Unknown'}{pin.courseId?.startsWith('pdga:')&&` · PDGA ID ${pin.courseId.slice(5)}`}</p></div>
           <button className="btn" aria-label={`Unlink ${pin.courseName}`} disabled={busy} onClick={()=>{
             if(confirmPlannerNavigation()&&confirm('Unlink this course? Its game plan will be deleted. The private layout remains.'))
@@ -112,7 +112,11 @@ export function CoursesPage({allDiscs,allBags,initialBagId,initialPinId,onOpenBa
         {pin.courseId?.startsWith('pdga:')&&!details&&courseError&&<p role="status">{courseError} Use Load course details to retry.</p>}
         {linkPin===pin.id&&<form className="planner-toolbar" onSubmit={event=>{
           event.preventDefault()
-          void perform(async()=>{await createPin(pin.courseName,pin.courseId??`custom:${pin.id}`,linkBag);setLinkPin(null)})
+          void perform(async()=>{
+            if(!confirmPlannerNavigation())return
+            const id=await createPin(pin.courseName,pin.courseId??`custom:${pin.id}`,linkBag)
+            setFilterBagId(linkBag);setPlannerPinId(id);setLinkPin(null)
+          })
         }}>
           <label>Another bag configuration<select required value={linkBag} onChange={event=>setLinkBag(event.target.value)}>
             <option value="">Choose a bag</option>{allBags.filter(b=>b.id!==pin.bagId).map(b=><option key={b.id} value={b.id}>{b.name}</option>)}
@@ -122,5 +126,8 @@ export function CoursesPage({allDiscs,allBags,initialBagId,initialPinId,onOpenBa
         {plannerPinId===pin.id&&<CoursePlanner key={pin.id} pin={pin} bag={bag} discs={allDiscs} onOpenBag={onOpenBag}/>}
       </section>
     })}</div>
+    <footer className="course-disclaimer bag-hint">Course data may vary. Check the course before playing.{' '}
+      <a href="https://www.pdga.com/" target="_blank" rel="noopener noreferrer">Player, event, and course data provided by PDGA.</a>
+    </footer>
   </div>
 }
