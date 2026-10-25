@@ -17,8 +17,8 @@ export function LoginPage() {
       color: 'var(--clr-text)',
       gap: '1rem',
     }}>
-      <img src="/img/logo.png" alt="ProIsPro" style={{ width: '80px', height: '80px', borderRadius: '50%' }} />
-      <h1 style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--clr-accent)' }}>ProIsPro</h1>
+      <img src="/img/logo.png" alt="Griplock" style={{ width: '80px', height: '80px', borderRadius: '50%' }} />
+      <h1 style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--clr-accent)' }}>Griplock</h1>
       <p style={{ color: 'var(--clr-muted)', marginBottom: '1rem' }}>Your personal disc golf bag tracker</p>
       {!runtime.identityReady && !runtime.devAuth && (
         <p role="status">Customer sign-in is not configured.</p>

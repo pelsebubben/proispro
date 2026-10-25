@@ -15,8 +15,7 @@ the runbook for verified deployment state, not this architecture proposal.
 
 ## Outcome and confirmed constraints
 
-Give Griplock (the application currently named ProIsPro) its own reproducible
-build, test, release, deployment, recovery,
+Give Griplock its own reproducible build, test, release, deployment, recovery,
 and retirement lifecycle before undertaking the product refactor.
 
 - Target fully Azure-hosted infrastructure through a staged migration.
