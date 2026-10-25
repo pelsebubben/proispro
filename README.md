@@ -4,6 +4,10 @@ A personal disc golf inventory and bag tracker for the owner and friends.
 
 ## Stack
 
+For maintenance, start with the [current architecture and drawings](docs/architecture/README.md).
+Required CI and the production pipeline check reviewed sources and generate a
+commit-linked architecture artifact before release.
+
 - React, TypeScript and Vite frontend.
 - Plain Node HTTP API, served with the frontend in Azure Container Apps.
 - Azure PostgreSQL, application-owned users and forced per-user row-level security.
@@ -119,6 +123,7 @@ disables sign-in. There is no localStorage data fallback.
 
 ```powershell
 npm run check
+npm run docs:check
 npm run test:unit
 npm run test:api
 npm run build

@@ -11,5 +11,7 @@
 /Dockerfile @pelsebubben
 /src/lib/runtime.ts @pelsebubben
 /public/runtime-config.js @pelsebubben
+/docs/architecture/ @pelsebubben
+/scripts/architecture-docs.mjs @pelsebubben
 /package.json @pelsebubben
 /package-lock.json @pelsebubben

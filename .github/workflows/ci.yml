@@ -17,6 +17,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  architecture:
+    name: Architecture documentation
+    uses: ./.github/workflows/architecture.yml
+    with:
+      source_sha: ${{ github.sha }}
+      base_sha: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+
   application:
     name: Application checks
     runs-on: ubuntu-24.04
@@ -144,11 +151,12 @@ jobs:
           .github/workflows/prod.yml
           .github/workflows/dev.yml
           .github/workflows/squad-ci.yml
+          .github/workflows/architecture.yml
 
   required:
     name: Required CI
     if: ${{ always() }}
-    needs: [application, browser, api, infrastructure]
+    needs: [application, browser, api, infrastructure, architecture]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -158,8 +166,10 @@ jobs:
           BROWSER: ${{ needs.browser.result }}
           INFRASTRUCTURE: ${{ needs.infrastructure.result }}
           API: ${{ needs.api.result }}
+          ARCHITECTURE: ${{ needs.architecture.result }}
         run: |
           test "$APPLICATION" = success
           test "$BROWSER" = success
           test "$INFRASTRUCTURE" = success
           test "$API" = success
+          test "$ARCHITECTURE" = success

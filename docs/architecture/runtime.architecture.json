@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Griplock runtime boundaries",
+    "subtitle": "One deployable modular monolith; private data and temporary provider facts",
+    "locale": "en",
+    "output": "architecture-report/runtime.html",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    {
+      "id": "browser", "type": "frontend", "label": "React browser", "sublabel": "Inventory, bags, plans",
+      "pos": [40, 310], "size": [208, 80],
+      "sources": [{"path": "src/App.tsx", "line": 1, "end_line": 45}, {"path": "src/lib/entra.ts", "line": 1, "end_line": 45}]
+    },
+    {
+      "id": "identity", "type": "security", "label": "Entra External ID", "sublabel": "MSAL tokens + JWKS",
+      "pos": [40, 80], "size": [208, 80],
+      "sources": [{"path": "server/identity.mjs", "line": 1, "end_line": 30}, {"path": "server/app.mjs", "line": 100, "end_line": 115}]
+    },
+    {
+      "id": "api", "type": "backend", "label": "Node HTTP + domains", "sublabel": "Same-origin /api/v1",
+      "pos": [420, 310], "size": [220, 80],
+      "sources": [{"path": "server/index.mjs", "line": 23, "end_line": 34}, {"path": "server/app.mjs", "line": 86, "end_line": 129}, {"path": "infra/app.bicep", "line": 33, "end_line": 73}]
+    },
+    {
+      "id": "database", "type": "database", "label": "Private PostgreSQL", "sublabel": "Ownership + RLS",
+      "pos": [820, 310], "size": [208, 80],
+      "sources": [{"path": "infra/staging.bicep", "line": 54, "end_line": 87}, {"path": "server/database.mjs", "line": 20, "end_line": 34}, {"path": "server/migrations/007_pdga_cache.sql", "line": 16, "end_line": 35}]
+    },
+    {
+      "id": "provider", "type": "backend", "label": "PDGA adapter", "sublabel": "Cache, locks, cooldown",
+      "pos": [420, 550], "size": [220, 80],
+      "sources": [{"path": "server/pdga-service.mjs", "line": 12, "end_line": 82}, {"path": "server/courses.mjs", "line": 1, "end_line": 37}]
+    },
+    {
+      "id": "pdga", "type": "external", "label": "PDGA services", "sublabel": "REST + hosted media",
+      "pos": [40, 550], "size": [208, 80],
+      "sources": [{"path": "server/pdga-client.mjs", "line": 1, "end_line": 48}, {"path": "server/pdga-service.mjs", "line": 90, "end_line": 113}]
+    }
+  ],
+  "boundaries": [
+    {"kind": "region", "label": "Azure shared foundation", "wraps": ["api", "provider", "database"]},
+    {"kind": "security-group", "label": "Container App - one image", "wraps": ["api", "provider"]}
+  ],
+  "connections": [
+    {"id": "login", "from": "browser", "to": "identity", "label": "Login + token", "variant": "security"},
+    {"id": "request", "from": "browser", "to": "api", "label": "HTTPS + bearer", "variant": "emphasis"},
+    {"id": "verify", "from": "api", "to": "identity", "label": "JWKS", "variant": "security"},
+    {"id": "private-data", "from": "api", "to": "database", "label": "Owner transaction", "variant": "emphasis"},
+    {"id": "course-query", "from": "api", "to": "provider", "label": "Course queries"},
+    {"id": "cache", "from": "provider", "to": "database", "label": "24h cache"},
+    {"id": "provider-miss", "from": "provider", "to": "pdga", "label": "Cache miss only", "variant": "dashed"}
+  ],
+  "cards": [
+    {"dot": "cyan", "title": "One runtime", "items": ["Node serves Vite assets and API routes", "Inventory, bags and private course plans share a deployment", "Public sale tokens expose only enabled listing snapshots"]},
+    {"dot": "emerald", "title": "Durable vs temporary", "items": ["Private discs, JPEG photos and plans persist in PostgreSQL", "Provider facts expire after 24 hours; no stale fallback", "Shared cache budget and advisory locks cover replicas"]},
+    {"dot": "rose", "title": "Deployment scope", "items": ["Live and dev have separate databases, one shared server", "Diagram shows live request boundaries, not cloud inventory", "Build/migration jobs and unused storage omitted; see delivery view"]}
+  ]
+}
