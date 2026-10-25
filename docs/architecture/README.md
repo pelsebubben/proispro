@@ -169,10 +169,14 @@ queries are needed. Semantic correctness still requires human review.
 
 ```powershell
 npm run docs:check
-npm run docs:check -- --base origin/main
+npm.cmd run docs:check -- --base origin/main
 # Only after reviewing the affected docs and diagrams:
 npm run docs:refresh
 ```
+
+In PowerShell, use `npm.cmd` when forwarding `--base`; the `npm.ps1`
+wrapper can consume the argument separator. Bash/CI uses
+`npm run docs:check -- --base <sha>` normally.
 
 For local generation, use Node 24, `npm ci`, and a clean checkout of
 `tt-a1i/archify` at `51a291770851ad27a400cca73c753c166b5e0c65`. No Archify npm
