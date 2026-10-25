@@ -13,6 +13,24 @@ body {
 
 :root { --utility: var(--clr-muted); }
 
+.login-page { min-height:100dvh; display:grid; place-items:center; padding:2rem 1rem; }
+.login-card { width:100%; max-width:32rem; padding:clamp(1rem,4vw,2rem); background:var(--clr-surface); border:1px solid var(--clr-border); border-radius:var(--radius); }
+.login-card>img { display:block; margin:0 auto 1rem; }
+.login-card>h1,.login-card>p { text-align:center; }
+.login-intro { line-height:1.6; }
+.login-intro h2 { font-size:1.25rem; }
+.login-intro ol { padding-inline-start:1.25rem; }
+.login-intro li+li { margin-block-start:.75rem; }
+.login-provider-note { color:var(--clr-muted); font-size:.9rem; }
+.login-actions { display:flex; flex-direction:column; gap:.75rem; width:100%; margin-block:1.25rem; }
+.login-actions button { min-height:44px; }
+.login-actions button:disabled { cursor:not-allowed; opacity:.65; }
+.login-questions { border-block-start:1px solid var(--clr-border); line-height:1.6; }
+.login-questions details { padding-block:.75rem; }
+.login-questions summary { cursor:pointer; font-weight:600; }
+.login-questions p { margin-block:.75rem 0; font-size:.9rem; }
+.login-card :focus-visible { outline:2px solid var(--clr-accent); outline-offset:3px; }
+
 .course-planner { margin-block:1.5rem; padding-block:1.25rem; border-block:1px solid var(--clr-border); }
 .bag-course-shortcut { margin-inline-start:auto; display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
 .course-search-form { padding:1.25rem; margin-block:1rem; border:1px solid var(--clr-border); }
