@@ -6,7 +6,9 @@ const discId='00000000-0000-4000-8000-000000000003'
 const secondDiscId='00000000-0000-4000-8000-000000000004'
 const layoutId='00000000-0000-4000-8000-000000000005'
 interface Plan {layout_id:string;version:number;selections:Record<string,{disc_ids:string[];notes:string}>}
-async function setup(page:Page,event=false){
+const fixtureEvent={layout_id:'11',tournament_id:'99',name:'Fixture event layout',hole_count:1,par:3,length:85,
+  units:'Meters',event_name:'Fixture event',event_date:'2026-01-02'}
+async function setup(page:Page,event=false,eventLayouts=[fixtureEvent]){
   const state:{layouts:PrivateLayout[];plan:Plan|null;plans:Record<string,Plan>;failSave:boolean;layoutBodies:object[];providerRequests:number;failEvents:boolean}={
     layouts:[],plan:null,plans:{},failSave:false,layoutBodies:[],providerRequests:0,failEvents:false}
   await page.addInitScript(()=>{
@@ -20,8 +22,7 @@ async function setup(page:Page,event=false){
     if(path.startsWith('/api/v1/courses/')){
       state.providerRequests++
       if(path.endsWith('/layouts'))return state.failEvents?route.fulfill({status:429,json:{error:'pdga_rate_limited'}}):
-        route.fulfill({json:{layouts:[{layout_id:'11',tournament_id:'99',name:'Fixture event layout',hole_count:1,par:3,length:85,
-          units:'Meters',event_name:'Fixture event',event_date:'2026-01-02'}],expiresAt:Date.now()+86400000}})
+        route.fulfill({json:{layouts:eventLayouts,expiresAt:Date.now()+86400000}})
       return route.fulfill({json:{course:{name:'Ekeberg fixture',source_url:'https://www.pdga.com/node/27416',active:true},
         holes:[],coverage:{note:'Choose an event layout.'},expiresAt:Date.now()+86400000}})
     }
@@ -34,11 +35,13 @@ async function setup(page:Page,event=false){
     if(path==='/api/v1/course_pins')return route.fulfill({json:{course_pins:[
       {id:pinId,course_name:event?'PDGA course':'My local course',course_id:event?'pdga:4551':null,bag_id:bagId,created_at:new Date().toISOString()}]}})
     if(path==='/api/v1/planner/event-layout'&&method==='POST'){
-      const layout:PrivateLayout={id:layoutId,name:'Fixture event layout',tee:'',basket:'',description:'',checked_on:null,
+      const body=route.request().postDataJSON()
+      state.layoutBodies.push(body)
+      const selected=eventLayouts.find(e=>e.tournament_id===body.tournament_id&&e.layout_id===body.layout_id)!
+      const layout:PrivateLayout={id:layoutId,name:selected.name,tee:'',basket:'',description:'',checked_on:null,
         version:1,holes:[{id:'00000000-0000-4000-8000-000000000008',label:'1A',par:3,distance_m:85,tee:'Long tee',target:'Basket A',notes:'OB fixture'}],
-        provider_ref:{course_id:'pdga:4551',tournament_id:'99',layout_id:'11'},
-        provider_event:{layout_id:'11',tournament_id:'99',name:'Fixture event layout',hole_count:1,par:3,length:85,
-          units:'Meters',event_name:'Fixture event',event_date:'2026-01-02'},expiresAt:Date.now()+86400000}
+        provider_ref:{course_id:'pdga:4551',tournament_id:selected.tournament_id,layout_id:selected.layout_id},
+        provider_event:selected,expiresAt:Date.now()+86400000}
       const existing=state.layouts.find(l=>l.id===layoutId)
       if(!existing)state.layouts.push(layout)
       return route.fulfill({status:201,json:{layout:existing??layout}})
@@ -199,6 +202,40 @@ test('failed saves remain explicit and unsaved navigation can be declined',async
   await expect(topSave).toBeEnabled()
   await page.getByRole('button',{name:'Save game plan',exact:true}).last().click()
   await expect(page.getByText('Game plan saved.',{exact:true})).toBeVisible()
+})
+
+test('latest two events display newest first with all layouts and default to the newest without replacing a saved plan',async({page})=>{
+  const recent={...fixtureEvent,tournament_id:'100',event_name:'Recent event',event_date:'2026-05-25'}
+  const events=[{...recent,layout_id:'13',name:'Short tees'},{...recent,layout_id:'14',name:'Long tees'},
+    {...recent,layout_id:'15',name:'Final tees'},
+    {...fixtureEvent,tournament_id:'101',layout_id:'22',event_name:'Previous event',event_date:'2026-05-09'}]
+  const state=await setup(page,true,events)
+  await page.getByRole('button',{name:'Browse PDGA event layouts',exact:true}).click()
+  const picker=page.getByLabel('PDGA event layout',{exact:true})
+  await expect(picker).toHaveValue('100:13')
+  expect(await picker.locator('option').evaluateAll(options=>options.map(o=>(o as HTMLOptionElement).value)))
+    .toEqual(['','100:13','100:14','100:15','101:22'])
+  await expect(picker.locator('option').nth(1)).toContainText('Recent event · 2026-05-25')
+  await expect(picker.locator('option').last()).toContainText('Previous event · 2026-05-09')
+  expect(state.layouts).toEqual([])
+  expect(state.plan).toBeNull()
+  await picker.selectOption('100:14')
+  await page.getByRole('button',{name:'Use event layout',exact:true}).click()
+  expect(state.layoutBodies.at(-1)).toEqual({course_pin_id:pinId,tournament_id:'100',layout_id:'14'})
+  await expect(page.getByRole('heading',{name:'Long tees',exact:true})).toBeVisible()
+  await page.getByLabel('Strategy for hole 1A',{exact:true}).fill('Keep my saved strategy')
+  await page.getByRole('group',{name:'Planner actions',exact:true}).getByRole('button',{name:'Save game plan',exact:true}).click()
+  await page.getByRole('button',{name:'Duplicate & rename',exact:true}).click()
+  await page.getByLabel('Private game plan name',{exact:true}).fill('My recent event plan')
+  await page.getByRole('button',{name:'Create private game plan',exact:true}).click()
+  await expect(page.getByRole('heading',{name:'My recent event plan',exact:true})).toBeVisible()
+  const copy=state.layouts.find(l=>l.private_name==='My recent event plan')!
+  expect(copy.provider_ref).toEqual({course_id:'pdga:4551',tournament_id:'100',layout_id:'14'})
+  await page.getByRole('button',{name:'Browse PDGA event layouts',exact:true}).click()
+  await expect(picker).toHaveValue('100:13')
+  await expect(page.getByRole('combobox',{name:'Layout',exact:true})).toHaveValue(copy.id)
+  await expect(page.getByLabel('Strategy for hole 1A',{exact:true})).toHaveValue('Keep my saved strategy')
+  expect(state.plan?.layout_id).toBe(copy.id)
 })
 
 test('an unused layout can be deleted without having to link it to a plan first',async({page})=>{

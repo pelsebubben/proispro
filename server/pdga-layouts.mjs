@@ -13,6 +13,16 @@ const number = (value, min, max, integer = false) => {
       integer && !Number.isInteger(value)) invalid()
   return value
 }
+const eventDate = value => {
+  if (value == null) return null
+  if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) invalid()
+  const iso = value.match(/^\d{4}-\d{2}-\d{2}(?:T|$)/)
+  if (iso) return value.slice(0, 10)
+  // Provider calendar dates must not shift with the server's local timezone.
+  const timestamp = Date.parse(`${value} UTC`)
+  if (!Number.isFinite(timestamp)) invalid()
+  return new Date(timestamp).toISOString().slice(0, 10)
+}
 
 // Routes are protected operational configuration, not distributed API documentation.
 export function layoutConfiguration(indexTemplate, overviewTemplate) {
@@ -64,15 +74,15 @@ function summary(row, nodeId) {
       String(row.courseId) !== nodeId) invalid()
   const units = row.units
   if (!['Meters', 'Feet'].includes(units)) invalid()
-  const date = row.liveTournament?.startDate
-  if (date != null && (typeof date !== 'string' || !Number.isFinite(Date.parse(date)))) invalid()
+  const date = eventDate(row.liveTournament?.startDate)
   const name = text(row.name, 100)
   if (!name) invalid()
   return {
     layout_id: String(row.layoutId), tournament_id: String(row.tournId), node_id: nodeId,
     name, hole_count: number(row.holes, 1, 72, true), par: number(row.par, 1, 1080, true),
     length: number(row.length, 0, 200000), units,
-    event_name: text(row.liveTournament?.tournamentName, 300), event_date: date?.slice(0, 10) ?? null,
+    event_name: text(row.liveTournament?.tournamentName, 300),
+    event_date: date,
   }
 }
 
@@ -83,8 +93,25 @@ export async function readEventLayouts(config, course, fetcher = fetch) {
   if (!Array.isArray(rows) || rows.length > 500) invalid()
   const layouts = rows.map(row => summary(row, nodeId))
   if (new Set(layouts.map(l => `${l.tournament_id}:${l.layout_id}`)).size !== layouts.length) invalid()
-  return layouts.sort((a, b) => (b.event_date ?? '').localeCompare(a.event_date ?? '') ||
-    b.tournament_id.localeCompare(a.tournament_id, undefined, { numeric: true }))
+  return sortEventLayouts(layouts)
+}
+
+function sortEventLayouts(layouts) {
+  return [...layouts].sort((a, b) =>
+    (b.event_date === null ? -Infinity : Date.parse(b.event_date)) -
+      (a.event_date === null ? -Infinity : Date.parse(a.event_date)) ||
+    b.tournament_id.localeCompare(a.tournament_id, undefined, { numeric: true }) ||
+    a.layout_id.localeCompare(b.layout_id, undefined, { numeric: true }))
+}
+
+export function latestEventLayouts(layouts) {
+  const sorted = sortEventLayouts(layouts)
+  const events = new Set()
+  for (const layout of sorted) {
+    events.add(layout.tournament_id)
+    if (events.size === 2) break
+  }
+  return sorted.filter(layout => events.has(layout.tournament_id))
 }
 
 function holeId(layout, hole) {

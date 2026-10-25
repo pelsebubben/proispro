@@ -89,7 +89,8 @@ export function createPdgaService({ username, password, pool, fetcher = fetch, n
     if (!config) throw unavailable('pdga_layouts_not_configured')
     const found = await course(id)
     if (!found.value) throw unavailable('course_not_found')
-    return read(`layouts:${id}`, () => readEventLayouts(config, found.value, fetcher))
+    // Earlier cache entries sliced non-ISO dates, losing part of the year.
+    return read(`layouts:v2:${id}`, () => readEventLayouts(config, found.value, fetcher))
   }
   return {
     search: query => read(`search:${query.trim().toLowerCase()}`, () => searchPdga(credentials, query, fetcher)),
@@ -98,7 +99,7 @@ export function createPdgaService({ username, password, pool, fetcher = fetch, n
       const index = await layouts(id)
       const selected = index.value.find(l => l.tournament_id === tournamentId && l.layout_id === layoutId)
       if (!selected) throw unavailable('layout_not_found')
-      return read(`layout:${id}:${tournamentId}:${layoutId}`, () => readEventLayout(config, selected, fetcher))
+      return read(`layout:v2:${id}:${tournamentId}:${layoutId}`, () => readEventLayout(config, selected, fetcher))
     },
     clear: () => pool.query('DELETE FROM provider_cache.entries'),
     close: () => clearInterval(sweep),
