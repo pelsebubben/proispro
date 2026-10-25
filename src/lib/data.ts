@@ -48,7 +48,7 @@ async function request<T>(path: string, method = 'GET', body?: object): Promise<
 }
 
 export function readCourseCatalogue<T>(path: string): Promise<T> {
-  if (!/^courses(?:\?q=[^#]*|\/pdga:[1-9][0-9]{0,15}\/(?:holes|layouts))$/.test(path)) {
+  if (!/^courses(?:\?q=[^#]*|\/pdga:[1-9][0-9]{0,15}\/(?:holes|layouts|maps))$/.test(path)) {
     throw new Error('Invalid course catalogue request')
   }
 

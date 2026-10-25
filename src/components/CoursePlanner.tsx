@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { plannerData, readCourseCatalogue } from '../lib/data'
 import type { ClientPin } from '../hooks/useCoursePins'
-import type { ClientBag, ClientDisc } from '../utils/disc'
+import { DISC_TYPES, type ClientBag, type ClientDisc } from '../utils/disc'
 
 export interface ManualHole {
   id: string; label: string; par: number | null; distance_m: number | null; notes: string
@@ -27,6 +27,7 @@ const emptyLayout = (): PrivateLayout => ({
   id: '', name: '', tee: '', basket: '', description: '', checked_on: null, holes: [], version: 0,
 })
 const emptyChoice = (): HolePlan => ({disc_ids:[],notes:''})
+const discLabel = (disc:ClientDisc) => [disc.name,disc.edition,disc.plastic,disc.weight&&`${disc.weight} g`,disc.color].filter(Boolean).join(' · ')
 
 export function CoursePlanner({pin,bag,discs,onOpenBag}: {
   pin: ClientPin; bag: ClientBag | undefined; discs: ClientDisc[]; onOpenBag?: (id:string)=>void
@@ -36,12 +37,16 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
   const [draft,setDraft] = useState<PrivateLayout | null>(null)
   const [selections,setSelections] = useState<Record<string,HolePlan>>({})
   const [dirty,setDirty] = useState(false)
+  const [choicesDirty,setChoicesDirty] = useState(false)
   const [busy,setBusy] = useState(false)
   const [error,setError] = useState('')
   const [notice,setNotice] = useState('')
   const [events,setEvents] = useState<{layouts:EventLayout[];expiresAt:number}|null>(null)
   const [eventSelection,setEventSelection] = useState('')
+  const [eventsError,setEventsError] = useState('')
   const [copyName,setCopyName] = useState<string|null>(null)
+  const [discQuery,setDiscQuery] = useState('')
+  const [courseMaps,setCourseMaps] = useState<CourseMap[]>([])
   const saving = useRef(false)
   const layout = data?.layouts.find(l=>l.id===layoutId)
   useEffect(()=>{
@@ -50,6 +55,7 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
     const timer=setTimeout(()=>{
       const now=Date.now()
       setEvents(previous=>previous&&previous.expiresAt>now?previous:null)
+      if(events&&events.expiresAt<=now)setEventsError('Course layouts expired. Reload to refresh.')
       setData(previous=>previous?{...previous,layouts:previous.layouts.map(l=>l.expiresAt&&l.expiresAt<=now?
         {...l,name:l.private_name??'PDGA event layout',holes:[],provider_event:undefined,expiresAt:undefined,
           provider_error:'Cached event details expired. Reload saved plan to refresh; your disc choices are unchanged.'}:l)}:null)
@@ -70,7 +76,7 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
   const load = async () => {
     const next = await plannerData<PlannerState>(`planner?pin_id=${pin.id}`)
     setData(next); setLayoutId(next.plan?.layout_id ?? '')
-    setSelections(next.plan?.selections ?? {}); setDirty(false)
+    setSelections(next.plan?.selections ?? {}); setDirty(false);setChoicesDirty(false)
     return next
   }
   useEffect(()=>{
@@ -81,6 +87,23 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
     }).catch(reason=>{if(active)setError(reason.message)})
     return ()=>{active=false}
   },[pin.id])
+  const refreshEvents = async()=>{
+    const result=await readCourseCatalogue<{layouts:EventLayout[];expiresAt:number}>(`courses/${pin.courseId}/layouts`)
+    setEvents(result)
+    setEventsError('')
+    setEventSelection(result.layouts[0]?`${result.layouts[0].tournament_id}:${result.layouts[0].layout_id}`:'')
+  }
+  useEffect(()=>{
+    if(!pin.courseId?.startsWith('pdga:'))return
+    let active=true
+    void readCourseCatalogue<{layouts:EventLayout[];expiresAt:number}>(`courses/${pin.courseId}/layouts`)
+      .then(result=>{
+        if(!active)return
+        setEvents(result)
+        setEventSelection(result.layouts[0]?`${result.layouts[0].tournament_id}:${result.layouts[0].layout_id}`:'')
+      }).catch(reason=>{if(active)setEventsError(reason instanceof Error?reason.message:'Could not load course layouts.')})
+    return ()=>{active=false}
+  },[pin.courseId])
   const perform = async(action:()=>Promise<void>)=>{
     if(saving.current)return
     saving.current=true;setBusy(true);setError('');setNotice('')
@@ -96,10 +119,28 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
     setData(next);setLayoutId(selected)
     setSelections(next.selected_plan?.selections??(selected===next.plan?.layout_id?next.plan.selections:{}))
     setDirty(selected!==(next.plan?.layout_id??''))
+    setChoicesDirty(false)
   }
   const updateChoice=(holeId:string,value:HolePlan)=>{
-    setSelections(previous=>({...previous,[holeId]:value}));setDirty(true);setNotice('')
+    setSelections(previous=>({...previous,[holeId]:value}));setDirty(true);setChoicesDirty(true);setNotice('')
   }
+  const discGroups=useMemo(()=>{
+    const inBag=new Set(bag?.disc_ids??[])
+    const words=discQuery.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
+    const groups=[]
+    for(const membership of [true,false]){
+      for(const type of [...DISC_TYPES,{value:'',label:'Other'}]){
+        const items=discs.filter(d=>inBag.has(d.id)===membership&&
+          (type.value?d.type===type.value:!DISC_TYPES.some(t=>t.value===d.type))&&
+          words.every(word=>`${d.name} ${d.edition} ${d.manufacturer} ${d.plastic} ${d.color} ${d.weight}`.toLocaleLowerCase().includes(word)))
+          .sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:'base'})||
+            a.edition.localeCompare(b.edition)||a.plastic.localeCompare(b.plastic)||
+            (Number(a.weight)||0)-(Number(b.weight)||0)||a.color.localeCompare(b.color)||a.id.localeCompare(b.id))
+        if(items.length)groups.push({label:`${membership?'In bag':'Other inventory'} · ${type.label}`,items})
+      }
+    }
+    return groups
+  },[bag,discs,discQuery])
   const progress = layout?.holes.filter(h=>selections[h.id]?.disc_ids.length).length??0
   const missing = new Set(Object.values(selections).flatMap(s=>s.disc_ids).filter(id=>!bag?.disc_ids.includes(id)))
   const saveDisabled = busy||!dirty||!!layout?.provider_error
@@ -118,42 +159,39 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
     {!data&&!error&&<p role="status">Loading your layouts...</p>}
     {data&&<>
       {pin.courseId?.startsWith('pdga:')&&<div className="event-layout-picker">
-        <button className="btn" disabled={busy||!!draft} onClick={()=>void perform(async()=>{
-          const result=await readCourseCatalogue<{layouts:EventLayout[];expiresAt:number}>(`courses/${pin.courseId}/layouts`)
-          setEvents(result)
-          const first=result.layouts[0]
-          setEventSelection(first?`${first.tournament_id}:${first.layout_id}`:'')
-        })}>Browse PDGA event layouts</button>
+        {eventsError&&<p role="alert">{eventsError} <button className="btn" disabled={busy}
+          onClick={()=>void perform(refreshEvents)}>Retry course layouts</button></p>}
+        {!events&&!eventsError&&<p role="status">Loading course layouts...</p>}
         {events&&<>
-          <p className="bag-hint">Layouts from the two most recent events at this course, newest first. Historical setups, not a guarantee of today&apos;s layout.</p>
           {!events.layouts.length?<p>No event layouts are available for this course. You can create a private layout instead.</p>:
           <div className="planner-toolbar">
-            <label htmlFor={`event-${pin.id}`}>PDGA event layout</label><select id={`event-${pin.id}`} value={eventSelection} disabled={busy} onChange={e=>setEventSelection(e.target.value)}>
+            <label htmlFor={`event-${pin.id}`}>Available course layouts</label><select id={`event-${pin.id}`} value={eventSelection} disabled={busy||!!draft} onChange={e=>setEventSelection(e.target.value)}>
               <option value="">Choose an event and layout</option>
               {events.layouts.map(e=><option key={`${e.tournament_id}:${e.layout_id}`} value={`${e.tournament_id}:${e.layout_id}`}>
                 {e.name} · {e.event_name} · {e.event_date??'Date unknown'} · {e.hole_count} holes · Par {e.par??'?'} · {e.length??'?'} {e.units}
               </option>)}
             </select>
-            <button className="btn" disabled={busy||!eventSelection} onClick={()=>{
+            <button className="btn" disabled={busy||!!draft||!eventSelection} onClick={()=>{
               if(dirty&&!confirm('Discard unsaved choices before selecting this event layout?'))return
               void perform(async()=>{
-                if(events.expiresAt<=Date.now())throw new Error('Event list expired. Browse event layouts again.')
+                if(events.expiresAt<=Date.now()){await refreshEvents();throw new Error('Course layouts refreshed. Select the layout again.')}
                 const [tournament_id,layout_id]=eventSelection.split(':')
                 const result=await plannerData<{layout:PrivateLayout}>('planner/event-layout','POST',
                   {course_pin_id:pin.id,tournament_id,layout_id})
                 await selectLayout(result.layout.id)
                 setNotice('Event layout selected. Choose discs and save the game plan to link it to this bag.')
               })
-            }}>Use event layout</button>
+            }}>Use layout</button>
           </div>}
         </>}
       </div>}
+      {pin.courseId?.startsWith('pdga:')&&<CourseMaps courseId={pin.courseId} courseName={pin.courseName} onMaps={setCourseMaps}/>}
       <div className="planner-toolbar">
         <label>Layout<select aria-label="Layout" value={layoutId} disabled={busy||!!draft} onChange={event=>{
           if(dirty&&!confirm('Discard unsaved game-plan changes?'))return
           const selected=event.target.value
           setCopyName(null)
-          if(!selected){setLayoutId('');setSelections({});setDirty(false);return}
+          if(!selected){setLayoutId('');setSelections({});setDirty(false);setChoicesDirty(false);return}
           void perform(()=>selectLayout(selected))
           setNotice('')
         }}><option value="">Choose a private layout</option>
@@ -162,7 +200,7 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
         <button className="btn" disabled={busy||!!draft} onClick={()=>{
           if(!dirty||confirm('Discard unsaved game-plan changes before creating a layout?'))setDraft(emptyLayout())
         }}>Create private layout</button>
-        {layout?.provider_ref&&<button className="btn" disabled={busy||!!draft||dirty} onClick={()=>setCopyName('')}>
+        {layout?.provider_ref&&<button className="btn" disabled={busy||!!draft||choicesDirty} onClick={()=>setCopyName('')}>
           Duplicate &amp; rename
         </button>}
         {layout&&!layout.provider_ref&&<button className="btn" disabled={busy||!!draft} onClick={()=>{
@@ -186,11 +224,11 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
         <p className="bag-hint">Your name, saved disc choices and strategy are copied privately. PDGA holes still refresh from the 24-hour cache.
           This is not a permanent hole-layout snapshot.</p>
         <div className="planner-toolbar">
-          <button className="btn btn-primary" disabled={busy||!copyName.trim()||dirty}>Create private game plan</button>
+          <button className="btn btn-primary" disabled={busy||!copyName.trim()||choicesDirty}>Create private game plan</button>
           <button type="button" className="btn" disabled={busy} onClick={()=>setCopyName(null)}>Cancel</button>
         </div>
       </form>}
-      {layout?.provider_ref&&dirty&&!draft&&<p className="bag-hint">Save your changes before duplicating this game plan.</p>}
+      {layout?.provider_ref&&choicesDirty&&!draft&&<p className="bag-hint">Save your disc choices before duplicating this game plan.</p>}
       {data.layouts.length===0&&!draft&&<p>Add holes from your own observations. Do not copy restricted course guides, maps or provider content.</p>}
       {draft?<LayoutEditor key={draft.id||'new'} initial={draft} busy={busy} onCancel={()=>setDraft(null)}
         onSave={value=>void perform(async()=>{
@@ -209,7 +247,7 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
           {layout.private_name&&<p className="bag-hint">Private game plan · Your disc choices and strategy are independent of the source plan.</p>}
           {layout.provider_event?<p className="bag-hint">PDGA event: {layout.provider_event.event_name} · {layout.provider_event.event_date??'Date unknown'}
             {' '}· Par {layout.provider_event.par??'?'} · {layout.provider_event.length??'?'} {layout.provider_event.units}.
-            {' '}This historical setup may differ from the current course.</p>:
+            </p>:
           !layout.provider_ref&&<p className="bag-hint">{layout.tee||'Tee not specified'} · {layout.basket||'Basket not specified'}
             {layout.checked_on&&` · Checked ${layout.checked_on.slice(0,10)}`}</p>}
           {layout.description&&<p>{layout.description}</p>}
@@ -220,6 +258,10 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
         {!layout.holes.length&&!layout.provider_ref&&<p>This layout has no holes yet. Edit the layout to add your first hole.</p>}
         {Object.keys(selections).some(id=>!layout.holes.some(h=>h.id===id))&&<p role="status">
           Some saved choices refer to holes not present in the available layout. They are retained, not reassigned to another hole.</p>}
+        <label className="planner-disc-search">Find a disc
+          <input type="search" value={discQuery} placeholder="Name, plastic, colour or weight" onChange={event=>setDiscQuery(event.target.value)}/>
+        </label>
+        <p className="bag-hint">In-bag discs first, then other inventory. Grouped by disc type and sorted A–Z.</p>
         <ol className="planner-holes">{layout.holes.map((hole,index)=>{
           const choice=selections[hole.id]??emptyChoice()
           const selectedDiscs=choice.disc_ids.map(id=>discs.find(d=>d.id===id)).filter((d):d is ClientDisc=>!!d)
@@ -228,21 +270,29 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
               hole.units==='Feet'?`${hole.length} ft (${hole.distance_m} m)`:`${hole.distance_m} m`}</p>
               {(hole.tee||hole.target)&&<p className="bag-hint">Tee: {hole.tee||'Not specified'} · Target: {hole.target||'Not specified'}</p>}
               {hole.notes&&<p>{hole.notes}</p>}
+              {courseMaps.length>0&&<div className="hole-maps">
+                <p className="bag-hint">Course overview, not a hole-specific diagram.</p>
+                {courseMaps.map(map=><CourseMapPreview key={map.url} map={map} title={`${pin.courseName} · Hole ${hole.label}`}/>)}
+              </div>}
             </div>
             <div className="planner-hole-plan">
               <ol className="planner-choices">{selectedDiscs.map((disc,i)=><li key={disc.id}>
-                <span>{i===0?'Primary':'Alternative'}: {disc.name}{!bag?.disc_ids.includes(disc.id)&&' · Not in bag'}</span>
-                <button className="btn" disabled={busy||i===0} aria-label={`Make ${disc.name} primary on hole ${hole.label}`}
+                <span>{i===0?'Primary':'Alternative'}: {discLabel(disc)}{!bag?.disc_ids.includes(disc.id)&&' · Not in bag'}</span>
+                <button className="btn" disabled={busy||i===0} aria-label={`Make ${discLabel(disc)} primary on hole ${hole.label}`}
                   onClick={()=>updateChoice(hole.id,{...choice,disc_ids:[disc.id,...choice.disc_ids.filter(id=>id!==disc.id)]})}>Make primary</button>
-                <button className="btn" disabled={busy} aria-label={`Remove ${disc.name} from hole ${hole.label}`}
+                <button className="btn" disabled={busy} aria-label={`Remove ${discLabel(disc)} from hole ${hole.label}`}
                   onClick={()=>updateChoice(hole.id,{...choice,disc_ids:choice.disc_ids.filter(id=>id!==disc.id)})}>Remove</button>
               </li>)}</ol>
               <label htmlFor={`disc-${pin.id}-${hole.id}`}>Add disc for hole {hole.label}</label>
               <select id={`disc-${pin.id}-${hole.id}`} value="" disabled={busy||choice.disc_ids.length>=12}
                 onChange={event=>{if(event.target.value)updateChoice(hole.id,{...choice,disc_ids:[...choice.disc_ids,event.target.value]})}}>
                 <option value="">Choose from your inventory</option>
-                {[...discs].sort((a,b)=>Number(!!bag?.disc_ids.includes(b.id))-Number(!!bag?.disc_ids.includes(a.id))||a.name.localeCompare(b.name))
-                  .filter(d=>!choice.disc_ids.includes(d.id)).map(d=><option key={d.id} value={d.id}>{d.name}{bag?.disc_ids.includes(d.id)?' · In bag':' · Not in bag'}</option>)}
+                {discGroups.map(group=>{
+                  const available=group.items.filter(d=>!choice.disc_ids.includes(d.id))
+                  return available.length>0&&<optgroup key={group.label} label={group.label}>
+                    {available.map(d=><option key={d.id} value={d.id}>{discLabel(d)}</option>)}
+                  </optgroup>
+                })}
               </select>
               <label htmlFor={`strategy-${pin.id}-${hole.id}`}>Strategy for hole {hole.label}</label>
               <textarea id={`strategy-${pin.id}-${hole.id}`} value={choice.notes} maxLength={1000} disabled={busy}
@@ -262,6 +312,47 @@ export function CoursePlanner({pin,bag,discs,onOpenBag}: {
       </>}
     </>}
   </section>
+}
+
+interface CourseMap { url:string; kind:'pdf'|'image'; label:string }
+function CourseMapPreview({map,title}:{map:CourseMap;title:string}) {
+  const [open,setOpen]=useState(false)
+  const [failed,setFailed]=useState(false)
+  return <details className="course-map-preview" onToggle={event=>setOpen(event.currentTarget.open)}>
+    <summary>{map.label}</summary>
+    <a href={map.url} target="_blank" rel="noopener noreferrer">Open {map.label.toLowerCase()} in full size</a>
+    {open&&(failed?<p role="status">Preview unavailable. Use the full-size map link.</p>:
+      map.kind==='pdf'?<iframe title={`${title} · ${map.label}`} src={map.url} loading="lazy" referrerPolicy="no-referrer"/>:
+        <img src={map.url} alt={`${title} · ${map.label}`} loading="lazy" referrerPolicy="no-referrer" onError={()=>setFailed(true)}/>)}
+  </details>
+}
+
+function CourseMaps({courseId,courseName,onMaps}:{courseId:string;courseName:string;onMaps:(maps:CourseMap[])=>void}) {
+  const [result,setResult]=useState<{maps:CourseMap[];expiresAt:number}|null>(null)
+  const [error,setError]=useState('')
+  const [retry,setRetry]=useState(0)
+  useEffect(()=>{
+    let active=true
+    setResult(null);setError('');onMaps([])
+    void readCourseCatalogue<{maps:CourseMap[];expiresAt:number}>(`courses/${courseId}/maps`)
+      .then(value=>{if(active){setResult(value);onMaps(value.maps)}})
+      .catch(reason=>{if(active)setError(reason instanceof Error?reason.message:'Course maps unavailable.')})
+    return ()=>{active=false}
+  },[courseId,retry,onMaps])
+  useEffect(()=>{
+    if(!result)return
+    const timer=setTimeout(()=>{setResult(null);onMaps([]);setError('Course maps expired. Reload to refresh.')},Math.max(0,result.expiresAt-Date.now()))
+    return ()=>clearTimeout(timer)
+  },[result,onMaps])
+  return <div className="course-maps">
+    <h4>Course maps</h4>
+    {error?<p role="status">{error} <button className="btn" onClick={()=>setRetry(value=>value+1)}>Retry maps</button></p>:
+      !result?<p role="status">Loading course maps...</p>:
+      !result.maps.length?<p className="bag-hint">No course map is available from PDGA for this course.</p>:
+      <><p className="bag-hint">Whole-course maps, not individual hole diagrams. Map versions may differ from the selected layout.</p>
+        {result.maps.map(map=><CourseMapPreview key={map.url} map={map} title={courseName}/>)}
+      </>}
+  </div>
 }
 
 function LayoutEditor({initial,busy,onSave,onCancel}:{initial:PrivateLayout;busy:boolean;onSave:(value:PrivateLayout)=>void;onCancel:()=>void}) {

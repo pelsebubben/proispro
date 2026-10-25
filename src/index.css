@@ -36,6 +36,16 @@ body {
 .planner-hole { display:grid; grid-template-columns:minmax(8rem,1fr) minmax(0,3fr); gap:1.5rem; padding-block:1.25rem; border-top:1px solid var(--clr-border); }
 .planner-hole h4 { margin:.5rem 0; }
 .planner-hole p { overflow-wrap:anywhere; }
+.course-name-link { border:0; padding:0; background:none; color:var(--clr-text); font:inherit; text-align:start; text-decoration:underline; text-underline-offset:.2em; cursor:pointer; }
+.course-disclaimer { margin-block-start:2rem; padding-block:1rem; border-block-start:1px solid var(--clr-border); }
+.course-maps { margin-block:1rem 1.5rem; }
+.course-map-preview { margin-block:.75rem; }
+.course-map-preview summary { cursor:pointer; padding-block:.5rem; }
+.course-map-preview a { display:block; margin-block:.5rem; overflow-wrap:anywhere; }
+.course-map-preview iframe,.course-map-preview img { width:100%; max-width:100%; border:1px solid var(--clr-border); }
+.course-map-preview iframe { height:24rem; }
+.hole-maps .course-map-preview iframe { height:18rem; }
+.planner-disc-search { display:block; max-width:30rem; margin-block-start:1.5rem; }
 .planner-choices li { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; padding-block:.65rem; border-bottom:1px solid var(--clr-border); }
 .planner-choices li span { flex:1; min-width:10rem; overflow-wrap:anywhere; }
 .layout-editor fieldset { border:0; padding:0; margin:0; min-width:0; }

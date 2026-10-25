@@ -70,8 +70,17 @@ User-authored strategy and owned-disc choices persist separately
 under forced owner RLS. Do not copy provider facts into permanent manual layouts.
 
 Display **"Player, event, and course data provided by PDGA."** linking to PDGA
-where provider content is shown. Mark event layouts as historical and display
+in the compact Courses footer where provider content is shown. Mark event layouts as historical and display
 event name/date, original measurement units and available tee/target/notes.
+
+Course-map metadata is read separately from the exact course's public media
+page, without REST credentials or developing endpoint configuration. Redirects
+must stay on HTTPS PDGA, response size/time and map counts are bounded, and only
+PDGA-hosted course-map PDFs/images are exposed. Only the map links are temporarily
+cached under a separate versioned key; source HTML and map files are not stored.
+Maps are whole-course overviews, not individual-hole geometry or permanent plan
+snapshots. Changes to the page structure fail explicitly instead of implying
+that a course has no maps.
 
 For revocation/removal, remove provider configuration from all current/old
 revisions, stop access, and purge `provider_cache.entries`. Backups must follow

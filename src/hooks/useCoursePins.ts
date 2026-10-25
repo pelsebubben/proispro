@@ -106,9 +106,10 @@ export function useCoursePins(resolveDetails=false) {
   }, [loadPins, loadHoleAssignments])
 
   const createPin = async (courseName: string, courseId: string | null, bagId: string) => {
-    if (!user) return
-    await createRow('course_pins', { course_name: courseId?.startsWith('pdga:') ? 'PDGA course' : courseName, course_id: courseId, bag_id: bagId })
+    if (!user) throw new Error('Sign in before pinning a course.')
+    const pin = await createRow<{id:string}>('course_pins', { course_name: courseId?.startsWith('pdga:') ? 'PDGA course' : courseName, course_id: courseId, bag_id: bagId })
     await loadPins()
+    return pin.id
   }
 
   const updatePin = async (pinId: string, updates: Partial<ClientPin>) => {

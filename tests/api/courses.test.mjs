@@ -39,6 +39,11 @@ test('PDGA SQL cache survives replicas, expires, isolates exact event holes and 
     liveTournament:{tournamentName:'Fixture event',startDate:'2026-01-02T00:00:00Z'}}
   const fetcher=async(url,options)=>{
     calls.push(url)
+    if(url.includes('?qt-course_node=1')){
+      assert.equal(options.redirect,'manual')
+      return new Response('<div class="views-field-field-course-map-revision-id"><iframe data-src="https://www.pdga.com/files/course_maps/fixture.pdf"></iframe></div><div class="views-field-field-course-photo-revision-id"></div>',
+        {headers:{'content-type':'text/html'}})
+    }
     assert.equal(options.redirect,'error')
     if(gate)await gate
     if(url.endsWith('/login'))return Response.json({session_name:'SSESS_fixture',sessid:'fixture',token:'fixture'})
@@ -97,6 +102,16 @@ test('PDGA SQL cache survives replicas, expires, isolates exact event holes and 
   const count=calls.length
   assert.deepEqual(await second.layout('pdga:4551','99','11'),detail)
   assert.equal(calls.length,count,'viewing the same layout must make zero provider requests')
+  const maps=await first.maps('pdga:4551')
+  assert.deepEqual(maps.value,[{url:'https://www.pdga.com/files/course_maps/fixture.pdf',kind:'pdf',label:'Course map 1'}])
+  assert.ok(Math.abs(maps.expiresAt-Date.now()-pdgaCacheMs)<1000)
+  const mapsCalls=calls.length
+  assert.deepEqual(await second.maps('pdga:4551'),maps,'maps are reused from PostgreSQL across replicas')
+  assert.equal(calls.length,mapsCalls)
+  const mapKey=createHash('sha256').update('maps:v1:pdga:4551').digest('hex')
+  await pool.query("UPDATE provider_cache.entries SET expires_at=now()-interval '1 second' WHERE key=$1",[mapKey])
+  await first.maps('pdga:4551')
+  assert.equal(calls.length,mapsCalls+1,'expired map metadata refreshes instead of being served stale')
   const values=(await pool.query('SELECT value FROM provider_cache.entries')).rows
   assert.ok(!JSON.stringify(values).includes('NEVER_STORE'))
   assert.ok(!JSON.stringify(values).includes('Wrong neighbour'))
