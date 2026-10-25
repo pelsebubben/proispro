@@ -33,7 +33,7 @@ export function Layout({ activeTab, onTabChange, children }: LayoutProps) {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <img src="/img/logo.png" alt="" style={{ width: '32px', height: '32px', borderRadius: '50%' }} />
-          <span style={{ fontWeight: 700, color: 'var(--clr-accent)' }}>ProIsPro</span>
+          <span style={{ fontWeight: 700, color: 'var(--clr-accent)' }}>Griplock</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <span title={user?.email} style={{ color: 'var(--clr-muted)', fontSize: '0.85rem' }}>

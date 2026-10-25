@@ -38,15 +38,24 @@ async function isolateNetwork(page: Page, signedIn = false) {
 test('signed-out player sees local login without external requests', async ({ page }) => {
   const unexpected = await isolateNetwork(page)
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'ProIsPro' })).toBeVisible()
+  await expect(page).toHaveTitle('Griplock — Disc Golf Bag Tracker')
+  await expect(page.getByRole('heading', { name: 'Griplock' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Sign in locally' })).toBeVisible()
   expect(await page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth)).toBe(true)
   expect(unexpected).toEqual([])
 })
 
+test('sale page uses the Griplock brand', async ({ page }) => {
+  await page.route('https://cdn.jsdelivr.net/**', route => route.abort())
+  await page.goto('/sale.html')
+  await expect(page).toHaveTitle('Discs For Sale · Griplock')
+  await expect(page.getByRole('link', { name: '← Back to Griplock' })).toHaveAttribute('href', '/')
+})
+
 test('player can load, filter and clear an API-backed inventory search', async ({ page }) => {
   const unexpected = await isolateNetwork(page, true)
   await page.goto('/')
+  await expect(page.getByText('Griplock', { exact: true })).toBeVisible()
   await expect(page.getByText('Fixture Buzzz', { exact: true })).toBeVisible()
   await expect(page.getByText('Fixture Destroyer', { exact: true })).toBeVisible()
   const search = page.getByPlaceholder('Search discs...', { exact: false })

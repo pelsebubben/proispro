@@ -1,4 +1,4 @@
-# Griplock / ProIsPro
+# Griplock
 
 A personal disc golf inventory and bag tracker for the owner and friends.
 
