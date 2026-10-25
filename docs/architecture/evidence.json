@@ -4,7 +4,7 @@
     ".dockerignore": "36c0147425cc8675e6cc474a8fb4f7776e44b50429cd92850ec841ac97ec0886",
     ".github/workflows/architecture.yml": "f4c1fc9377278372e10c804870d6e3aeccf918d3ecad3f571c93e8087a408af4",
     ".github/workflows/ci.yml": "6c13fd1618099c22014df86fa269227848cb95b13eea548c16b9c3e66ac18f1a",
-    ".github/workflows/dev.yml": "733a7f73cd8154e07fc6724ab186f4d997bbdfd8db665c53ea53a1a5339218e7",
+    ".github/workflows/dev.yml": "3b47a74efd886f60908e3a8067546ac5ed6ac9d3bfca0f5678e6ed7c2d3a5e9d",
     ".github/workflows/infra.yml": "c320bed8547b0a8a5f63680074fbb63ad4756d34d569e7e7ebeac249a460ef78",
     ".github/workflows/prod.yml": "3ad12a69d83c12f3612b06c52586fa0405b8faef87e138f2bb079aba6a8ce8df",
     "Dockerfile": "09055e137b23d95abb593fcd4e9305eb84efbc793bc4f113bf8e26d884dd444d",
@@ -100,7 +100,7 @@
     "docs/architecture/delivery.workflow.json": "45b810ff7fee2f51c6801404e275893375aa58f7d65817a434e6bb215b10cd7e"
   },
   "documents": {
-    "docs/architecture/README.md": "f2718118160bc5e43d48422cfaa03f72b56b7d7b45f51d98baab843b452e152d",
-    "docs/architecture/reviews.md": "bc54af0a33b78d62394190c842058fcd7417abd810c525134932897f837cccdb"
+    "docs/architecture/README.md": "be89b60f5644aacef3e653eb8cd4e243c60094aa3c1af9ae707a05de098459e6",
+    "docs/architecture/reviews.md": "c1c56a77beb989b2893b0af8e8f6217d322af818c988dcb856927e3ffe5cd342"
   }
 }

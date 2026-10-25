@@ -125,10 +125,12 @@ PDGA settings are applied server-side. Deployed browser checks precede the
 verified-release manifest. The architecture artifact proves documentation
 generation, not that rollout or real customer login succeeded.
 
-Non-draft same-repository PRs can deploy independently to shared dev. That workflow
-does not wait for Required CI; production does. Prod and foundation changes share
-a non-cancelling lock; shared dev has its own cancelling lock. A prod reset can
-race a dev branch deployment: do not assume the dev URL still serves your branch.
+PRs do not trigger shared-dev deployment or obtain its Azure OIDC access. Shared
+dev accepts only manual dispatches from `main` with `DEV_ENABLED=true`, guarded
+before checkout and Azure authentication. That workflow does not wait for Required
+CI; production does. Prod and foundation changes share a non-cancelling lock;
+shared dev has its own cancelling lock. A production rollout can race a manual
+dev deployment: do not assume the dev URL still serves the dispatched commit.
 Consult the health SHA and [delivery runbook](../github-pipelines.md).
 
 ## Review findings and scoped follow-ups
