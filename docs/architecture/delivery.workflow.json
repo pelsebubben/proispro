@@ -6,7 +6,17 @@
     "subtitle": "Release source SHA stays fixed; no cloud credentials enter documentation jobs",
     "locale": "en",
     "output": "architecture-report/delivery.html",
-    "quality_profile": "showcase"
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "frontend": {"label": "Browser tests"},
+        "backend": {"label": "Build and docs"},
+        "database": {"label": "Data and evidence"},
+        "cloud": {"label": "Azure deployment"},
+        "security": {"label": "Release gate"},
+        "external": {"label": "Release trigger"}
+      }
+    }
   },
   "lanes": [
     {"id": "checks", "label": "Read-only source and build"},

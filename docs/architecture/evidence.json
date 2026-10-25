@@ -97,7 +97,7 @@
   "diagrams": {
     "docs/architecture/runtime.architecture.json": "98edc2be568da8b6a296b5a099ca3a6b81e626447975df22a9bd514e67c7a67b",
     "docs/architecture/request.sequence.json": "7bf8758cca9ed4ebbc4535b46468aface563370c913a7d6351d6260fe713261b",
-    "docs/architecture/delivery.workflow.json": "4cf96be3d959bc54df379f18f1d4f19f2545bb0d203e0b9097a3360c2fee89ab"
+    "docs/architecture/delivery.workflow.json": "88765b2e1f03b2ff413599ae353fb1a9dbfe471b23e8eda2a7d57891247c20a5"
   },
   "documents": {
     "docs/architecture/README.md": "dc1fa8b1729424dc81a93311ca4e42a1ccadd41082c26432d89600a490e7244b",
