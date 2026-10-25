@@ -11,7 +11,8 @@
   "lanes": [
     {"id": "checks", "label": "Read-only source and build"},
     {"id": "cloud", "label": "Protected prod environment"},
-    {"id": "evidence", "label": "Read-only deployed checks"}
+    {"id": "evidence", "label": "Read-only deployed checks"},
+    {"id": "record", "label": "Verified release record"}
   ],
   "mainPath": ["source", "required", "docs", "image", "publish", "database", "rollout", "browser", "manifest"],
   "nodes": [
@@ -23,7 +24,7 @@
     {"id": "database", "lane": "cloud", "col": 4, "type": "database", "label": "Private DB jobs", "sublabel": "verify, backup, migrate", "width": 180, "sources": [{"path": ".github/workflows/prod.yml", "line": 137, "end_line": 150}, {"path": "infra/job.bicep", "line": 16, "end_line": 49}]},
     {"id": "rollout", "lane": "cloud", "col": 5, "type": "cloud", "label": "Live + dev", "sublabel": "digest, probes, PDGA", "width": 160, "sources": [{"path": ".github/workflows/prod.yml", "line": 152, "end_line": 213}, {"path": ".github/workflows/prod.yml", "line": 215, "end_line": 243}]},
     {"id": "browser", "lane": "evidence", "col": 5, "type": "frontend", "label": "Deployed checks", "sublabel": "desktop + mobile", "width": 160, "sources": [{"path": ".github/workflows/prod.yml", "line": 245, "end_line": 264}]},
-    {"id": "manifest", "lane": "evidence", "col": 4, "type": "database", "label": "Release evidence", "sublabel": "record only on pass", "width": 160, "sources": [{"path": ".github/workflows/prod.yml", "line": 265, "end_line": 273}, {"path": "scripts/record-staging-release.mjs", "line": 1, "end_line": 18}]}
+    {"id": "manifest", "lane": "record", "col": 5, "type": "database", "label": "Release evidence", "sublabel": "record only on pass", "width": 160, "sources": [{"path": ".github/workflows/prod.yml", "line": 265, "end_line": 273}, {"path": "scripts/record-staging-release.mjs", "line": 1, "end_line": 18}]}
   ],
   "edges": [
     {"id": "ci", "from": "source", "to": "required", "variant": "security"},
