@@ -1,5 +1,16 @@
 # Architecture review history
 
+## 2026-10-25 - Restrict shared-dev deployment privileges
+
+Reviewed `.github/workflows/dev.yml`: pull requests no longer trigger deployment;
+only manual dispatches from `main` with `DEV_ENABLED=true` can reach checkout
+and Azure authentication. The job guard and pre-checkout validation enforce
+the trusted ref and enabled setting. Updated the deployment boundary reference.
+The runtime and authenticated-request drawings are unchanged. The production
+delivery drawing remains accurate: main CI still gates production, documentation
+runs independently, and shared dev retains its separate lock. No runtime,
+schema, production gate or cloud-resource change.
+
 ## 2026-10-25 - Decouple documentation from production
 
 Moved architecture checks, their contract tests and rendering into an independent

@@ -100,9 +100,9 @@ and migration of the existing frontend/data are separate, unfinished milestones.
   backs up live data when schema code changed, migrates the live and dev databases,
   deploys the digest to live, resets the dev app to the same digest, and runs real deployed browser
   checks. It shares a non-cancelling concurrency group with `infra.yml`.
-- `dev.yml`: deploys non-draft same-repository PRs (or a manual dispatch from any
-  branch) to the shared dev app `app-griplock-dev` on database `griplock_dev`. See
-  [Shared dev environment](#shared-dev-environment).
+- `dev.yml`: deploys `main` to the shared dev app `app-griplock-dev` on database
+  `griplock_dev` only by manual dispatch from `main`. Pull requests run CI without
+  cloud credentials. See [Shared dev environment](#shared-dev-environment).
 - `infra.yml`: explicit main-branch dispatch for staging `plan` or `apply`, using
   environment-scoped OIDC. Disabled until `INFRA_ENABLED=true` is configured.
 - `deploy.yml`: preserves existing GitHub Pages hosting, but publishing now
@@ -394,18 +394,15 @@ az postgres flexible-server restore -g rg-griplock-staging -n pg-griplock-restor
 
 One shared dev app (`app-griplock-dev`, scales to zero) runs on the same
 PostgreSQL server as live, in its own database `griplock_dev` with its own runtime
-role `griplock_dev_app`. That role has no grants on live tables. Every push to a
-non-draft same-repository PR runs `dev.yml`: build, push `griplock:dev-<sha>`, migrate
-`griplock_dev` with the branch code, update the dev app, and wait until
-`/health/ready` reports the branch SHA. The newest push wins (in-progress dev
-deploys are cancelled). Draft PRs still run CI but do not deploy or cancel an
-active deployment. Marking a draft ready for review starts its dev deployment.
-Dependabot PRs run CI only and never replace the shared dev app.
-Fork PRs never deploy. Explicit manual dispatch remains available for any branch.
-Each live release resets the dev app to main.
+role `griplock_dev_app`. That role has no grants on live tables. Pull requests run
+CI only and never receive the Azure identity. To deploy, manually dispatch
+`dev.yml` from `main`: it builds and pushes `griplock:dev-<sha>`, migrates
+`griplock_dev`, updates the dev app, and waits until `/health/ready` reports the
+deployed SHA. Deployments are serialized; a later run cancels an in-progress dev
+deployment. Each live release resets the dev app to main.
 
 ```powershell
-gh workflow run dev.yml --repo pelsebubben/proispro --ref BRANCH
+gh workflow run dev.yml --repo pelsebubben/proispro --ref main
 gh run list --repo pelsebubben/proispro --workflow dev.yml --limit 5
 ```
 
@@ -415,9 +412,9 @@ migration job, and reading the resource group. It cannot change live resources
 or infrastructure.
 
 Caveat: the dev migration job connects as the server admin so it can create
-dev schema. Branch migration code therefore runs with admin rights on the shared
-server, and could in principle touch the live database. Only trusted
-collaborators can push branches here. Review migration code before pushing it.
+dev schema. Migration code therefore runs with admin rights on the shared server
+and could in principle touch the live database. Review migration code before
+merging it to `main`.
 To reset dev data, drop and recreate the database, then run the live release:
 
 ```powershell

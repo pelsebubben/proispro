@@ -106,20 +106,25 @@ function checkTrustBoundary(files) {
   assert.equal(staging.jobs.staging.steps.find(step => step.uses?.startsWith('actions/checkout@')).with['fetch-depth'], 0)
   assert.match(staging.jobs.staging.steps[deployIndex].run, /--parameters stage=dev .*postgresAppPassword="\$PG_DEV_APP"/s)
   const dev = workflows['dev.yml']
-  assert.deepEqual(Object.keys(dev.on), ['pull_request', 'workflow_dispatch'])
-  assert.deepEqual(dev.on.pull_request.types, ['opened', 'synchronize', 'reopened', 'ready_for_review'],
-    'making a draft ready starts its dev deployment')
-  assert.equal(dev.concurrency, undefined, 'skipped draft jobs must not cancel active deployments')
+  assert.deepEqual(Object.keys(dev.on), ['workflow_dispatch'], 'dev deployment is manual only')
+  assert.equal(dev.env.SOURCE_SHA, '${{ github.sha }}', 'deploy only the trusted dispatch commit')
   assert.deepEqual(dev.jobs.dev.concurrency, { group: 'griplock-dev', 'cancel-in-progress': true })
   assert.deepEqual(Object.keys(dev.jobs), ['dev'])
-  assert.equal(dev.jobs.dev.if, "${{ vars.DEV_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.draft == false && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository)) }}",
-      'draft, Dependabot and fork PRs never receive the dev cloud identity; manual dispatch remains available')
+  assert.equal(dev.jobs.dev.if, "${{ vars.DEV_ENABLED == 'true' && github.ref == 'refs/heads/main' }}",
+    'only enabled main-branch dispatches receive the dev cloud identity')
   assert.equal(dev.jobs.dev.environment.name, 'dev')
   assert.equal(dev.jobs.dev.permissions['id-token'], 'write')
   assert.equal(dev.jobs.dev['runs-on'], 'ubuntu-24.04')
+  const trustedDispatch = dev.jobs.dev.steps.find(step => step.name === 'Validate trusted dispatch')
+  const checkoutIndex = dev.jobs.dev.steps.findIndex(step => step.uses?.startsWith('actions/checkout@'))
+  const loginIndex = dev.jobs.dev.steps.findIndex(step => step.uses?.startsWith('azure/login@'))
+  assert.match(trustedDispatch.run, /test "\$GITHUB_REF" = refs\/heads\/main/)
+  assert.match(trustedDispatch.run, /test "\$DEV_ENABLED" = true/)
+  assert.ok(dev.jobs.dev.steps.indexOf(trustedDispatch) < checkoutIndex && checkoutIndex < loginIndex,
+    'validate the trusted ref before checkout and cloud authentication')
   const pdgaStep = dev.jobs.dev.steps.find(step => step.name === 'Configure server-only PDGA dev access')
   assert.equal(pdgaStep.if, "${{ github.event_name == 'workflow_dispatch' && inputs.configure_pdga }}",
-    'PDGA secrets only enter an explicitly requested manual dev step, never a PR-triggered deployment')
+    'PDGA secrets only enter an explicitly requested manual dev step')
   assert.deepEqual(pdgaStep.env, { PDGA_USERNAME: '${{ secrets.PDGA_USERNAME }}',
     PDGA_LAYOUT_INDEX_TEMPLATE: '${{ secrets.PDGA_LAYOUT_INDEX_TEMPLATE }}',
     PDGA_EVENT_OVERVIEW_TEMPLATE: '${{ secrets.PDGA_EVENT_OVERVIEW_TEMPLATE }}',
@@ -234,10 +239,8 @@ test('gates reject real workflow mutations that grant PR OIDC or remove apply pr
     ['prod.yml', 'run: node scripts/record-staging-release.mjs', 'run: echo release-skipped'],
     ['prod.yml', 'identityConfiguration(process.env)', 'console.log("validation-skipped")'],
     ['ci.yml', '          .github/workflows/dev.yml', '          .github/workflows/deploy.yml'],
-    ['dev.yml', ' && (github.event_name', ' || (github.event_name'],
-    ['dev.yml', 'github.event.pull_request.draft == false && ', ''],
-    ['dev.yml', "github.event.pull_request.user.login != 'dependabot[bot]' && ", ''],
-    ['dev.yml', ', ready_for_review', ''],
+    ['dev.yml', "github.ref == 'refs/heads/main'", "github.ref != 'refs/heads/main'"],
+    ['dev.yml', 'test "$GITHUB_REF" = refs/heads/main', 'echo trusted'],
     ['dev.yml', '    concurrency:', '    ignored-concurrency:'],
     ['dev.yml', 'DEV_MIGRATION: job-griplock-migrate-dev', 'DEV_MIGRATION: job-griplock-migrate'],
     ['prod.yml', "github.event.workflow_run.conclusion == 'success'", "github.event.workflow_run.conclusion != 'cancelled'"],
