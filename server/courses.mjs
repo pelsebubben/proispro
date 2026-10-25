@@ -31,6 +31,7 @@ export async function courseRequest({ req, url, json, pdga = null }) {
   } catch (error) {
     const allowed = ['pdga_busy', 'pdga_rate_limited', 'pdga_unavailable', 'pdga_layouts_not_configured', 'course_not_found']
     return json(error.code === 'course_not_found' ? 404 : error.code === 'pdga_rate_limited' ? 429 : 503,
-      { error: allowed.includes(error.code) ? error.code : 'pdga_unavailable' })
+      { error: allowed.includes(error.code) ? error.code : 'pdga_unavailable',
+        ...(error.retryAfterSeconds ? { retryAfterSeconds: error.retryAfterSeconds } : {}) })
   }
 }

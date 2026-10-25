@@ -86,8 +86,16 @@ export async function plannerRequest({req,url,pool,userId,json,pdga=null}) {
         if (!url.search) {
           const summaries=(await client.query(`SELECT p.course_pin_id,COALESCE(l.private_name,l.name) AS layout_name,
             jsonb_array_length(l.holes) AS hole_count,
-            (SELECT count(*)::int FROM jsonb_each(p.selections) s WHERE jsonb_array_length(s.value->'disc_ids')>0) AS planned_count
-            FROM private_plans p JOIN private_layouts l ON l.id=p.layout_id WHERE p.active`)).rows
+            (SELECT count(*)::int FROM jsonb_each(p.selections) s WHERE jsonb_array_length(s.value->'disc_ids')>0) AS planned_count,
+            packing.required_disc_count,packing.missing_disc_count
+            FROM private_plans p JOIN private_layouts l ON l.id=p.layout_id
+            JOIN course_pins cp ON cp.id=p.course_pin_id JOIN bags b ON b.id=cp.bag_id
+            CROSS JOIN LATERAL (
+              SELECT count(DISTINCT disc_id)::int AS required_disc_count,
+                count(DISTINCT disc_id) FILTER (WHERE NOT b.disc_ids ? disc_id)::int AS missing_disc_count
+              FROM jsonb_each(p.selections) s
+              CROSS JOIN LATERAL jsonb_array_elements_text(s.value->'disc_ids') d(disc_id)
+            ) packing WHERE p.active`)).rows
           return {status:200,body:{summaries}}
         }
       }

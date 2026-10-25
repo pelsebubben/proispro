@@ -4,7 +4,8 @@ import { layoutConfiguration, readEventLayouts, readEventLayout } from './pdga-l
 import { readCourseMaps } from './pdga-maps.mjs'
 
 export const pdgaCacheMs = 24 * 60 * 60_000
-const unavailable = code => Object.assign(new Error(code), { code })
+const unavailable = (code, retryAfterMs) => Object.assign(new Error(code),
+  { code, ...(retryAfterMs ? { retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)) } : {}) })
 
 export function createPdgaService({ username, password, pool, fetcher = fetch, now = Date.now,
   indexTemplate, overviewTemplate, logger = value => console.warn(JSON.stringify(value)) } = {}) {
@@ -43,9 +44,10 @@ export function createPdgaService({ username, password, pool, fetcher = fetch, n
           return { value: second.rows[0].value, expiresAt: new Date(second.rows[0].expires_at).getTime() }
         }
         const control = (await client.query('SELECT * FROM provider_cache.control WHERE id FOR UPDATE')).rows[0]
-        if (new Date(control.blocked_until).getTime() > now()) throw unavailable('pdga_rate_limited')
+        const blockedFor = new Date(control.blocked_until).getTime() - now()
+        if (blockedFor > 0) throw unavailable('pdga_rate_limited', blockedFor)
         const reset = now() - new Date(control.window_start).getTime() >= 60_000
-        if (!reset && control.requests >= 20) throw unavailable('pdga_rate_limited')
+        if (!reset && control.requests >= 20) throw unavailable('pdga_rate_limited', 60_000 - (now() - new Date(control.window_start).getTime()))
         await client.query(`UPDATE provider_cache.control SET requests=$1,window_start=$2 WHERE id`,
           [reset ? 1 : control.requests + 1, reset ? new Date(now()) : control.window_start])
         let value
@@ -57,7 +59,8 @@ export function createPdgaService({ username, password, pool, fetcher = fetch, n
           }
           // Persist the miss budget and upstream cooldown even when the provider fails.
           await client.query('COMMIT')
-          throw unavailable(error?.pdgaHttpStatus === 429 ? 'pdga_rate_limited' : 'pdga_unavailable')
+          throw unavailable(error?.pdgaHttpStatus === 429 ? 'pdga_rate_limited' : 'pdga_unavailable',
+            error?.pdgaHttpStatus === 429 ? error.retryAfterMs ?? 15 * 60_000 : undefined)
         }
         const expiresAt = now() + pdgaCacheMs
         await client.query('DELETE FROM provider_cache.entries WHERE expires_at<=now()')

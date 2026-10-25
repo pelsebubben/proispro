@@ -46,11 +46,11 @@ export function useCoursePins(resolveDetails=false) {
   const [courseSuggestions, setCourseSuggestions] = useState<CatalogueCourse[]>([])
   const [courseError, setCourseError] = useState<string | null>(null)
   const [courseLoading, setCourseLoading] = useState(false)
+  const [searchedQuery, setSearchedQuery] = useState('')
   const [courseCache, setCourseCache] = useState<Record<string, CourseDetails>>({})
-  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [courseDetailsErrors, setCourseDetailsErrors] = useState<Record<string,string>>({})
   const searchSequence = useRef(0)
   useEffect(() => () => {
-    if (searchTimeout.current) clearTimeout(searchTimeout.current)
     searchSequence.current++
   }, [])
   useEffect(() => {
@@ -107,6 +107,10 @@ export function useCoursePins(resolveDetails=false) {
 
   const createPin = async (courseName: string, courseId: string | null, bagId: string) => {
     if (!user) throw new Error('Sign in before pinning a course.')
+    const existing = pins.find(pin => pin.bagId === bagId &&
+      (courseId ? pin.courseId === courseId || `custom:${pin.id}` === courseId :
+        !pin.courseId && pin.courseName.trim().toLocaleLowerCase() === courseName.trim().toLocaleLowerCase()))
+    if (existing) return existing.id
     const pin = await createRow<{id:string}>('course_pins', { course_name: courseId?.startsWith('pdga:') ? 'PDGA course' : courseName, course_id: courseId, bag_id: bagId })
     await loadPins()
     return pin.id
@@ -163,7 +167,7 @@ export function useCoursePins(resolveDetails=false) {
 
   const searchCourses = async (query: string) => {
     const sequence = ++searchSequence.current
-    if (!query || query.trim().length < 2) { setCourseSuggestions([]); setCourseLoading(false); return }
+    if (!query || query.trim().length < 2) { setCourseSuggestions([]); setSearchedQuery(''); setCourseLoading(false); return }
     setCourseLoading(true)
     setCourseError(null)
     try {
@@ -171,10 +175,12 @@ export function useCoursePins(resolveDetails=false) {
         `courses?q=${encodeURIComponent(query.trim())}`)
       if (sequence === searchSequence.current) {
         setCourseSuggestions(result.courses)
+        setSearchedQuery(query.trim())
       }
     } catch (error) {
       if (sequence === searchSequence.current) {
         setCourseSuggestions([])
+        setSearchedQuery('')
         setCourseError(error instanceof Error ? error.message : 'Course search failed. Please try again.')
       }
     } finally {
@@ -182,19 +188,18 @@ export function useCoursePins(resolveDetails=false) {
     }
   }
 
-  const searchCoursesDebounced = (query: string) => {
+  const resetCourseSearch = () => {
     searchSequence.current++
     setCourseSuggestions([])
+    setSearchedQuery('')
     setCourseError(null)
-    setCourseLoading(query.trim().length >= 2)
-    if (searchTimeout.current) clearTimeout(searchTimeout.current)
-    searchTimeout.current = setTimeout(() => void searchCourses(query), 300)
+    setCourseLoading(false)
   }
 
   const loadCourseDetails = useCallback(async (pin: ClientPin) => {
     if (!pin.courseId) return
-    setCourseLoading(true)
-    setCourseError(null)
+    const courseId = pin.courseId
+    setCourseDetailsErrors(previous=>({...previous,[courseId]:''}))
     try {
       const result = await readCourseCatalogue<{
         course: { name: string; source_url?: string }
@@ -202,13 +207,12 @@ export function useCoursePins(resolveDetails=false) {
       }>(`courses/${pin.courseId}/holes`)
       setCourseCache(prev => ({
         ...prev,
-        [pin.id]: { sourceUrl: result.course.source_url ?? null,
+        [courseId]: { sourceUrl: result.course.source_url ?? null,
           courseName: result.course.name, expiresAt: result.expiresAt },
       }))
     } catch (error) {
-      setCourseError(error instanceof Error ? error.message : 'Could not load course details. Please try again.')
-    } finally {
-      setCourseLoading(false)
+      setCourseDetailsErrors(previous=>({...previous,[courseId]:
+        error instanceof Error ? error.message : 'Could not load course details. Please try again.'}))
     }
   }, [])
 
@@ -217,7 +221,11 @@ export function useCoursePins(resolveDetails=false) {
     void (async () => {
       for (const pin of pins) {
         if (cancelled) break
-        if (resolveDetails&&pin.courseId?.startsWith('pdga:')) await loadCourseDetails(pin)
+        if (resolveDetails&&pin.courseId?.startsWith('pdga:')) {
+          const sameCourse = pins.filter(p => p.courseId === pin.courseId)
+          if (sameCourse[0].id !== pin.id) continue
+          await loadCourseDetails(pin)
+        }
       }
     })()
     return () => { cancelled = true }
@@ -245,7 +253,7 @@ export function useCoursePins(resolveDetails=false) {
     pinsLoading,
     pinsError,
     pins: pins.map(pin => pin.courseId?.startsWith('pdga:') ?
-      { ...pin, courseName: courseCache[pin.id]?.courseName ?? 'PDGA course' } : pin),
+      { ...pin, courseName: courseCache[pin.courseId]?.courseName ?? 'PDGA course' } : pin),
     loadPins,
     createPin,
     updatePin,
@@ -255,13 +263,15 @@ export function useCoursePins(resolveDetails=false) {
     assignDiscToHole,
     clearHoleAssignment,
     searchCourses,
-    searchCoursesDebounced,
+    resetCourseSearch,
     loadCourseDetails,
     courseSearch: searchCourses,
     courseLoading,
     courseSuggestions,
+    searchedQuery,
     courseError,
     courseCache,
+    courseDetailsErrors,
     computeDiscUsageStats,
   }
 }
