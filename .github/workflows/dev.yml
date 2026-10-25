@@ -1,8 +1,6 @@
 name: Deploy Griplock dev
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
       configure_pdga:
@@ -14,15 +12,15 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  SOURCE_SHA: ${{ github.sha }}
   RESOURCE_GROUP: rg-griplock-staging
   DEV_APP: app-griplock-dev
   DEV_MIGRATION: job-griplock-migrate-dev
 
 jobs:
   dev:
-    name: Deploy branch to shared dev
-    if: ${{ vars.DEV_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.draft == false && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository)) }}
+    name: Deploy main to shared dev
+    if: ${{ vars.DEV_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
     concurrency:
       group: griplock-dev
       cancel-in-progress: true
@@ -39,6 +37,13 @@ jobs:
       REGISTRY: ${{ vars.AZURE_REGISTRY_NAME }}
       REGISTRY_SERVER: ${{ vars.AZURE_REGISTRY_SERVER }}
     steps:
+      - name: Validate trusted dispatch
+        env:
+          DEV_ENABLED: ${{ vars.DEV_ENABLED }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$DEV_ENABLED" = true
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.SOURCE_SHA }}
