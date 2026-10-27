@@ -119,6 +119,47 @@ npm run dev
 Without the API proxy/runtime configuration, the static preview intentionally
 disables sign-in. There is no localStorage data fallback.
 
+### Copilot sandbox with Azure dev data
+
+For UI work against the existing Azure dev database, use Node 24 and:
+
+```powershell
+npm ci
+npm run dev:azure
+```
+
+This serves this checkout's UI at `http://127.0.0.1:5173` with hot reload and
+proxies API/auth requests over verified HTTPS to **app-griplock-dev**. The API,
+not the local shell/browser, connects privately to **griplock_dev** as
+**griplock_dev_app**. No `az login`, database password, migration or public
+PostgreSQL access is needed. Startup checks the remote dev/passcode login mode
+and database readiness; it refuses redirects and a busy local port.
+
+In the Copilot app, enable **Settings > proispro > Sandbox new sessions**, then
+start a new local session. Verify that session actually reports an active
+sandbox; the setting requests sandboxing and does not retrofit existing sessions.
+Keep this checkout available read/write and allow loopback browser/HMR traffic
+and outbound HTTPS to the dev API. Dependency restoration also needs the npm
+registry; use Node 24 installed before starting the session. Do not grant the
+session access to Azure CLI credentials, database secrets or unrelated folders.
+Review the app's Git/GitHub credential and plugin/MCP policies separately:
+enabling the shell sandbox does not establish that every tool is isolated.
+If the host cannot enforce the requested sandbox, stop rather than treating an
+ordinary local terminal as sandboxed. Keep the dev process in the session's
+attached terminal; do not bypass restrictions with an unsandboxed/detached helper.
+
+The repository's **Azure dev UI** run action starts the same command and opens
+its URL in the canvas. Review/accept the repository configuration when prompted.
+Enter the existing dev passcode only in the browser password field and use a
+dedicated test username. Never put passcodes or bearer tokens in chat, commands,
+tracked files or screenshots. Signing into Azure CLI is not application login.
+
+**This is isolated source code, not isolated cloud data.** Saves affect the shared
+dev database, and its API version follows deployments, not the local branch.
+Use disposable dev records; never run API/integration tests against this endpoint,
+change production resources, disable TLS, or open the private database firewall.
+Stop with Ctrl+C and sign out/close the browser when finished.
+
 ## Checks and deployment
 
 ```powershell
