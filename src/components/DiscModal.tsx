@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { CatalogDisc } from '../hooks/useDiscCatalog'
 import { ClientDisc, DiscDraft, DISC_TYPES, colorSlug } from '../utils/disc'
 import { CropState } from '../utils/crop'
@@ -49,6 +49,7 @@ export function DiscModal(props: DiscModalProps) {
 }
 
 function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
+  const formId = useId()
   const [form, setForm] = useState(() => ({
     name: disc?.name ?? '',
     edition: disc?.edition ?? '',
@@ -263,9 +264,15 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
       >
         <div className="disc-form-head" style={{ display: cropping ? 'none' : undefined }}>
           <div className="disc-form-head-text">
-            <h2 id="disc-form-title" className="disc-form-title">
-              {disc ? 'Edit Disc' : 'Add Disc'}
-            </h2>
+            <div className="disc-form-title-row">
+              <h2 id="disc-form-title" className="disc-form-title">
+                {disc ? 'Edit Disc' : 'Add Disc'}
+              </h2>
+              <button type="submit" form={formId} className="btn btn-primary btn-sm"
+                aria-label={isSaving ? 'Saving disc' : 'Save disc'} disabled={busy}>
+                {isSaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
             <div className="disc-photo-actions">
               <button ref={photoButton} type="button" className="btn btn-secondary btn-sm" disabled={busy}
                 onClick={requestPhoto}>
@@ -294,7 +301,7 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ display: cropping ? 'none' : 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <form id={formId} onSubmit={handleSubmit} style={{ display: cropping ? 'none' : 'flex', flexDirection: 'column', gap: '1rem' }}>
           <DiscSearch value={form.name} onChange={name => setForm(previous => ({ ...previous, name }))}
             onSelect={selectSuggestion} />
           <div className="disc-edition-field">

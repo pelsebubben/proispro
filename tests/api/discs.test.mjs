@@ -99,28 +99,32 @@ test('real PostgreSQL API enforces signed identity, ownership, RLS and persisten
   assert.equal((await request(`/api/v1/wishlist_items/${wish.id}`, alice, 'PATCH', { acquired: true })).status, 200)
   const pin = await create('course_pins', { course_name: 'Test course', course_id: null, bag_id: bag.id })
   const hole = await create('hole_assignments', { course_pin_id: pin.id, hole_ref: '1', disc_id: disc.id, disc_name: fullDisc.name })
-  const listing = await create('forsale_listings', { disc_id: disc.id, disc_name: fullDisc.name, disc_weight: '173.5' })
-  const sold = await create('forsale_listings', { disc_id: disc.id, disc_name: 'Sold disc', status: 'sold' })
-  const share = await create('sale_tokens', {})
-  assert.equal((await create('sale_tokens', {})).token, share.token, 'ensuring a token is idempotent')
-  const publicPath = `/api/v1/public/sales/${share.token}`
-  assert.equal((await request(publicPath)).status, 404)
-  assert.equal((await request(`/api/v1/sale_tokens/${share.id}`, alice, 'PATCH', { is_public: true })).status, 200)
-  const publicResponse = await request(publicPath)
-  assert.equal(publicResponse.status, 200)
-  const publicRows = (await publicResponse.json()).listings
-  assert.equal(publicRows.length, 1)
-  assert.equal(publicRows[0].disc_name, fullDisc.name)
-  assert.equal(Object.hasOwn(publicRows[0], 'user_id'), false)
-  assert.equal(Object.hasOwn(publicRows[0], 'disc_id'), false)
-  assert.equal((await request(`/api/v1/public/sales/${randomUUID()}`)).status, 404)
+  // Retired sale records remain in PostgreSQL, but even enabled links cannot expose them.
+  const legacySale = await asUser(runtime, ownerId, async client => {
+    const listing = (await client.query(`INSERT INTO forsale_listings(user_id,disc_id,disc_name)
+      VALUES ($1,$2,$3) RETURNING *`, [ownerId, disc.id, fullDisc.name])).rows[0]
+    const share = (await client.query(`INSERT INTO sale_tokens(user_id,is_public)
+      VALUES ($1,true) RETURNING *`, [ownerId])).rows[0]
+    return { listing, share }
+  })
+  for (const path of ['/sale.html', '/for-sale', `/api/v1/public/sales/${legacySale.share.token}`,
+    '/api/v1/forsale_listings', '/api/v1/sale_tokens']) {
+    assert.equal((await request(path, alice)).status, 404)
+    assert.equal((await request(path)).status, 404)
+  }
+  assert.equal((await request('/api/v1/forsale_listings', alice, 'POST', { disc_id: disc.id, disc_name: 'Retired' })).status, 404)
+  assert.equal((await request(`/api/v1/sale_tokens/${legacySale.share.id}`, alice, 'PATCH', { is_public: false })).status, 404)
+  const retained = await asUser(runtime, ownerId, async client => ({
+    listings: (await client.query('SELECT * FROM forsale_listings')).rows,
+    shares: (await client.query('SELECT * FROM sale_tokens')).rows,
+  }))
+  assert.deepEqual(retained.listings, [legacySale.listing])
+  assert.deepEqual(retained.shares, [legacySale.share])
   for (const [resource, record] of Object.entries({ bags: bag, collections: collection, collection_discs: membership,
-    wishlist_items: wish, course_pins: pin, hole_assignments: hole, forsale_listings: listing, sale_tokens: share })) {
+    wishlist_items: wish, course_pins: pin, hole_assignments: hole })) {
     assert.deepEqual(await rows(resource, bob), [], `${resource} must be private`)
     assert.equal((await request(`/api/v1/${resource}/${record.id}`, bob, 'DELETE')).status, 404)
-    const field = resource === 'sale_tokens' ? { is_public: true }
-      : resource === 'wishlist_items' ? { acquired: true }
-      : resource === 'forsale_listings' ? { status: 'sold' }
+    const field = resource === 'wishlist_items' ? { acquired: true }
       : resource === 'course_pins' ? { course_name: 'Stolen' }
       : resource === 'hole_assignments' ? { disc_name: 'Stolen' }
       : resource === 'collection_discs' ? { disc_id: disc.id } : { name: 'Stolen' }
@@ -130,9 +134,6 @@ test('real PostgreSQL API enforces signed identity, ownership, RLS and persisten
   }
   assert.equal((await request('/api/v1/collection_discs', bob, 'POST', { collection_id: collection.id, disc_id: disc.id })).status, 400)
   assert.equal((await request('/api/v1/course_pins', bob, 'POST', { course_name: 'Stolen', bag_id: bag.id })).status, 400)
-  assert.equal((await request('/api/v1/forsale_listings', bob, 'POST', { disc_id: disc.id, disc_name: 'Stolen' })).status, 400)
-  assert.equal((await request(`/api/v1/sale_tokens/${share.id}`, alice, 'PATCH', { is_public: false })).status, 200)
-  assert.equal((await request(publicPath)).status, 404)
   await remove('collections', collection.id)
   assert.deepEqual(await rows('collection_discs'), [])
   await remove('bags', bag.id)
@@ -140,9 +141,6 @@ test('real PostgreSQL API enforces signed identity, ownership, RLS and persisten
   assert.deepEqual(await rows('course_pins'), [])
   assert.deepEqual(await rows('hole_assignments'), [])
   await remove('wishlist_items', wish.id)
-  await remove('forsale_listings', listing.id)
-  await remove('forsale_listings', sold.id)
-  await remove('sale_tokens', share.id)
   // Prove RLS even when a caller accidentally omits the ownership predicate.
   const leaked = await asUser(runtime, otherId, client => client.query('SELECT * FROM owned_discs'))
   assert.equal(leaked.rowCount, 0)
@@ -158,6 +156,10 @@ test('real PostgreSQL API enforces signed identity, ownership, RLS and persisten
   assert.equal((await (await request('/api/v1/discs', alice)).json()).discs[0].name, 'Updated')
   assert.equal((await request(`/api/v1/discs/${disc.id}`, alice, 'DELETE')).status, 200)
   assert.deepEqual((await (await request('/api/v1/discs', alice)).json()).discs, [])
+  await asUser(runtime, ownerId, async client => {
+    assert.equal((await client.query('DELETE FROM forsale_listings WHERE id = $1', [legacySale.listing.id])).rowCount, 1)
+    assert.equal((await client.query('DELETE FROM sale_tokens WHERE id = $1', [legacySale.share.id])).rowCount, 1)
+  })
   await admin.query('DELETE FROM app_users WHERE id = ANY($1::uuid[])', [[ownerId, otherId]])
 })
 

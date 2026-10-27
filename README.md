@@ -14,12 +14,14 @@ generates commit-linked architecture artifacts without gating production.
 - Entra External ID customer login; shared passcode login on dev only.
 - One dev database/application and one production database/application.
 
-Inventory, bags/history, collections, wishlist, sale listings/share links, course
+Inventory, bags/history, collections, wishlist, course
 pins and hole assignments all use `/api/v1`. Disc search uses a bundled DiscIt
 snapshot, so typing never waits on an external service. Norwegian course search
 and historical event-layout holes come from PDGA through a shared, on-demand
-24-hour PostgreSQL cache. Anonymous sale links disclose only available listings while their
-owner has explicitly enabled public sharing.
+24-hour PostgreSQL cache.
+
+For Sale is retired: its UI, listing/token APIs and public sale links are removed.
+Existing sale records remain in PostgreSQL, but are no longer exposed by the app.
 
 ## Adding discs
 
@@ -29,6 +31,8 @@ searchable in inventory. Missing catalogue entries can be added manually.
 Arrow keys and Enter select a result; Escape, Tab or clicking another field
 dismiss the list. [Catalogue sources and refresh instructions](docs/disc-catalog.md)
 describe the bundled data and its deliberately limited special-edition coverage.
+Add/Edit Disc has a Save button beside the title as well as at the bottom, so
+you can save a catalogue selection or quick edit without scrolling through the form.
 
 The Type selector and inventory filters include Utility. A personal JPEG, PNG
 or WebP photo can be added, replaced or removed in Add/Edit Disc. Choosing a
@@ -97,6 +101,18 @@ See the [approved first-version scope](docs/prd-course-bag-configurations.md).
 ## Local development
 
 Install Node 24 LTS (see `.nvmrc`) and PostgreSQL (or use the included Docker Compose configuration).
+
+### Frontend mock preview
+
+For fast GUI work without sign-in, API calls or a database, start the Vite
+frontend with `npm run dev` and open `http://127.0.0.1:5173/?mock=1`. This uses
+sample inventory and in-memory mock responses for the app's data requests.
+Changes are discarded when the page is refreshed. The **MOCK PREVIEW · NOT
+SAVED** badge identifies the mode; remove `?mock=1` to return to the normal
+frontend. This preview is for UI work, not backend, authentication or database
+testing. Mock mode is available only in the Vite development server; it is not
+enabled in production builds. Run `npm run test:mock-preview` to exercise this
+offline preview in a browser.
 
 ```powershell
 npm ci

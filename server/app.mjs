@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { resolve, extname, sep } from 'node:path'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
-import { featureRequest, publicSale } from './features.mjs'
+import { featureRequest } from './features.mjs'
 import { courseRequest } from './courses.mjs'
 import { plannerRequest } from './planner.mjs'
 import { schemaVersion } from './migrate.mjs'
@@ -91,10 +91,9 @@ export function createApplication({ pool, issuer, audience, jwksUrl, requiredSco
         if (result.rows[0]?.version !== schemaVersion) return json(503, { status: 'schema_not_ready' })
         return json(200, { status: 'ready', sourceSha, schemaVersion })
       }
-      const sale = url.pathname.match(/^\/api\/v1\/public\/sales\/([^/]+)$/)
-      if (sale) {
-        if (req.method !== 'GET') return json(405, { error: 'method_not_allowed' })
-        return await publicSale(pool, sale[1], json)
+      if (/^\/api\/v1\/(?:public\/sales|forsale_listings|sale_tokens)(?:\/|$)/.test(url.pathname) ||
+          /^\/(?:sale\.html|for-sale)\/?$/.test(url.pathname)) {
+        return json(404, { error: 'not_found' })
       }
       if (url.pathname.startsWith('/api/')) {
         const token = req.headers.authorization?.match(/^Bearer (\S+)$/)?.[1]

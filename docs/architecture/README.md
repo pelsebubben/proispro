@@ -35,7 +35,7 @@ active runtime. The bundled disc catalogue requires no live search provider.
 | Browser | Pages, navigation, inventory/bag UI, auth UX, photo crop | `src/App.tsx`, `src/pages/`, `src/components/` |
 | Client access | Runtime configuration, MSAL, authenticated API calls, error/change events | `src/lib/`, `src/contexts/`, `src/hooks/` |
 | HTTP composition | Static files, health/config endpoints, token/scope validation, route dispatch | `server/index.mjs`, `server/app.mjs`, `server/identity.mjs` |
-| Feature API | Validated resource CRUD, photos, bag transactions, anonymous sale projection | `server/features.mjs`, `server/photo.mjs` |
+| Feature API | Validated resource CRUD, photos, bag transactions | `server/features.mjs`, `server/photo.mjs` |
 | Private planner | Layouts, active/per-layout plans, concurrency versions, packing summaries | `server/planner.mjs` |
 | Course provider | PDGA login/search/logout, exact identities, layouts/maps, bounded SQL cache | `server/courses.mjs`, `server/pdga-*.mjs` |
 | Persistence | Connections, transaction-local owner, append-only schema migrations | `server/database.mjs`, `server/migrate.mjs`, `server/migrations/` |
@@ -61,9 +61,9 @@ connection. Forced PostgreSQL RLS and owner-scoped child keys enforce isolation.
 Runtime roles are not table owners and cannot bypass RLS. Migration/test jobs
 have a distinct administrative purpose; do not use their credentials in the app.
 
-The intentional unauthenticated surfaces are static assets, runtime/auth config,
-health and exact enabled sale-token reads. Public sales expose only available
-listing snapshots, not inventory, owner photos or arbitrary resource CRUD.
+The intentional unauthenticated surfaces are static assets, runtime/auth config
+and health. For Sale is retired: listing/token APIs and public sale addresses
+return 404 without querying the database, including previously enabled links.
 Hosted shared-passcode login is dev-only; local impersonation is loopback-only.
 Neither is a production customer-login fallback.
 
@@ -78,7 +78,7 @@ release/readiness assertions together.
 | Users/inventory | `app_users`, `owned_discs`, owner-only `disc_photos`; photos normalized by the API and stored as JPEG bytes in PostgreSQL |
 | Bags | `bags.disc_ids` JSON membership and transactional `bag_history`; one inventory disc may be in several bags |
 | Collections/wishlist | `collections`, `collection_discs`, `wishlist_items`; owner-scoped |
-| Sharing | `forsale_listings` snapshots and `sale_tokens`; anonymous access requires explicitly enabled exact token |
+| Retired sharing | `forsale_listings` snapshots and `sale_tokens` are retained unchanged; no app API or public sharing path exposes them |
 | Planning | `course_pins` links course and bag; `private_layouts` reused within an owner's course; `private_plans` keeps selections/notes per layout, with one active plan per pin |
 | Legacy assignments | `hole_assignments` remains for existing analytics; it is not the new private planner's source of truth |
 | Provider cache | Shared `provider_cache.entries` and `control`; strict 24-hour expiry, 500-entry bound, cross-replica miss budget/locks and cooldown |

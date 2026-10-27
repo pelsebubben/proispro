@@ -11,7 +11,6 @@ const number = (min, max) => value => typeof value === 'number' && Number.isFini
 const integer = (min, max) => value => Number.isInteger(value) && number(min, max)(value)
 const id = value => typeof value === 'string' && uuid.test(value)
 const boolean = value => typeof value === 'boolean'
-const oneOf = (...values) => value => values.includes(value)
 const bodyLimit = 16_384
 // Room for a base64 JPEG of up to 512 KiB (~683 KiB encoded) plus ordinary disc metadata.
 const photoBodyLimit = 737_280
@@ -35,11 +34,6 @@ const resources = {
     disc_name: requiredText, manufacturer: text(), plastic_pref: text(), weight_min: nullable(number(0, 300)),
     weight_max: nullable(number(0, 300)), priority: integer(0, 3), notes: text(5000), acquired: boolean,
   } },
-  forsale_listings: { required: ['disc_id', 'disc_name'], order: 'listed_at DESC', fields: {
-    disc_id: id, disc_name: requiredText, disc_manufacturer: text(), disc_type: text(), disc_plastic: text(),
-    disc_color: text(), disc_weight: text(20), disc_condition: text(), status: oneOf('available', 'sold'),
-  } },
-  sale_tokens: { fields: { is_public: boolean } },
   course_pins: { required: ['course_name', 'bag_id'], order: 'created_at DESC',
     fields: { course_name: requiredText, course_id: nullable(text()), bag_id: id } },
   hole_assignments: { required: ['course_pin_id', 'hole_ref', 'disc_id', 'disc_name'],
@@ -85,19 +79,6 @@ export async function readBody(req, { allowPhoto = false, maxBytes = bodyLimit }
   catch { throw size > bodyLimit ? tooLarge() : Object.assign(new Error('invalid_json'), { status: 400 }) }
   if (allowPhoto && size > bodyLimit && typeof body?.photo !== 'string') throw tooLarge()
   return body
-}
-
-export async function publicSale(pool, token, json) {
-  if (!id(token)) return json(400, { error: 'invalid_token' })
-  const result = await asUser(pool, '', async client => {
-    await client.query("SELECT set_config('app.sale_token', $1, true)", [token])
-    const found = await client.query('SELECT token FROM sale_tokens WHERE token=$1 AND is_public', [token])
-    if (!found.rowCount) return null
-    return (await client.query(`SELECT id, disc_name, disc_manufacturer, disc_type, disc_plastic,
-      disc_color, disc_weight, disc_condition, status, listed_at FROM forsale_listings
-      WHERE status='available' ORDER BY listed_at DESC`)).rows
-  })
-  return result === null ? json(404, { error: 'not_found' }) : json(200, { listings: result })
 }
 
 export async function featureRequest({ req, url, pool, userId, json, image }) {
@@ -155,22 +136,12 @@ export async function featureRequest({ req, url, pool, userId, json, image }) {
       Object.entries(body).some(([key, value]) => key === 'id' ? req.method !== 'POST' || !id(value) :
         !Object.hasOwn(spec.fields, key) || !spec.fields[key](value)) ||
       (req.method === 'POST' && spec.required?.some(key => body[key] === undefined)) ||
-      (resource === 'sale_tokens' && req.method === 'POST' && Object.keys(body).length) ||
       (req.method === 'PATCH' && !Object.keys(body).length)) return json(400, { error: 'invalid_input' })
   // A photo write replaces or removes the stored image and always supersedes the legacy photo link.
   const photoWrite = resource === 'discs' && Object.hasOwn(body, 'photo')
   try {
     const photo = photoWrite && body.photo !== null ? await normalizePhoto(body.photo) : null
     const result = await asUser(pool, userId, async client => {
-      if (resource === 'sale_tokens' && req.method === 'POST') {
-        return client.query(`INSERT INTO sale_tokens(user_id) VALUES ($1)
-          ON CONFLICT (user_id) DO UPDATE SET user_id=EXCLUDED.user_id RETURNING *`, [userId])
-      }
-      // Snapshot references must belong to this user, even when no FK is retained.
-      if (resource === 'forsale_listings' && body.disc_id) {
-        const disc = await client.query('SELECT id FROM owned_discs WHERE id=$1 AND user_id=$2', [body.disc_id, userId])
-        if (!disc.rowCount) throw Object.assign(new Error('invalid_reference'), { status: 400 })
-      }
       let previous
       if (resource === 'bags' && rowId && body.disc_ids) {
         previous = (await client.query('SELECT disc_ids FROM bags WHERE id=$1 AND user_id=$2 FOR UPDATE', [rowId, userId])).rows[0]

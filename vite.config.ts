@@ -14,7 +14,7 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: true,
     rolldownOptions: {
-      input: { app: 'index.html', sale: 'sale.html' },
+      input: { app: 'index.html' },
       output: {
         codeSplitting: {
           groups: [

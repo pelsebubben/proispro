@@ -48,9 +48,19 @@ test('selected IDs key the form so switching discs or returning to add resets dr
 
 test('the disc picture sits in the header frame, beside the title and photo actions', () => {
   const html = render({ ...disc, photo_url: '/api/v1/discs/fixture/photo' })
-  assert.match(html, /<div class="disc-form-head"><div class="disc-form-head-text"><h2 id="disc-form-title" class="disc-form-title">Edit Disc<\/h2>/)
+  assert.match(html, /<div class="disc-form-head"><div class="disc-form-head-text"><div class="disc-form-title-row"><h2 id="disc-form-title" class="disc-form-title">Edit Disc<\/h2>/)
   assert.match(html, /<div class="disc-thumb disc-thumb-lg disc-photo-picker"><i data-disc="Ready on first render" data-photo="\/api\/v1\/discs\/fixture\/photo"><\/i><button type="button" class="disc-photo-picker-button"[^>]*><\/button><\/div><\/div>/)
   assert.match(render(null), /<div class="disc-thumb disc-thumb-lg disc-photo-picker"><i data-disc="" data-photo=""><\/i><button type="button" class="disc-photo-picker-button"[^>]*><\/button><\/div>/)
+})
+
+test('header Save submits the same form as the footer in add and edit modes', () => {
+  for (const value of [null, disc]) {
+    const html = render(value)
+    const formId = html.match(/<form id="([^"]+)"/)?.[1]
+    assert.ok(formId, 'disc form has an ID')
+    assert.ok(html.includes(`type="submit" form="${formId}"`), 'header Save is associated with the form')
+    assert.match(html, /aria-label="Save disc"[^>]*>Save<\/button>/)
+  }
 })
 
 test('photo actions depend on whether the disc has a photo, and the picker only accepts web image formats', () => {

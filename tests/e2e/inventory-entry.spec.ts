@@ -49,6 +49,31 @@ async function inventory(page: Page) {
 const choosePhoto = (page: Page, buffer: Buffer, name = 'photo.png') =>
   page.getByLabel('Personal photo', { exact: true }).setInputFiles({ name, mimeType: 'image/png', buffer })
 
+test('header Save adds a disc and saves edits without using the footer', async ({ page }) => {
+  const { writes } = await inventory(page)
+  let dialog = page.getByRole('dialog')
+  const save = dialog.getByRole('button', { name: 'Save disc', exact: true })
+  await expect(save).toBeInViewport()
+  await save.click()
+  await expect(dialog).toBeVisible()
+  expect(writes).toEqual([])
+
+  await page.getByRole('combobox', { name: /Disc Name/ }).fill('Destroyer')
+  await page.getByRole('option', { name: /^Destroyer Innova/ }).click()
+  await save.click()
+  await expect(dialog).toHaveCount(0)
+  expect(writes).toHaveLength(1)
+  expect(writes[0]).toMatchObject({ name: 'Destroyer', disc_type: 'distance' })
+
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  dialog = page.getByRole('dialog')
+  await page.getByLabel('Edition / Run').fill('Quick edit')
+  await dialog.getByRole('button', { name: 'Save disc', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  expect(writes).toHaveLength(2)
+  expect(writes[1]).toMatchObject({ name: 'Destroyer', edition: 'Quick edit' })
+})
+
 test('disc preview opens the photo picker and restores focus after cropping', async ({ page }) => {
   await inventory(page)
   const preview = page.getByRole('button', { name: 'Add disc photo', exact: true })

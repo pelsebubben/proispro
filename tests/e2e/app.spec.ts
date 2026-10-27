@@ -45,11 +45,13 @@ test('signed-out player sees local login without external requests', async ({ pa
   expect(unexpected).toEqual([])
 })
 
-test('sale page uses the Griplock brand', async ({ page }) => {
-  await page.route('https://cdn.jsdelivr.net/**', route => route.abort())
-  await page.goto('/sale.html')
-  await expect(page).toHaveTitle('Discs For Sale · Griplock')
-  await expect(page.getByRole('link', { name: '← Back to Griplock' })).toHaveAttribute('href', '/')
+test('retired For Sale tab is absent and old app addresses return to inventory', async ({ page }) => {
+  const unexpected = await isolateNetwork(page, true)
+  await page.goto('/for-sale')
+  await expect(page).toHaveURL(/127\.0\.0\.1:4173\/$/)
+  await expect(page.getByRole('navigation').getByRole('button', { name: /For Sale/ })).toHaveCount(0)
+  await expect(page.getByText('Fixture Buzzz', { exact: true })).toBeVisible()
+  expect(unexpected).toEqual([])
 })
 
 test('player can load, filter and clear an API-backed inventory search', async ({ page }) => {
@@ -64,7 +66,7 @@ test('player can load, filter and clear an API-backed inventory search', async (
   await expect(page.getByText('Fixture Destroyer', { exact: true })).toHaveCount(0)
   await search.fill('')
   await expect(page.getByText('Fixture Destroyer', { exact: true })).toBeVisible()
-  for (const name of [/Bags/, /Courses/, /Collections/, /Wishlist/, /For Sale/, /Analytics/]) {
+  for (const name of [/Bags/, /Courses/, /Collections/, /Wishlist/, /Analytics/]) {
     await page.getByRole('navigation').getByRole('button', { name }).click()
     await expect(page.getByRole('alert')).toHaveCount(0)
   }

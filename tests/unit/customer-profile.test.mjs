@@ -122,6 +122,7 @@ test('the actual header displays email, then name, then a neutral signed-in labe
   const compiled = (await transformWithOxc(layoutSource, 'Layout.tsx', { jsx: { runtime: 'automatic' } })).code
     .replace('"react/jsx-runtime"', JSON.stringify(pathToFileURL(require.resolve('react/jsx-runtime')).href))
     .replace(/["']\.\.\/contexts\/AuthContext["']/, JSON.stringify(auth))
+    .replace(/import .* from ["']\.\.\/lib\/runtime["'];?/, 'const runtime = { mockData: false };')
   try {
     const { Layout } = await import(moduleUrl(compiled))
     for (const [profile, expected] of [
