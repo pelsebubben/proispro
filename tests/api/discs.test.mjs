@@ -156,6 +156,10 @@ test('real PostgreSQL API enforces signed identity, ownership, RLS and persisten
   assert.equal((await (await request('/api/v1/discs', alice)).json()).discs[0].name, 'Updated')
   assert.equal((await request(`/api/v1/discs/${disc.id}`, alice, 'DELETE')).status, 200)
   assert.deepEqual((await (await request('/api/v1/discs', alice)).json()).discs, [])
+  await asUser(runtime, ownerId, async client => {
+    assert.equal((await client.query('DELETE FROM forsale_listings WHERE id = $1', [legacySale.listing.id])).rowCount, 1)
+    assert.equal((await client.query('DELETE FROM sale_tokens WHERE id = $1', [legacySale.share.id])).rowCount, 1)
+  })
   await admin.query('DELETE FROM app_users WHERE id = ANY($1::uuid[])', [[ownerId, otherId]])
 })
 
