@@ -1,0 +1,6 @@
+scripts:
+  - name: Azure dev UI
+    command: npm run dev:azure
+
+server_ready_pattern: 'Local:\s+(https?://\S+)'
+auto_open_in_browser: true

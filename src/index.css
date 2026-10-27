@@ -173,6 +173,20 @@ body {
   background: var(--clr-bg);
 }
 .disc-thumb-lg { width: 96px; }
+.disc-photo-picker { position: relative; }
+.disc-photo-picker-button {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.disc-photo-picker-button:disabled { cursor: default; }
+.disc-form-dialog .disc-photo-picker-button:focus-visible { outline-offset: -3px; }
 .disc-photo, .disc-art { display: block; width: 100%; height: 100%; }
 .disc-photo-frame { display: block; width: 100%; height: 100%; padding: 8.84%; }
 .disc-photo { object-fit: cover; border-radius: 50%; }

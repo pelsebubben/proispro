@@ -1,5 +1,21 @@
 # Architecture review history
 
+## 2026-10-27 - Local UI against the shared Azure dev API
+
+Reviewed `scripts/dev-azure.mjs`, the `dev:azure` package script and the Copilot
+run action. The local Vite UI proxies API/auth traffic over verified HTTPS to
+the fixed shared-dev API; only that API connects to the private dev database.
+Startup requires dev/passcode mode and database readiness. No Azure CLI or
+database credentials are needed locally. Sandbox enforcement remains a host
+policy concern, not a guarantee provided by the launcher.
+
+The disc form preview now opens the existing photo picker, retaining the same
+validation/cropping flow and API ownership boundary. This is a UI interaction
+change only. Production runtime, authenticated-request and delivery drawings
+remain unchanged: no deployed component, schema, release gate or cloud resource
+changes. Local saves still affect shared dev data and the API follows its
+deployed version rather than the local branch.
+
 ## 2026-10-25 - Restrict shared-dev deployment privileges
 
 Reviewed `.github/workflows/dev.yml`: pull requests no longer trigger deployment;

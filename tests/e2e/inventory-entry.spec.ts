@@ -49,6 +49,23 @@ async function inventory(page: Page) {
 const choosePhoto = (page: Page, buffer: Buffer, name = 'photo.png') =>
   page.getByLabel('Personal photo', { exact: true }).setInputFiles({ name, mimeType: 'image/png', buffer })
 
+test('disc preview opens the photo picker and restores focus after cropping', async ({ page }) => {
+  await inventory(page)
+  const preview = page.getByRole('button', { name: 'Add disc photo', exact: true })
+  const chooser = page.waitForEvent('filechooser')
+  await preview.click()
+  await (await chooser).setFiles({
+    name: 'photo.png', mimeType: 'image/png',
+    buffer: await sharp({ create: { width: 100, height: 100, channels: 3, background: '#ffffff' } }).png().toBuffer(),
+  })
+  await useCrop(page)
+  const change = page.getByRole('button', { name: 'Change disc photo', exact: true })
+  await expect(change).toBeFocused()
+  const replacement = page.waitForEvent('filechooser')
+  await change.press('Enter')
+  await (await replacement).setFiles([])
+})
+
 // A chosen photo opens in the crop step; nothing is kept until the player confirms the framing.
 async function useCrop(page: Page) {
   const dialog = page.getByRole('dialog')

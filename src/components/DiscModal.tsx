@@ -127,6 +127,11 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
     return { blob: file }
   })
 
+  const requestPhoto = (event: React.MouseEvent<HTMLButtonElement>) => {
+    opener.current = event.currentTarget
+    photoInput.current?.click()
+  }
+
   // A photo that was just cropped re-opens from its original with the same framing;
   // a stored photo is fetched (usually from the cache) and re-cropped from what we kept.
   const adjustCrop = () => openCropper(async () => {
@@ -263,7 +268,7 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
             </h2>
             <div className="disc-photo-actions">
               <button ref={photoButton} type="button" className="btn btn-secondary btn-sm" disabled={busy}
-                onClick={event => { opener.current = event.currentTarget; photoInput.current?.click() }}>
+                onClick={requestPhoto}>
                 {preview ? 'Change photo' : 'Add photo'}
               </button>
               {preview && <button type="button" className="btn btn-secondary btn-sm" disabled={busy}
@@ -282,8 +287,10 @@ function DiscForm({ disc, onSave, onClose }: DiscModalProps) {
             {isPreparingPhoto && <p role="status">Preparing photo...</p>}
             {photoError && <p role="alert">{photoError}</p>}
           </div>
-          <div className="disc-thumb disc-thumb-lg">
+          <div className="disc-thumb disc-thumb-lg disc-photo-picker">
             <DiscImage disc={form} photo={preview} />
+            <button type="button" className="disc-photo-picker-button" disabled={busy}
+              aria-label={preview ? 'Change disc photo' : 'Add disc photo'} onClick={requestPhoto} />
           </div>
         </div>
 
