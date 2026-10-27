@@ -5,5 +5,5 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
-  "include": ["playwright*.config.ts", "tests/e2e/**/*.ts", "tests/staging/**/*.ts"]
+  "include": ["playwright*.config.ts", "tests/e2e/**/*.ts", "tests/staging/**/*.ts", "src/vite-env.d.ts"]
 }

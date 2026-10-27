@@ -1,5 +1,6 @@
 import { ReactNode } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { runtime } from '../lib/runtime'
 import type { Tab } from '../lib/navigation'
 
 const TABS: { id: Tab; label: string }[] = [
@@ -8,7 +9,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'courses', label: '🗺️ Courses' },
   { id: 'collections', label: '📦 Collections' },
   { id: 'wishlist', label: '⭐ Wishlist' },
-  { id: 'forsale', label: '🏷️ For Sale' },
   { id: 'analytics', label: '📊 Analytics' },
 ]
 
@@ -36,6 +36,15 @@ export function Layout({ activeTab, onTabChange, children }: LayoutProps) {
           <span style={{ fontWeight: 700, color: 'var(--clr-accent)' }}>Griplock</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          {runtime.mockData && <span style={{
+            padding: '0.3rem 0.6rem',
+            border: '1px solid var(--clr-accent)',
+            borderRadius: '999px',
+            color: 'var(--clr-accent)',
+            fontSize: '0.75rem',
+            fontWeight: 700,
+            whiteSpace: 'nowrap',
+          }}>MOCK PREVIEW · NOT SAVED</span>}
           <span title={user?.email} style={{ color: 'var(--clr-muted)', fontSize: '0.85rem' }}>
             {user?.email || user?.name || 'Signed in'}
           </span>

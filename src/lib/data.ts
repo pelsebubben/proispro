@@ -1,10 +1,11 @@
 import { runtime } from './runtime'
+import { mockRequest } from './mockData'
 import { devAccessToken, devSignOut } from './devAuth'
 import { entraAccessToken } from './entra'
 
 type Filters = Record<string, string>
 type Resource = 'discs' | 'bags' | 'bag_history' | 'collections' | 'collection_discs' | 'planner' |
-  'wishlist_items' | 'forsale_listings' | 'sale_tokens' | 'course_pins' | 'hole_assignments'
+  'wishlist_items' | 'course_pins' | 'hole_assignments'
 
 export const sessionExpiredMessage = 'Your session expired. Please sign in again.'
 
@@ -23,6 +24,13 @@ async function accessToken() {
 
 async function request<T>(path: string, method = 'GET', body?: object): Promise<T> {
   try {
+    if (runtime.mockData) {
+      const result = await mockRequest<T>(path, method, body)
+      if (method !== 'GET') {
+        window.dispatchEvent(new CustomEvent('griplock-data-changed', { detail: path.split(/[/?]/)[0] }))
+      }
+      return result
+    }
     const token = await accessToken()
     const response = await fetch(`/api/v1/${path}`, {
       method, cache: 'no-store',
@@ -141,12 +149,4 @@ export function updateRow<T = unknown>(resource: Resource, id: string, body: obj
 
 export function deleteRows(resource: Resource, id: string | Filters): Promise<unknown> {
   return request(`${resource}${typeof id === 'string' ? `/${id}` : `?${new URLSearchParams(id)}`}`, 'DELETE')
-}
-
-export function ensureToken(): Promise<{ id: string; token: string; is_public: boolean }> {
-  return request('sale_tokens', 'POST', {})
-}
-
-export function saveToken(id: string, isPublic: boolean) {
-  return updateRow('sale_tokens', id, { is_public: isPublic })
 }

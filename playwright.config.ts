@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './tests/e2e',
+  testIgnore: '**/mock-preview.spec.ts',
   forbidOnly: Boolean(process.env.CI),
   retries: 0,
   workers: process.env.CI ? 2 : undefined,

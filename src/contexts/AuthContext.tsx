@@ -16,11 +16,14 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AppUser | null>(null)
+  const [user, setUser] = useState<AppUser | null>(() => runtime.mockData
+    ? { id: 'mock-preview-user', email: 'preview@griplock.local', name: 'Mock preview' }
+    : null)
   const [error, setError] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(!runtime.mockData)
 
   useEffect(() => {
+    if (runtime.mockData) return
     if (!runtime.identityReady) {
       setIsLoading(false)
       return
@@ -71,6 +74,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     setError(null)
     try {
+      if (runtime.mockData) {
+        window.location.assign('/')
+        return
+      }
       if (runtime.devAuth) (await import('../lib/devAuth')).devSignOut()
       else await (await import('../lib/entra')).entraSignOut()
       clearPhotoCache()

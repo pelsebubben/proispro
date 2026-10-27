@@ -54,7 +54,7 @@
     {"id": "provider-miss", "from": "provider", "to": "pdga", "label": "Cache miss only", "variant": "dashed"}
   ],
   "cards": [
-    {"dot": "cyan", "title": "One runtime", "items": ["Node serves Vite assets and API routes", "Inventory, bags and private course plans share a deployment", "Public sale tokens expose only enabled listing snapshots"]},
+    {"dot": "cyan", "title": "One runtime", "items": ["Node serves Vite assets and API routes", "Inventory, bags and private course plans share a deployment", "Sale APIs and public sharing are retired; stored records are retained"]},
     {"dot": "emerald", "title": "Durable vs temporary", "items": ["Private discs, JPEG photos and plans persist in PostgreSQL", "Provider facts expire after 24 hours; no stale fallback", "Shared cache budget and advisory locks cover replicas"]},
     {"dot": "rose", "title": "Deployment scope", "items": ["Live and dev have separate databases, one shared server", "Diagram shows live request boundaries, not cloud inventory", "Build/migration jobs and unused storage omitted; see delivery view"]}
   ]

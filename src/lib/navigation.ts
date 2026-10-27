@@ -1,10 +1,10 @@
-export type Tab = 'inventory' | 'bags' | 'courses' | 'collections' | 'wishlist' | 'forsale' | 'analytics'
+export type Tab = 'inventory' | 'bags' | 'courses' | 'collections' | 'wishlist' | 'analytics'
 
 export interface AppLocation { tab: Tab; bagId?: string; pinId?: string }
 
 const PATHS: Record<Tab, string> = {
   inventory: '/', bags: '/bags', courses: '/courses', collections: '/collections',
-  wishlist: '/wishlist', forsale: '/for-sale', analytics: '/analytics',
+  wishlist: '/wishlist', analytics: '/analytics',
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

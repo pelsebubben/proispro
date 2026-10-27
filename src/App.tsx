@@ -5,6 +5,7 @@ import { useBags } from './hooks/useBags'
 import { LoginPage } from './pages/LoginPage'
 import { Layout } from './components/Layout'
 import { confirmPlannerNavigation } from './lib/data'
+import { runtime } from './lib/runtime'
 import { type AppLocation, locationUrl, parseLocation } from './lib/navigation'
 
 const InventoryPage = lazy(() => import('./pages/InventoryPage').then(m => ({ default: m.InventoryPage })))
@@ -12,7 +13,6 @@ const BagsPage = lazy(() => import('./pages/BagsPage').then(m => ({ default: m.B
 const CoursesPage = lazy(() => import('./pages/CoursesPage').then(m => ({ default: m.CoursesPage })))
 const CollectionsPage = lazy(() => import('./pages/CollectionsPage').then(m => ({ default: m.CollectionsPage })))
 const WishlistPage = lazy(() => import('./pages/WishlistPage').then(m => ({ default: m.WishlistPage })))
-const ForSalePage = lazy(() => import('./pages/ForSalePage').then(m => ({ default: m.ForSalePage })))
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })))
 
 function currentUrl() {
@@ -24,7 +24,8 @@ function FeatureAppShell() {
   const { discs } = useDiscs()
   const { bags } = useBags()
   const [location, setLocation] = useState<AppLocation>(() => parseLocation())
-  const shownUrl = useRef(locationUrl(location))
+  const withPreviewMode = (url: string) => runtime.mockData ? `${url}${url.includes('?') ? '&' : '?'}mock=1` : url
+  const shownUrl = useRef(withPreviewMode(locationUrl(location)))
   const [dataError, setDataError] = useState('')
   useEffect(() => {
     const listener = (event: Event) => setDataError((event as CustomEvent<string>).detail)
@@ -52,7 +53,7 @@ function FeatureAppShell() {
 
   const navigate = (next: AppLocation) => {
     if (!confirmPlannerNavigation()) return
-    const url = locationUrl(next)
+    const url = withPreviewMode(locationUrl(next))
     if (url !== shownUrl.current) window.history.pushState(null, '', url)
     shownUrl.current = url
     setLocation(next)
@@ -75,7 +76,6 @@ function FeatureAppShell() {
           onOpenBag={bagId=>navigate({tab:'bags',bagId})}/>}
         {activeTab === 'collections' && <CollectionsPage allDiscs={discs} />}
         {activeTab === 'wishlist' && <WishlistPage />}
-        {activeTab === 'forsale' && <ForSalePage allDiscs={discs} />}
         {activeTab === 'analytics' && <AnalyticsPage />}
       </Suspense>
     </Layout>

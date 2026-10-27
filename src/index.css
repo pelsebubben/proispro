@@ -211,6 +211,7 @@ body {
 .disc-form-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .disc-form-head-text { display: flex; flex: 1; flex-direction: column; align-items: flex-start; gap: .5rem; min-width: 0; }
 .disc-form-head-text p { margin: 0; }
+.disc-form-title-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem; width: 100%; }
 .disc-form-title { margin: 0 0 .25rem; color: var(--clr-text); font-size: 1.25rem; }
 .disc-photo-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
 .disc-photo-hint { color: var(--clr-muted); font-size: .8rem; text-wrap: pretty; }

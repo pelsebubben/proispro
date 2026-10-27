@@ -14,7 +14,7 @@
     {"id": "browser", "type": "frontend", "label": "Browser", "sublabel": "MSAL client", "sources": [{"path": "src/lib/entra.ts", "line": 1, "end_line": 45}, {"path": "src/lib/data.ts", "line": 1, "end_line": 50}]},
     {"id": "http", "type": "security", "label": "HTTP + JWT", "sublabel": "app.mjs", "sources": [{"path": "server/app.mjs", "line": 98, "end_line": 129}]},
     {"id": "keys", "type": "security", "label": "Entra JWKS", "sublabel": "Remote key set", "sources": [{"path": "server/app.mjs", "line": 24, "end_line": 31}]},
-    {"id": "feature", "type": "backend", "label": "Feature API", "sublabel": "asUser helper", "sources": [{"path": "server/features.mjs", "line": 120, "end_line": 142}, {"path": "server/database.mjs", "line": 20, "end_line": 34}]},
+    {"id": "feature", "type": "backend", "label": "Feature API", "sublabel": "asUser helper", "sources": [{"path": "server/features.mjs", "line": 98, "end_line": 117}, {"path": "server/database.mjs", "line": 20, "end_line": 34}]},
     {"id": "db", "type": "database", "label": "PostgreSQL", "sublabel": "Forced owner RLS", "sources": [{"path": "server/migrations/001_initial.sql", "line": 1, "end_line": 20}, {"path": "server/database.mjs", "line": 20, "end_line": 34}]}
   ],
   "messages": [
@@ -34,6 +34,6 @@
   "cards": [
     {"dot": "rose", "title": "Before dispatch", "items": ["Signature, issuer, audience and delegated scope verified", "Missing/invalid tokens return 401; missing scope returns 403", "JWKS lookup is conditional; signature verification is local"]},
     {"dot": "emerald", "title": "Connection isolation", "items": ["asUser sets app.user_id locally inside one transaction", "Runtime role cannot bypass RLS; user ID is never client input", "Errors roll back and the checked-out connection is released"]},
-    {"dot": "cyan", "title": "Scope of this trace", "items": ["Already signed-in customer reads inventory", "Login redirects, provider search and public sales are separate flows", "Arrow spacing is illustrative, not latency or lock duration"]}
+    {"dot": "cyan", "title": "Scope of this trace", "items": ["Already signed-in customer reads inventory", "Login redirects and provider search are separate flows", "Arrow spacing is illustrative, not latency or lock duration"]}
   ]
 }
