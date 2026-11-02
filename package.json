@@ -26,10 +26,10 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@azure/msal-browser": "^5.26.0",
+    "@azure/msal-browser": "^5.27.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "jose": "^6.2.13",
+    "jose": "^6.2.14",
     "pg": "^8.23.1",
     "recharts": "^3.10.1",
     "sharp": "^0.35.5"
