@@ -78,7 +78,7 @@ test('resize wakes a stopped server and verifies the exact burstable SKU', async
   await databasePower('resize', { ...env, DATABASE_COMPUTE_PROFILE: 'burstable' }, stub)
   assert.deepEqual(stub.calls.filter(call => call[0] !== 'show'), [
     ['start', '--resource-group', 'test-group', '--name', 'test-server'],
-    ['update', '--resource-group', 'test-group', '--name', 'test-server', '--tier', 'Burstable', '--sku-name', 'Standard_B2s'],
+    ['update', '--resource-group', 'test-group', '--name', 'test-server', '--tier', 'Burstable', '--sku-name', 'Standard_B2s', '--yes'],
   ])
 })
 
@@ -88,7 +88,7 @@ test('same-size resize is a no-op and general-purpose rollback uses the original
   assert.equal(unchanged.calls.length, 1)
   const rollback = azureStub([state('Ready', burstable), state('Ready')])
   await databasePower('resize', env, rollback)
-  assert.deepEqual(rollback.calls[1].slice(-4), ['--tier', 'GeneralPurpose', '--sku-name', 'Standard_D2ads_v5'])
+  assert.deepEqual(rollback.calls[1].slice(-5), ['--tier', 'GeneralPurpose', '--sku-name', 'Standard_D2ads_v5', '--yes'])
 })
 
 test('capacity errors, wrong final state/SKU, failed states and polling timeouts fail visibly', async () => {
