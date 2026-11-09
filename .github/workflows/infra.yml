@@ -16,6 +16,7 @@ permissions:
 concurrency:
   group: griplock-staging-release
   cancel-in-progress: false
+  queue: max
 
 jobs:
   staging:

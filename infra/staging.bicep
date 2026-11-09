@@ -11,6 +11,15 @@ param image string
 param registryServer string
 param pullIdentityId string
 
+@description('Use burstable for off-season development; general-purpose retains the existing capacity fallback.')
+@allowed(['general-purpose', 'burstable'])
+param databaseComputeProfile string = 'general-purpose'
+
+var databaseSkus = {
+  'general-purpose': { name: 'Standard_D2ads_v5', tier: 'GeneralPurpose' }
+  burstable: { name: 'Standard_B2s', tier: 'Burstable' }
+}
+
 var suffix = uniqueString(subscription().id, resourceGroup().id)
 var tags = { application: 'griplock', environment: 'staging', managedBy: 'bicep' }
 var dbName = 'pg-griplock-${suffix}'
@@ -55,7 +64,7 @@ resource database 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
   name: dbName
   location: location
   tags: tags
-  sku: { name: 'Standard_D2ads_v5', tier: 'GeneralPurpose' }
+  sku: databaseSkus[databaseComputeProfile]
   properties: {
     version: '16'
     administratorLogin: 'griplock_admin'

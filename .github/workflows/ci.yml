@@ -137,12 +137,15 @@ jobs:
           grep ' actionlint_1.7.12_linux_amd64.tar.gz$' actionlint_1.7.12_checksums.txt | sha256sum --check --strict
           tar -xzf actionlint_1.7.12_linux_amd64.tar.gz actionlint
       - name: Lint delivery workflows
+        # GitHub supports queue: max; actionlint 1.7.12 does not recognize this key yet.
         run: >-
           "$RUNNER_TEMP/actionlint/actionlint"
+          -ignore 'unexpected key "queue" for "concurrency" section'
           .github/workflows/ci.yml
           .github/workflows/infra.yml
           .github/workflows/prod.yml
           .github/workflows/dev.yml
+          .github/workflows/database-power.yml
           .github/workflows/squad-ci.yml
           .github/workflows/architecture.yml
 

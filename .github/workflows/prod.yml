@@ -13,6 +13,7 @@ permissions:
 concurrency:
   group: griplock-staging-release
   cancel-in-progress: false
+  queue: max
 
 env:
   SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -69,6 +70,8 @@ jobs:
       PG_APP: ${{ secrets.PG_APP_PASSWORD }}
       PG_DEV_APP: ${{ secrets.PG_DEV_APP_PASSWORD }}
       DEV_LOGIN: ${{ secrets.DEV_LOGIN_PASSCODE }}
+      DATABASE_SERVER: pg-griplock-gmfarjpxlkg2e
+      DATABASE_COMPUTE_PROFILE: ${{ vars.DATABASE_COMPUTE_PROFILE || 'general-purpose' }}
     steps:
       - name: Enforce staging prerequisites
         env:
@@ -112,20 +115,30 @@ jobs:
       - name: Validate and apply private staging infrastructure
         run: |
           set -euo pipefail
+          existing=$(az postgres flexible-server list --resource-group "$RESOURCE_GROUP" \
+            --query "[?name=='$DATABASE_SERVER'].name | [0]" -o tsv)
+          if [ -n "$existing" ]; then
+            node scripts/database-power.mjs start
+          else
+            echo "Database not provisioned yet; the infrastructure deployment will create it"
+          fi
           az bicep install --version "$BICEP_VERSION"
           az extension add --name containerapp --upgrade --only-show-errors
           az deployment group validate --resource-group "$RESOURCE_GROUP" \
             --template-file infra/staging.bicep \
             --parameters image="$IMAGE" registryServer="$REGISTRY_SERVER" pullIdentityId="$PULL_IDENTITY" \
-              postgresAdminPassword="$PG_ADMIN" postgresAppPassword="$PG_APP" postgresDevAppPassword="$PG_DEV_APP"
+              postgresAdminPassword="$PG_ADMIN" postgresAppPassword="$PG_APP" postgresDevAppPassword="$PG_DEV_APP" \
+              databaseComputeProfile="$DATABASE_COMPUTE_PROFILE"
           az deployment group what-if --resource-group "$RESOURCE_GROUP" \
             --template-file infra/staging.bicep --result-format ResourceIdOnly \
             --parameters image="$IMAGE" registryServer="$REGISTRY_SERVER" pullIdentityId="$PULL_IDENTITY" \
-              postgresAdminPassword="$PG_ADMIN" postgresAppPassword="$PG_APP" postgresDevAppPassword="$PG_DEV_APP"
+              postgresAdminPassword="$PG_ADMIN" postgresAppPassword="$PG_APP" postgresDevAppPassword="$PG_DEV_APP" \
+              databaseComputeProfile="$DATABASE_COMPUTE_PROFILE"
           az deployment group create --resource-group "$RESOURCE_GROUP" --name "core-$GITHUB_RUN_ID" \
             --template-file infra/staging.bicep \
             --parameters image="$IMAGE" registryServer="$REGISTRY_SERVER" pullIdentityId="$PULL_IDENTITY" \
-              postgresAdminPassword="$PG_ADMIN" postgresAppPassword="$PG_APP" postgresDevAppPassword="$PG_DEV_APP"
+              postgresAdminPassword="$PG_ADMIN" postgresAppPassword="$PG_APP" postgresDevAppPassword="$PG_DEV_APP" \
+              databaseComputeProfile="$DATABASE_COMPUTE_PROFILE"
       - name: Verify private database and apply schema
         run: |
           set -euo pipefail

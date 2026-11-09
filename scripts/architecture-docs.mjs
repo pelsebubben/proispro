@@ -22,7 +22,7 @@ const read = async (root, path) => normalize(await readFile(resolve(root, path),
 const git = (root, ...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 
 export function architectureSource(path) {
-  return /^(src\/.*\.(?:ts|tsx|css)|server\/.*\.(?:mjs|sql)|infra\/.*\.(?:bicep|json)|scripts\/.*\.(?:mjs|sh|ps1|py)|\.github\/workflows\/(?:ci|dev|prod|infra|architecture)\.yml|(?:package(?:-lock)?\.json|Dockerfile|\.dockerignore|vite\.config\.ts))$/.test(path)
+  return /^(src\/.*\.(?:ts|tsx|css)|server\/.*\.(?:mjs|sql)|infra\/.*\.(?:bicep|json)|scripts\/.*\.(?:mjs|sh|ps1|py)|\.github\/workflows\/(?:ci|dev|prod|infra|architecture|database-power)\.yml|(?:package(?:-lock)?\.json|Dockerfile|\.dockerignore|vite\.config\.ts))$/.test(path)
 }
 
 async function files(root, dir) {

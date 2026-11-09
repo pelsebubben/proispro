@@ -99,7 +99,8 @@ and migration of the existing frontend/data are separate, unfinished milestones.
   previews/applies staging infrastructure, verifies a separate private database,
   backs up live data when schema code changed, migrates the live and dev databases,
   deploys the digest to live, resets the dev app to the same digest, and runs real deployed browser
-  checks. It shares a non-cancelling concurrency group with `infra.yml`.
+  checks. It shares a non-cancelling FIFO concurrency queue with `infra.yml`,
+  `dev.yml` and `database-power.yml`; releases start a stopped database first.
 - `dev.yml`: deploys `main` to the shared dev app `app-griplock-dev` on database
   `griplock_dev` only by manual dispatch from `main`. Pull requests run CI without
   cloud credentials. See [Shared dev environment](#shared-dev-environment).
@@ -155,6 +156,89 @@ Azure returned `RegionalAllocationFailed` for both B1ms ($0.0199/hour) and B2s
 compute family, not an automatic unbounded scaling fallback.
 This is an estimate, not a spending cap. Two vCPUs and single-region/no-HA are
 deliberate staging choices; production sizing/recovery need separate approval.
+
+### Off-season database controls
+
+The database was still `Ready` on General Purpose `Standard_D2ads_v5` when
+inspected on 2026-11-09. B1ms/B2s previously failed allocation in Sweden Central;
+listing a supported SKU does not guarantee current capacity. No live resize,
+shutdown or GitHub variable change is made merely by adding these controls.
+
+`databaseComputeProfile` in `infra/staging.bicep` accepts `general-purpose`
+(the existing D2ads v5 default) or `burstable` (B2s, 2 vCPU/4 GiB). B2s is a
+conservative starting point for the small off-season workload and the shared
+test/migration databases; monitor CPU Credits Remaining, CPU, memory and
+connections. Exhausted burst credits throttle CPU and can cause timeouts.
+Storage stays at 32 GiB with 7-day backups, private networking and no HA.
+
+After merging to main, activate sizing independently of scheduling:
+
+```powershell
+gh variable set DATABASE_COMPUTE_PROFILE --env prod --body burstable
+gh workflow run database-power.yml --ref main -f operation=resize
+```
+
+Inspect the run's result: success verifies both `Ready` and the exact B2s SKU.
+Resizing interrupts connections; choose a quiet period. Allocation failure fails
+the run without escalating size or changing region. If B2s is unavailable, restore
+the variable to `general-purpose` before the next release and keep scheduled
+shutdowns on the existing SKU. The same profile variable feeds all three ARM
+validate/preview/apply calls, so subsequent releases do not undo the selected size.
+
+The schedule is **disabled by default**. The proposed daily window is
+**17:00-23:00 Europe/Oslo**, including weekends and DST changes. Configure hours
+as integers 0-23; the start is inclusive and stop exclusive. Overnight windows
+are supported; equal hours are rejected rather than interpreted as always on/off.
+Set the repo-level opt-in (not only an environment-level variable):
+
+```powershell
+gh variable set DATABASE_SCHEDULE_ENABLED --body true
+```
+
+Optional protected `prod` variables `DATABASE_TIME_ZONE`, `DATABASE_START_HOUR`
+and `DATABASE_STOP_HOUR` override those defaults. `INFRA_ENABLED=true` and the
+existing prod OIDC identity are required. No DB credentials or public DB access
+are needed. A main-only manual `reconcile` applies the configured window now;
+manual `start`, `stop` and `resize` also work when the schedule is disabled:
+
+```powershell
+gh workflow run database-power.yml --ref main -f operation=start
+gh workflow run database-power.yml --ref main -f operation=stop
+```
+
+Reconciliation runs at UTC minutes 17 and 47 each hour, choosing the desired
+state from the actual local time when it executes, not a possibly delayed event.
+Allow roughly 30 minutes plus Azure startup time (and any GitHub queue/delay)
+around each boundary; this is not an exact-time availability SLA.
+GitHub can delay/drop scheduled runs and disables schedules in inactive public
+repositories after 60 days. Check Actions failures/disabled workflows.
+The FIFO queue prevents power operations from cancelling pending deployments.
+The pinned actionlint predates `queue: max`; CI ignores only its exact
+unknown-queue-key diagnostic, with the queue contract covered by unit tests.
+
+Stopping affects **all three databases**, including the live `griplock.no`
+backend and shared dev. API/database readiness fails while stopped; opening
+the site does not wake the database. Manual starts/resizes and releases leave
+it running until the next scheduled reconciliation, which can stop it again
+outside the window. To keep it available for an extended session, disable
+`DATABASE_SCHEDULE_ENABLED` first, then start it. A run already admitted to the
+queue may still execute; wait for it to finish before the manual start.
+
+A six-hour daily window reduces compute running time by roughly 75% versus
+always-on, before startup/release overruns. It does **not** eliminate provisioned
+storage, applicable backup storage, Container Apps, registry or logging charges.
+Azure automatically starts a server after seven stopped days, and future starts
+depend on regional capacity. Do not rely on a one-off stop for an entire winter.
+
+Rollback: set the repo schedule variable to `false`, let queued power runs finish,
+set the prod profile variable to `general-purpose`, then dispatch `resize`.
+Verify the run summary reports `Ready, GeneralPurpose/Standard_D2ads_v5`.
+This preserves databases/data but still incurs resize downtime.
+
+References: [compute tiers and CPU credits](https://learn.microsoft.com/en-us/azure/postgresql/compute-storage/concepts-compute),
+[stop](https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/how-to-stop-server),
+[start and capacity limits](https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/how-to-start-server),
+[FIFO concurrency queues](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
 ## Local checks and test evidence
 

@@ -27,7 +27,7 @@
     {
       "id": "database", "type": "database", "label": "Private PostgreSQL", "sublabel": "Ownership + RLS",
       "pos": [820, 310], "size": [208, 80],
-      "sources": [{"path": "infra/staging.bicep", "line": 54, "end_line": 87}, {"path": "server/database.mjs", "line": 20, "end_line": 34}, {"path": "server/migrations/007_pdga_cache.sql", "line": 16, "end_line": 35}]
+      "sources": [{"path": "infra/staging.bicep", "line": 63, "end_line": 97}, {"path": "server/database.mjs", "line": 20, "end_line": 34}, {"path": "server/migrations/007_pdga_cache.sql", "line": 16, "end_line": 35}]
     },
     {
       "id": "provider", "type": "backend", "label": "PDGA adapter", "sublabel": "Cache, locks, cooldown",

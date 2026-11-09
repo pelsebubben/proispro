@@ -36,7 +36,7 @@ test('the reviewed architecture ledger covers actual sources and all three views
   assert.deepEqual(specs.map(spec => spec.type), ['architecture', 'sequence', 'workflow'])
   for (const path of ['src/App.tsx', 'server/database.mjs', 'server/migrations/008_named_gameplans.sql',
     'infra/app.bicep', 'scripts/architecture-docs.mjs', '.github/workflows/architecture.yml',
-    '.github/workflows/prod.yml', 'Dockerfile', 'package-lock.json']) {
+    '.github/workflows/prod.yml', '.github/workflows/database-power.yml', 'Dockerfile', 'package-lock.json']) {
     assert.match(snapshot.sources[path], /^[a-f0-9]{64}$/)
   }
   assert.ok(Object.keys(snapshot.sources).length > 50)
@@ -50,7 +50,7 @@ test('the reviewed architecture ledger covers actual sources and all three views
 test('reviewed hashes reject real edits, new sources, deletions, prose and diagram drift', async t => {
   const root = await fixture(t)
   for (const path of ['src/App.tsx', 'server/app.mjs', 'infra/app.bicep', 'scripts/architecture-docs.mjs',
-    '.github/workflows/prod.yml', 'package.json', 'docs/architecture/README.md', specPath]) {
+    '.github/workflows/prod.yml', '.github/workflows/database-power.yml', 'package.json', 'docs/architecture/README.md', specPath]) {
     const before = await read(root, path)
     await writeFile(join(root, path), `${before}\n `)
     await assert.rejects(checkArchitecture(root), /Architecture review is stale/)

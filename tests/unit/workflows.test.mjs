@@ -4,7 +4,7 @@ import test from 'node:test'
 import { parse } from 'yaml'
 import { schemaVersion } from '../../server/migrate.mjs'
 
-const names = ['ci.yml', 'infra.yml', 'prod.yml', 'dev.yml', 'squad-ci.yml', 'architecture.yml']
+const names = ['ci.yml', 'infra.yml', 'prod.yml', 'dev.yml', 'database-power.yml', 'squad-ci.yml', 'architecture.yml']
 const sources = Object.fromEntries(await Promise.all(names.map(async name => [
   name, (await readFile(new URL(`../../.github/workflows/${name}`, import.meta.url), 'utf8')).replaceAll('\r\n','\n'),
 ])))
@@ -108,7 +108,7 @@ function checkTrustBoundary(files) {
   const dev = workflows['dev.yml']
   assert.deepEqual(Object.keys(dev.on), ['workflow_dispatch'], 'dev deployment is manual only')
   assert.equal(dev.env.SOURCE_SHA, '${{ github.sha }}', 'deploy only the trusted dispatch commit')
-  assert.deepEqual(dev.jobs.dev.concurrency, { group: 'griplock-dev', 'cancel-in-progress': true })
+  assert.deepEqual(dev.jobs.dev.concurrency, staging.concurrency, 'serialize dev migrations with database power and live releases')
   assert.deepEqual(Object.keys(dev.jobs), ['dev'])
   assert.equal(dev.jobs.dev.if, "${{ vars.DEV_ENABLED == 'true' && github.ref == 'refs/heads/main' }}",
     'only enabled main-branch dispatches receive the dev cloud identity')
