@@ -1,0 +1,21 @@
+{
+  "Name": "Griplock Staging Subscription Deployment",
+  "IsCustom": true,
+  "Description": "Manage ARM deployment records for Griplock staging. Resource writes require a separate resource-group-scoped assignment.",
+  "Actions": [
+    "Microsoft.Resources/subscriptions/read",
+    "Microsoft.Resources/subscriptions/resourceGroups/read",
+    "Microsoft.Resources/deployments/read",
+    "Microsoft.Resources/deployments/write",
+    "Microsoft.Resources/deployments/validate/action",
+    "Microsoft.Resources/deployments/whatIf/action",
+    "Microsoft.Resources/deployments/operations/read",
+    "Microsoft.Resources/deployments/operationStatuses/read"
+  ],
+  "NotActions": [],
+  "DataActions": [],
+  "NotDataActions": [],
+  "AssignableScopes": [
+    "/subscriptions/70a423f9-c285-4d8b-b264-e0b3ff5f787f"
+  ]
+}

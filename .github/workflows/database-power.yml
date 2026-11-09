@@ -1,0 +1,61 @@
+name: Griplock database power
+
+on:
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Reconcile schedule, start/stop temporarily, or apply configured compute profile
+        type: choice
+        options: [reconcile, start, stop, resize]
+        default: reconcile
+
+permissions:
+  contents: read
+
+concurrency:
+  group: griplock-staging-release
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  database:
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.DATABASE_SCHEDULE_ENABLED == 'true') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: prod
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RESOURCE_GROUP: rg-griplock-staging
+      DATABASE_SERVER: pg-griplock-gmfarjpxlkg2e
+      DATABASE_COMPUTE_PROFILE: ${{ vars.DATABASE_COMPUTE_PROFILE || 'general-purpose' }}
+      DATABASE_TIME_ZONE: ${{ vars.DATABASE_TIME_ZONE || 'Europe/Oslo' }}
+      DATABASE_START_HOUR: ${{ vars.DATABASE_START_HOUR || '17' }}
+      DATABASE_STOP_HOUR: ${{ vars.DATABASE_STOP_HOUR || '23' }}
+      OPERATION: ${{ inputs.operation || 'reconcile' }}
+    steps:
+      - name: Require infrastructure enablement
+        env:
+          ENABLED: ${{ vars.INFRA_ENABLED }}
+        run: test "$ENABLED" = true
+      - name: Require explicit schedule opt-in
+        if: ${{ env.OPERATION == 'reconcile' }}
+        env:
+          ENABLED: ${{ vars.DATABASE_SCHEDULE_ENABLED }}
+        run: test "$ENABLED" = true
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Apply database operation
+        run: node scripts/database-power.mjs "$OPERATION"

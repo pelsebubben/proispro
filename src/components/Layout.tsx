@@ -1,7 +1,7 @@
 import { ReactNode } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-
-type Tab = 'inventory' | 'bags' | 'courses' | 'collections' | 'wishlist' | 'forsale' | 'analytics'
+import { runtime } from '../lib/runtime'
+import type { Tab } from '../lib/navigation'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'inventory', label: '💿 Inventory' },
@@ -9,7 +9,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'courses', label: '🗺️ Courses' },
   { id: 'collections', label: '📦 Collections' },
   { id: 'wishlist', label: '⭐ Wishlist' },
-  { id: 'forsale', label: '🏷️ For Sale' },
   { id: 'analytics', label: '📊 Analytics' },
 ]
 
@@ -34,10 +33,21 @@ export function Layout({ activeTab, onTabChange, children }: LayoutProps) {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <img src="/img/logo.png" alt="" style={{ width: '32px', height: '32px', borderRadius: '50%' }} />
-          <span style={{ fontWeight: 700, color: 'var(--clr-accent)' }}>ProIsPro</span>
+          <span style={{ fontWeight: 700, color: 'var(--clr-accent)' }}>Griplock</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <span style={{ color: 'var(--clr-muted)', fontSize: '0.85rem' }}>{user?.email}</span>
+          {runtime.mockData && <span style={{
+            padding: '0.3rem 0.6rem',
+            border: '1px solid var(--clr-accent)',
+            borderRadius: '999px',
+            color: 'var(--clr-accent)',
+            fontSize: '0.75rem',
+            fontWeight: 700,
+            whiteSpace: 'nowrap',
+          }}>MOCK PREVIEW · NOT SAVED</span>}
+          <span title={user?.email} style={{ color: 'var(--clr-muted)', fontSize: '0.85rem' }}>
+            {user?.email || user?.name || 'Signed in'}
+          </span>
           <button
             onClick={signOut}
             style={{
@@ -67,6 +77,7 @@ export function Layout({ activeTab, onTabChange, children }: LayoutProps) {
           <button
             key={tab.id}
             onClick={() => onTabChange(tab.id)}
+            aria-current={activeTab === tab.id ? 'page' : undefined}
             style={{
               padding: '0.65rem 1rem',
               background: 'transparent',

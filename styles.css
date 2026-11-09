@@ -1671,11 +1671,6 @@ input.invalid, select.invalid { border-color: var(--clr-danger); }
 .priority-med  { background: rgba(251,191,36,.15); color: oklch(0.82 0.18 80); border: 1px solid rgba(251,191,36,.3); }
 .priority-low  { background: rgba(34,197,94,.12);  color: oklch(0.75 0.18 155); border: 1px solid rgba(34,197,94,.25); }
 
-/* ── For Sale ───────────────────────────────────────────────── */
-
-/* Sale public share section */
-.sale-public-section { margin-bottom: .5rem; }
-
 /* ── Disc Usage Badges ──────────────────────────────────────── */
 .disc-usage-badge {
   display: inline-flex;
@@ -1697,112 +1692,7 @@ input.invalid, select.invalid { border-color: var(--clr-danger); }
   color: oklch(35% 0.10 270);
 }
 
-/* ── For Sale ───────────────────────────────────────────────── */
-
-/* Sale public share section */
-.sale-public-section { margin-bottom: .5rem; }
-.sale-link-card {
-  display: flex;
-  gap: 1rem;
-  align-items: flex-start;
-  background: var(--clr-surface2);
-  border: 1px solid var(--clr-border);
-  border-radius: var(--radius);
-  padding: .9rem 1rem;
-  margin-bottom: .75rem;
-}
-.sale-qr-wrap { flex-shrink: 0; }
-.sale-qr-img { width: 110px; height: 110px; border-radius: 6px; display: block; }
-.sale-link-info { flex: 1; min-width: 0; }
-.sale-link-title { font-weight: 700; font-size: 1rem; margin-bottom: .15rem; }
-.sale-link-desc { font-size: .82rem; color: var(--clr-muted); margin-bottom: .5rem; }
-.sale-url-input {
-  width: 100%;
-  box-sizing: border-box;
-  font-size: .8rem;
-  padding: .3rem .6rem;
-  border-radius: var(--radius);
-  border: 1px solid var(--clr-border);
-  background: var(--clr-surface);
-  color: var(--clr-text);
-  margin-bottom: .5rem;
-  cursor: text;
-}
-.sale-link-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
-.sale-private-note { font-size: .78rem; color: oklch(75% 0.15 60); margin-top: .35rem; }
-@media (max-width: 500px) {
-  .sale-link-card { flex-direction: column; }
-  .sale-qr-img { width: 90px; height: 90px; }
-}
-
-.forsale-card {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: .85rem 1rem;
-  background: var(--clr-surface);
-  border: 1px solid var(--clr-border);
-  border-radius: var(--radius);
-  margin-bottom: .75rem;
-  transition: border-color .15s;
-}
-.forsale-card:hover { border-color: var(--clr-accent2); }
-
-.forsale-disc-info { flex: 1; min-width: 0; }
-.forsale-disc-name { font-weight: 600; font-size: 1rem; color: var(--clr-text); margin-bottom: .2rem; }
-.forsale-disc-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: .25rem .5rem;
-  font-size: .82rem;
-  color: var(--clr-muted);
-}
-
-.forsale-card-right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: .45rem;
-  flex-shrink: 0;
-}
-
-.price-display {
-  font-size: 1.35rem;
-  font-weight: 800;
-  color: var(--clr-accent);
-  line-height: 1;
-  white-space: nowrap;
-}
-.price-currency {
-  font-size: .8rem;
-  font-weight: 600;
-  color: var(--clr-muted);
-  margin-left: .15rem;
-}
-
-.status-badge {
-  display: inline-block;
-  font-size: .75rem;
-  font-weight: 700;
-  padding: .2rem .6rem;
-  border-radius: 999px;
-  white-space: nowrap;
-}
-.status-available { background: rgba(34,197,94,.12);  color: oklch(0.75 0.18 155); border: 1px solid rgba(34,197,94,.25); }
-.status-pending   { background: rgba(251,191,36,.15); color: oklch(0.82 0.18 80); border: 1px solid rgba(251,191,36,.3); }
-.status-sold      { background: var(--clr-surface2);  color: var(--clr-muted);    border: 1px solid var(--clr-border); }
-
-.forsale-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: .3rem;
-  justify-content: flex-end;
-}
-
 @media (max-width: 600px) {
-  .forsale-card { flex-direction: column; }
-  .forsale-card-right { align-items: flex-start; }
   .wishlist-item { flex-direction: column; }
   .wishlist-item-actions { flex-direction: row; flex-wrap: wrap; align-items: center; }
 }

@@ -1,0 +1,282 @@
+name: Release Griplock prod
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: [Griplock CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: griplock-staging-release
+  cancel-in-progress: false
+  queue: max
+
+env:
+  SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  BICEP_VERSION: v0.48.1
+  RESOURCE_GROUP: rg-griplock-staging
+
+jobs:
+  build:
+    name: Build trusted release
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Require main and successful CI for this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$SOURCE_SHA&event=push" \
+            | jq -e --arg sha "$SOURCE_SHA" '.workflow_runs | any(.head_sha == $sha and .head_branch == "main" and .conclusion == "success")'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - run: docker build --tag "griplock:$SOURCE_SHA" .
+      - run: docker save "griplock:$SOURCE_SHA" | gzip > "$RUNNER_TEMP/griplock.tar.gz"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: runtime-${{ github.sha }}
+          path: ${{ runner.temp }}/griplock.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  staging:
+    name: Deploy and verify private database
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: prod
+    outputs:
+      url: ${{ steps.release.outputs.url }}
+      image: ${{ steps.release.outputs.image }}
+      identityReady: ${{ steps.release.outputs.identityReady }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_CORE_OUTPUT: none
+      REGISTRY: ${{ vars.AZURE_REGISTRY_NAME }}
+      REGISTRY_SERVER: ${{ vars.AZURE_REGISTRY_SERVER }}
+      PULL_IDENTITY: ${{ vars.AZURE_PULL_IDENTITY_ID }}
+      PG_ADMIN: ${{ secrets.PG_ADMIN_PASSWORD }}
+      PG_APP: ${{ secrets.PG_APP_PASSWORD }}
+      PG_DEV_APP: ${{ secrets.PG_DEV_APP_PASSWORD }}
+      DEV_LOGIN: ${{ secrets.DEV_LOGIN_PASSCODE }}
+      DATABASE_SERVER: pg-griplock-gmfarjpxlkg2e
+      DATABASE_COMPUTE_PROFILE: ${{ vars.DATABASE_COMPUTE_PROFILE || 'general-purpose' }}
+    steps:
+      - name: Enforce staging prerequisites
+        env:
+          ENABLED: ${{ vars.INFRA_ENABLED }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$ENABLED" = true
+          test -n "$REGISTRY"
+          test -n "$REGISTRY_SERVER"
+          test -n "$PULL_IDENTITY"
+          test "${#PG_ADMIN}" -ge 32
+          test "${#PG_APP}" -ge 32
+          test "${#PG_DEV_APP}" -ge 32
+          test "${#DEV_LOGIN}" -ge 32
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: runtime-${{ github.sha }}
+          path: ${{ runner.temp }}/runtime
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Publish exact image to private ACR
+        run: |
+          set -euo pipefail
+          gunzip -c "$RUNNER_TEMP/runtime/griplock.tar.gz" | docker load
+          az acr login --name "$REGISTRY"
+          docker tag "griplock:$SOURCE_SHA" "$REGISTRY_SERVER/griplock:$SOURCE_SHA"
+          docker push "$REGISTRY_SERVER/griplock:$SOURCE_SHA"
+          digest=$(az acr repository show --name "$REGISTRY" --image "griplock:$SOURCE_SHA" --query digest -o tsv)
+          test "${digest#sha256:}" != "$digest"
+          printf 'IMAGE=%s/griplock@%s\n' "$REGISTRY_SERVER" "$digest" >> "$GITHUB_ENV"
+          docker logout "$REGISTRY_SERVER"
+      - name: Validate and apply private staging infrastructure
+        run: |
+          set -euo pipefail
+          existing=$(az postgres flexible-server list --resource-group "$RESOURCE_GROUP" \
+            --query "[?name=='$DATABASE_SERVER'].name | [0]" -o tsv)
+          if [ -n "$existing" ]; then
+            node scripts/database-power.mjs start
+          else
+            echo "Database not provisioned yet; the infrastructure deployment will create it"
+          fi
+          az bicep install --version "$BICEP_VERSION"
+          az extension add --name containerapp --upgrade --only-show-errors
+          az deployment group validate --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/staging.bicep \
+            --parameters image="$IMAGE" registryServer="$REGISTRY_SERVER" pullIdentityId="$PULL_IDENTITY" \
+              postgresAdminPassword="$PG_ADMIN" postgresAppPassword="$PG_APP" postgresDevAppPassword="$PG_DEV_APP" \
+              databaseComputeProfile="$DATABASE_COMPUTE_PROFILE"
+          az deployment group what-if --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/staging.bicep --result-format ResourceIdOnly \
+            --parameters image="$IMAGE" registryServer="$REGISTRY_SERVER" pullIdentityId="$PULL_IDENTITY" \
+              postgresAdminPassword="$PG_ADMIN" postgresAppPassword="$PG_APP" postgresDevAppPassword="$PG_DEV_APP" \
+              databaseComputeProfile="$DATABASE_COMPUTE_PROFILE"
+          az deployment group create --resource-group "$RESOURCE_GROUP" --name "core-$GITHUB_RUN_ID" \
+            --template-file infra/staging.bicep \
+            --parameters image="$IMAGE" registryServer="$REGISTRY_SERVER" pullIdentityId="$PULL_IDENTITY" \
+              postgresAdminPassword="$PG_ADMIN" postgresAppPassword="$PG_APP" postgresDevAppPassword="$PG_DEV_APP" \
+              databaseComputeProfile="$DATABASE_COMPUTE_PROFILE"
+      - name: Verify private database and apply schema
+        run: |
+          set -euo pipefail
+          bash scripts/run-staging-job.sh job-griplock-verify
+          server=$(az deployment group show -g "$RESOURCE_GROUP" -n "core-$GITHUB_RUN_ID" \
+            --query properties.outputs.databaseServer.value -o tsv)
+          previous=$(az containerapp show -g "$RESOURCE_GROUP" -n app-griplock-staging --query tags.sourceSha -o tsv || true)
+          if [ -n "$previous" ] && git cat-file -e "$previous^{commit}" \
+            && git diff --quiet "$previous" "$SOURCE_SHA" -- server/migrations server/migrate.mjs; then
+            printf 'Schema code unchanged since live %s; continuous PITR covers this release\n' "$previous"
+          else
+            bash scripts/backup-live-database.sh "$server" "pre-release-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          fi
+          bash scripts/run-staging-job.sh job-griplock-migrate
+          bash scripts/run-staging-job.sh job-griplock-migrate-dev
+      - name: Release immutable app revision
+        id: release
+        env:
+          ENTRA_CLIENT_ID: ${{ vars.ENTRA_CLIENT_ID }}
+          ENTRA_AUTHORITY: ${{ vars.ENTRA_AUTHORITY }}
+          ENTRA_API_SCOPE: ${{ vars.ENTRA_API_SCOPE }}
+          AUTH_ISSUER: ${{ vars.AUTH_ISSUER }}
+          AUTH_AUDIENCE: ${{ vars.AUTH_AUDIENCE }}
+          AUTH_JWKS_URL: ${{ vars.AUTH_JWKS_URL }}
+          AUTH_REQUIRED_SCOPE: ${{ vars.AUTH_REQUIRED_SCOPE }}
+        run: |
+          set -euo pipefail
+          node --input-type=module -e 'import { identityConfiguration } from "./server/identity.mjs"; identityConfiguration(process.env)'
+          environment_id=$(az deployment group show -g "$RESOURCE_GROUP" -n "core-$GITHUB_RUN_ID" \
+            --query properties.outputs.environmentId.value -o tsv)
+          database_host=$(az deployment group show -g "$RESOURCE_GROUP" -n "core-$GITHUB_RUN_ID" \
+            --query properties.outputs.databaseHost.value -o tsv)
+          az deployment group create -g "$RESOURCE_GROUP" -n "app-$GITHUB_RUN_ID" \
+            --template-file infra/app.bicep \
+            --parameters environmentId="$environment_id" databaseHost="$database_host" \
+              image="$IMAGE" registryServer="$REGISTRY_SERVER" pullIdentityId="$PULL_IDENTITY" \
+              sourceSha="$SOURCE_SHA" releaseId="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" postgresAppPassword="$PG_APP" \
+              entraClientId="$ENTRA_CLIENT_ID" entraAuthority="$ENTRA_AUTHORITY" entraApiScope="$ENTRA_API_SCOPE" \
+              authIssuer="$AUTH_ISSUER" authAudience="$AUTH_AUDIENCE" authJwksUrl="$AUTH_JWKS_URL" \
+              authRequiredScope="$AUTH_REQUIRED_SCOPE"
+          az deployment group create -g "$RESOURCE_GROUP" -n "dev-app-$GITHUB_RUN_ID" \
+            --template-file infra/app.bicep \
+            --parameters stage=dev environmentId="$environment_id" databaseHost="$database_host" \
+              image="$IMAGE" registryServer="$REGISTRY_SERVER" pullIdentityId="$PULL_IDENTITY" \
+              sourceSha="$SOURCE_SHA" releaseId="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" postgresAppPassword="$PG_DEV_APP" devLoginPasscode="$DEV_LOGIN" \
+              entraClientId="$ENTRA_CLIENT_ID" entraAuthority="$ENTRA_AUTHORITY" entraApiScope="$ENTRA_API_SCOPE" \
+              authIssuer="$AUTH_ISSUER" authAudience="$AUTH_AUDIENCE" authJwksUrl="$AUTH_JWKS_URL" \
+              authRequiredScope="$AUTH_REQUIRED_SCOPE"
+          url=$(az deployment group show -g "$RESOURCE_GROUP" -n "app-$GITHUB_RUN_ID" \
+            --query properties.outputs.url.value -o tsv)
+          printf 'url=%s\nimage=%s\n' "$url" "$IMAGE" >> "$GITHUB_OUTPUT"
+          for ((attempt=0; attempt<30; attempt++)); do
+            if curl --fail --silent --max-time 15 "$url/health/ready" \
+              | jq -e --arg sha "$SOURCE_SHA" '.status == "ready" and .sourceSha == $sha and .schemaVersion == 8'; then
+              identity_ready=$(curl --fail --silent --max-time 15 "$url/auth/config" | jq -er '.identityReady | tostring')
+              printf 'identityReady=%s\n' "$identity_ready" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Staging did not serve the expected release and schema"
+          exit 1
+      - name: Refresh Azure authentication for protected provider provisioning
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Configure production PDGA from protected environment
+        env:
+          PDGA_STAGE: prod
+          PDGA_LAYOUT_INDEX_TEMPLATE: ${{ secrets.PDGA_LAYOUT_INDEX_TEMPLATE }}
+          PDGA_EVENT_OVERVIEW_TEMPLATE: ${{ secrets.PDGA_EVENT_OVERVIEW_TEMPLATE }}
+          PDGA_USERNAME: ${{ secrets.PDGA_USERNAME }}
+          PDGA_PASSWORD: ${{ secrets.PDGA_PASSWORD }}
+          EXPECTED_SOURCE_SHA: ${{ env.SOURCE_SHA }}
+        run: python3 scripts/configure-pdga-dev.py
+
+  dev-provider:
+    name: Restore dev provider after foundation release
+    needs: staging
+    if: ${{ always() && needs.staging.outputs.url != '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Configure dev PDGA from its own protected environment
+        env:
+          PDGA_STAGE: dev
+          PDGA_LAYOUT_INDEX_TEMPLATE: ${{ secrets.PDGA_LAYOUT_INDEX_TEMPLATE }}
+          PDGA_EVENT_OVERVIEW_TEMPLATE: ${{ secrets.PDGA_EVENT_OVERVIEW_TEMPLATE }}
+          PDGA_USERNAME: ${{ secrets.PDGA_USERNAME }}
+          PDGA_PASSWORD: ${{ secrets.PDGA_PASSWORD }}
+          EXPECTED_SOURCE_SHA: ${{ env.SOURCE_SHA }}
+        run: python3 scripts/configure-pdga-dev.py
+
+  browser:
+    name: Verify deployed desktop and mobile
+    needs: [staging, dev-provider]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      STAGING_URL: ${{ needs.staging.outputs.url }}
+      IMAGE: ${{ needs.staging.outputs.image }}
+      IDENTITY_READY: ${{ needs.staging.outputs.identityReady }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: npm run test:staging
+      - name: Record verified release
+        run: node scripts/record-staging-release.mjs
+      - name: Preserve deployed browser and release evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: staging-evidence-${{ github.run_id }}
+          path: |
+            staging-release.json
+            staging-report/
+            staging-results/
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,0 +1,105 @@
+name: Deploy Griplock dev
+
+on:
+  workflow_dispatch:
+    inputs:
+      configure_pdga:
+        description: Provision dev PDGA secrets after deploying this commit
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SHA: ${{ github.sha }}
+  RESOURCE_GROUP: rg-griplock-staging
+  DEV_APP: app-griplock-dev
+  DEV_MIGRATION: job-griplock-migrate-dev
+
+jobs:
+  dev:
+    name: Deploy main to shared dev
+    if: ${{ vars.DEV_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    concurrency:
+      group: griplock-staging-release
+      cancel-in-progress: false
+      queue: max
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment:
+      name: dev
+      url: ${{ steps.release.outputs.url }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_CORE_OUTPUT: none
+      REGISTRY: ${{ vars.AZURE_REGISTRY_NAME }}
+      REGISTRY_SERVER: ${{ vars.AZURE_REGISTRY_SERVER }}
+    steps:
+      - name: Validate trusted dispatch
+        env:
+          DEV_ENABLED: ${{ vars.DEV_ENABLED }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$DEV_ENABLED" = true
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Build branch image
+        run: docker build --tag "griplock:dev-$SOURCE_SHA" .
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Publish branch image to private ACR
+        run: |
+          set -euo pipefail
+          az acr login --name "$REGISTRY"
+          docker tag "griplock:dev-$SOURCE_SHA" "$REGISTRY_SERVER/griplock:dev-$SOURCE_SHA"
+          docker push "$REGISTRY_SERVER/griplock:dev-$SOURCE_SHA"
+          digest=$(az acr repository show --name "$REGISTRY" --image "griplock:dev-$SOURCE_SHA" --query digest -o tsv)
+          test "${digest#sha256:}" != "$digest"
+          printf 'IMAGE=%s/griplock@%s\n' "$REGISTRY_SERVER" "$digest" >> "$GITHUB_ENV"
+          docker logout "$REGISTRY_SERVER"
+      - name: Apply branch schema to dev database
+        run: |
+          set -euo pipefail
+          DATABASE_SERVER=pg-griplock-gmfarjpxlkg2e node scripts/database-power.mjs start
+          az extension add --name containerapp --upgrade --only-show-errors
+          az containerapp job update --resource-group "$RESOURCE_GROUP" --name "$DEV_MIGRATION" --image "$IMAGE"
+          bash scripts/run-staging-job.sh "$DEV_MIGRATION"
+      - name: Release branch to dev app
+        id: release
+        run: |
+          set -euo pipefail
+          az containerapp update --resource-group "$RESOURCE_GROUP" --name "$DEV_APP" --image "$IMAGE" \
+            --revision-suffix "d-${SOURCE_SHA:0:12}-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --set-env-vars "SOURCE_SHA=$SOURCE_SHA"
+          url="https://$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$DEV_APP" \
+            --query properties.configuration.ingress.fqdn -o tsv)"
+          printf 'url=%s\n' "$url" >> "$GITHUB_OUTPUT"
+          for ((attempt=0; attempt<30; attempt++)); do
+            if curl --fail --silent --max-time 30 "$url/health/ready" \
+              | jq -e --arg sha "$SOURCE_SHA" '.status == "ready" and .sourceSha == $sha'; then
+              printf '### Dev deployed\n\nSHA: %s\n\nURL: %s\n\nShared dev app and griplock_dev database; the next deploy replaces it.\n' \
+                "$SOURCE_SHA" "$url" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Dev did not serve the expected branch commit"
+          exit 1
+      - name: Configure server-only PDGA dev access
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.configure_pdga }}
+        env:
+          PDGA_USERNAME: ${{ secrets.PDGA_USERNAME }}
+          PDGA_LAYOUT_INDEX_TEMPLATE: ${{ secrets.PDGA_LAYOUT_INDEX_TEMPLATE }}
+          PDGA_EVENT_OVERVIEW_TEMPLATE: ${{ secrets.PDGA_EVENT_OVERVIEW_TEMPLATE }}
+          PDGA_PASSWORD: ${{ secrets.PDGA_PASSWORD }}
+          EXPECTED_SOURCE_SHA: ${{ env.SOURCE_SHA }}
+        run: python3 scripts/configure-pdga-dev.py

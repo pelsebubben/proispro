@@ -20,6 +20,7 @@ function flightChartColor(type: string): string {
     midrange: 'oklch(65% 0.15 145)',
     fairway: 'oklch(65% 0.18 55)',
     distance: 'oklch(65% 0.2 25)',
+    utility: 'var(--utility)',
   }
   return colors[type] || 'oklch(60% 0.1 280)'
 }
@@ -137,6 +138,7 @@ export function FlightChart({ discs, className = '' }: FlightChartProps) {
       {/* Legend */}
       <div style={{
         display: 'flex',
+        flexWrap: 'wrap',
         gap: '1rem',
         fontSize: '0.75rem',
         color: 'var(--clr-muted)',
@@ -154,6 +156,9 @@ export function FlightChart({ discs, className = '' }: FlightChartProps) {
         </span>
         <span>
           <span style={{ color: 'oklch(65% 0.2 25)' }}>●</span> Driver
+        </span>
+        <span>
+          <span style={{ color: 'var(--utility)' }}>●</span> Utility
         </span>
       </div>
     </div>

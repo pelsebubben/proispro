@@ -1,0 +1,17 @@
+# These boundaries require explicit owner review when enabled in the main ruleset.
+/.github/ @pelsebubben
+/infra/ @pelsebubben
+/tests/ @pelsebubben
+/playwright.config.ts @pelsebubben
+/tsconfig.tests.json @pelsebubben
+/playwright.staging.config.ts @pelsebubben
+/server/ @pelsebubben
+/scripts/run-staging-job.sh @pelsebubben
+/scripts/record-staging-release.mjs @pelsebubben
+/Dockerfile @pelsebubben
+/src/lib/runtime.ts @pelsebubben
+/public/runtime-config.js @pelsebubben
+/docs/architecture/ @pelsebubben
+/scripts/architecture-docs.mjs @pelsebubben
+/package.json @pelsebubben
+/package-lock.json @pelsebubben

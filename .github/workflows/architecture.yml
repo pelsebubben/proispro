@@ -1,0 +1,59 @@
+name: Griplock architecture evidence
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: architecture-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diagrams:
+    name: Review and render architecture
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run test:docs
+      - name: Check architecture review and source evidence
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+        run: npm run docs:check -- --base "$BASE_SHA"
+      - name: Checkout pinned diagram renderer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: tt-a1i/archify
+          ref: 51a291770851ad27a400cca73c753c166b5e0c65
+          path: .architecture-tools/archify
+          persist-credentials: false
+      - run: npx --no-install playwright install --with-deps chromium
+      - name: Generate release-linked architecture drawings
+        env:
+          ARCHIFY_CLI: .architecture-tools/archify/archify/bin/archify.mjs
+        run: |
+          ARCHIFY_CHROME="$(node --input-type=module -e 'import {chromium} from "@playwright/test"; console.log(chromium.executablePath())')"
+          export ARCHIFY_CHROME
+          npm run docs:build
+      - name: Preserve architecture drawings and checks
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: architecture-${{ github.sha }}-${{ github.run_id }}
+          path: architecture-report/
+          if-no-files-found: error
+          retention-days: 30

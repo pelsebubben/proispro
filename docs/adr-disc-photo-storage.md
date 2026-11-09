@@ -1,6 +1,7 @@
 # ADR: Disc Photo Storage Architecture
 
-**Status:** Accepted  
+**Status:** Superseded historical design; not an active setup path. Provider
+storage and upload functions are not part of the current API implementation.
 **Date:** 2026-04-16  
 **Author:** Danny (Lead / Architect)  
 **Scope:** User disc photos — upload, storage, display priority, RLS

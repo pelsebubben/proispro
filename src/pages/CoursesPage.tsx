@@ -1,584 +1,194 @@
-import { useState } from 'react'
-import { ClientDisc, ClientBag } from '../utils/disc'
-import { useCoursePins, ClientPin, OSMCourse } from '../hooks/useCoursePins'
+import { useCallback, useEffect, useState } from 'react'
+import type { ClientDisc, ClientBag } from '../utils/disc'
+import { useCoursePins, type CatalogueCourse, type ClientPin } from '../hooks/useCoursePins'
+import { confirmPlannerNavigation, plannerData, subscribeToChanges } from '../lib/data'
+import { CoursePlanner } from '../components/CoursePlanner'
+import { CuratedCourses } from '../components/CuratedCourses'
 
 interface CoursesPagesProps {
   allDiscs: ClientDisc[]
   allBags: ClientBag[]
+  initialBagId?: string
+  initialPinId?: string
+  onOpenBag?: (bagId:string)=>void
+}
+interface PlanSummary {
+  course_pin_id:string; layout_name:string; planned_count:number; required_disc_count:number; missing_disc_count:number
 }
 
-export function CoursesPage({ allDiscs, allBags }: CoursesPagesProps) {
-  const {
-    pins,
-    createPin,
-    deletePin,
-    holeAssignments,
-    assignDiscToHole,
-    clearHoleAssignment,
-    searchCoursesDebounced,
-    downloadCourseMap,
-    courseLoading,
-    pdgaSuggestions,
-    getHolesForPin,
-  } = useCoursePins()
-
-  const [expandedPinId, setExpandedPinId] = useState<string | null>(null)
-  const [showModal, setShowModal] = useState(false)
-  const [courseQuery, setCourseQuery] = useState('')
-  const [selectedCourse, setSelectedCourse] = useState<OSMCourse | null>(null)
-  const [selectedBagId, setSelectedBagId] = useState('')
-  const [showGamePlan, setShowGamePlan] = useState<string | null>(null)
-
-  const handlePinCourse = () => {
-    setShowModal(true)
-    setCourseQuery('')
-    setSelectedCourse(null)
-    setSelectedBagId(allBags[0]?.id || '')
+export function CoursesPage({allDiscs,allBags,initialBagId,initialPinId,onOpenBag}:CoursesPagesProps) {
+  const {pins,pinsLoading,pinsError,loadPins,createPin,deletePin,searchCourses,resetCourseSearch,
+    courseLoading,courseSuggestions,courseError,courseCache,loadCourseDetails,searchedQuery,courseDetailsErrors}=useCoursePins(true)
+  const [showForm,setShowForm]=useState(false)
+  const [query,setQuery]=useState('')
+  const [selected,setSelected]=useState<CatalogueCourse|null>(null)
+  const [bagId,setBagId]=useState(initialBagId??allBags[0]?.id??'')
+  const [filterBagId,setFilterBagId]=useState(initialBagId??'')
+  const [plannerPinId,setPlannerPinId]=useState<string|null>(initialPinId??null)
+  const [busy,setBusy]=useState(false)
+  const [error,setError]=useState('')
+  const [linkPin,setLinkPin]=useState<string|null>(null)
+  const [linkBag,setLinkBag]=useState('')
+  const [courseFilter,setCourseFilter]=useState('')
+  const [chosenPins,setChosenPins]=useState<Record<string,string>>({})
+  const [summaries,setSummaries]=useState<PlanSummary[]>([])
+  const [summaryError,setSummaryError]=useState('')
+  const loadSummaries=useCallback(async()=>{
+    try {
+      const result=await plannerData<{summaries:PlanSummary[]}>('planner')
+      setSummaries(result.summaries);setSummaryError('')
+    } catch(reason) {setSummaryError(reason instanceof Error?reason.message:'Could not load bag readiness.')}
+  },[])
+  useEffect(()=>{
+    void loadSummaries()
+    return subscribeToChanges(['planner','bags','course_pins'],loadSummaries)
+  },[loadSummaries])
+  useEffect(()=>{
+    if(!selected?.expiresAt)return
+    const timer=setTimeout(()=>{setSelected(null);setQuery('');resetCourseSearch()},
+      Math.max(0,selected.expiresAt-Date.now()))
+    return ()=>clearTimeout(timer)
+  },[selected])
+  const perform=async(action:()=>Promise<void>)=>{
+    if(busy)return
+    setBusy(true);setError('')
+    try{await action()}catch(reason){setError(reason instanceof Error?reason.message:'Could not update the course link.')}
+    finally{setBusy(false)}
   }
-
-  const handleSavePin = async () => {
-    if (!selectedCourse) {
-      const name = courseQuery.trim()
-      if (name && selectedBagId) {
-        await createPin(name, null, selectedBagId)
-        setShowModal(false)
-      }
-    } else {
-      const courseId = `osm:${selectedCourse.osmType}:${selectedCourse.osmId}`
-      await createPin(selectedCourse.name, courseId, selectedBagId)
-      setShowModal(false)
-    }
+  const groups=new Map<string,ClientPin[]>()
+  for(const pin of pins) {
+    const key=pin.courseId??`custom:${pin.id}`
+    groups.set(key,[...(groups.get(key)??[]),pin])
   }
-
-  const handleDownloadMap = async (pin: ClientPin) => {
-    if (!pin.courseId) return
-    const [, osmType, osmIdStr] = pin.courseId.split(':')
-    const osmId = parseInt(osmIdStr, 10)
-    const course = pdgaSuggestions.find(c => c.osmId === osmId && c.osmType === osmType)
-    if (course && course.lat && course.lon) {
-      await downloadCourseMap(pin, course.lat, course.lon)
-    }
-  }
-
-  const handleDelete = async (pinId: string) => {
-    if (confirm('Delete this course pin? Hole assignments will also be deleted.')) {
-      await deletePin(pinId)
-    }
-  }
-
-  const handleCourseQueryChange = (value: string) => {
-    setCourseQuery(value)
-    setSelectedCourse(null)
-    searchCoursesDebounced(value)
-  }
-
-  const handleSelectCourse = (course: OSMCourse) => {
-    setSelectedCourse(course)
-    setCourseQuery(course.name)
-  }
-
-  const handleHoleAssignment = async (pin: ClientPin, holeRef: string, discId: string) => {
-    if (!discId) {
-      await clearHoleAssignment(pin.id, holeRef)
-    } else {
-      const disc = allDiscs.find(d => d.id === discId)
-      if (disc) {
-        await assignDiscToHole(pin.id, holeRef, discId, disc.name)
-      }
-    }
-  }
-
-  const getBagForPin = (pin: ClientPin) => allBags.find(b => b.id === pin.bagId)
-
-  const getDiscsForPin = (pin: ClientPin): ClientDisc[] => {
-    const bag = getBagForPin(pin)
-    if (!bag) return []
-    return allDiscs.filter(d => bag.disc_ids.includes(d.id))
-  }
-
-  const getAssignedDiscId = (pinId: string, holeRef: string): string => {
-    const assignment = holeAssignments.find(
-      a => a.course_pin_id === pinId && a.hole_ref === holeRef
-    )
-    return assignment?.disc_id || ''
-  }
-
-  return (
-    <div>
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '1.5rem',
-        }}
-      >
-        <h2 style={{ margin: 0, color: 'var(--clr-text)' }}>
-          🗺 {pins.length} {pins.length === 1 ? 'course' : 'courses'} pinned
-        </h2>
-        <button
-          onClick={handlePinCourse}
-          style={{
-            padding: '0.75rem 1.5rem',
-            background: 'var(--clr-accent)',
-            color: 'white',
-            border: 'none',
-            borderRadius: 'var(--radius)',
-            cursor: 'pointer',
-            fontWeight: 600,
-          }}
-        >
-          + Pin Course
-        </button>
-      </div>
-
-      {/* Pin Modal */}
-      {showModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
-          onClick={() => setShowModal(false)}
-        >
-          <div
-            style={{
-              background: 'var(--clr-surface)',
-              padding: '2rem',
-              borderRadius: 'var(--radius)',
-              maxWidth: '500px',
-              width: '90%',
-            }}
-            onClick={e => e.stopPropagation()}
-          >
-            <h3 style={{ margin: '0 0 1rem', color: 'var(--clr-text)' }}>Pin a Course</h3>
-
-            <div style={{ marginBottom: '1rem', position: 'relative' }}>
-              <label
-                style={{
-                  display: 'block',
-                  marginBottom: '0.5rem',
-                  fontSize: '0.9rem',
-                  color: 'var(--clr-muted)',
-                }}
-              >
-                Course Name (search OSM or type custom)
-              </label>
-              <input
-                type="text"
-                value={courseQuery}
-                onChange={e => handleCourseQueryChange(e.target.value)}
-                placeholder="Start typing course name..."
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  background: 'var(--clr-bg)',
-                  border: '1px solid var(--clr-border)',
-                  borderRadius: 'var(--radius)',
-                  color: 'var(--clr-text)',
-                  fontSize: '1rem',
-                }}
-              />
-              {courseLoading && (
-                <div
-                  style={{
-                    marginTop: '0.5rem',
-                    fontSize: '0.85rem',
-                    color: 'var(--clr-muted)',
-                  }}
-                >
-                  Searching OSM...
-                </div>
-              )}
-              {pdgaSuggestions.length > 0 && !selectedCourse && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    right: 0,
-                    marginTop: '0.5rem',
-                    background: 'var(--clr-surface2)',
-                    border: '1px solid var(--clr-border)',
-                    borderRadius: 'var(--radius)',
-                    maxHeight: '200px',
-                    overflowY: 'auto',
-                    zIndex: 10,
-                  }}
-                >
-                  {pdgaSuggestions.map((course, idx) => (
-                    <div
-                      key={idx}
-                      onClick={() => handleSelectCourse(course)}
-                      style={{
-                        padding: '0.75rem',
-                        cursor: 'pointer',
-                        borderBottom: '1px solid var(--clr-border)',
-                      }}
-                      onMouseEnter={e => {
-                        e.currentTarget.style.background = 'var(--clr-bg)'
-                      }}
-                      onMouseLeave={e => {
-                        e.currentTarget.style.background = 'transparent'
-                      }}
-                    >
-                      <div style={{ color: 'var(--clr-text)', fontWeight: 500 }}>
-                        {course.name}
-                      </div>
-                      <div style={{ fontSize: '0.85rem', color: 'var(--clr-muted)' }}>
-                        {course.city} • {course.holes} holes
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label
-                style={{
-                  display: 'block',
-                  marginBottom: '0.5rem',
-                  fontSize: '0.9rem',
-                  color: 'var(--clr-muted)',
-                }}
-              >
-                Link to Bag
-              </label>
-              <select
-                value={selectedBagId}
-                onChange={e => setSelectedBagId(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  background: 'var(--clr-bg)',
-                  border: '1px solid var(--clr-border)',
-                  borderRadius: 'var(--radius)',
-                  color: 'var(--clr-text)',
-                  fontSize: '1rem',
-                }}
-              >
-                <option value="">Select a bag</option>
-                {allBags.map(bag => (
-                  <option key={bag.id} value={bag.id}>
-                    {bag.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ display: 'flex', gap: '1rem' }}>
-              <button
-                onClick={() => setShowModal(false)}
-                style={{
-                  flex: 1,
-                  padding: '0.75rem',
-                  background: 'var(--clr-surface2)',
-                  color: 'var(--clr-text)',
-                  border: 'none',
-                  borderRadius: 'var(--radius)',
-                  cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSavePin}
-                disabled={!courseQuery.trim() || !selectedBagId}
-                style={{
-                  flex: 1,
-                  padding: '0.75rem',
-                  background:
-                    !courseQuery.trim() || !selectedBagId
-                      ? 'var(--clr-surface2)'
-                      : 'var(--clr-accent)',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: 'var(--radius)',
-                  cursor: !courseQuery.trim() || !selectedBagId ? 'not-allowed' : 'pointer',
-                  fontWeight: 600,
-                }}
-              >
-                Save Pin
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Pin List */}
-      {pins.length === 0 ? (
-        <div
-          style={{
-            textAlign: 'center',
-            padding: '3rem 1rem',
-            color: 'var(--clr-muted)',
-          }}
-        >
-          <div style={{ fontSize: '3rem' }}>🗺</div>
-          <p style={{ marginTop: '1rem' }}>No courses pinned yet</p>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {pins.map(pin => {
-            const bag = getBagForPin(pin)
-            const holes = getHolesForPin(pin)
-            const isExpanded = expandedPinId === pin.id
-            const showPlan = showGamePlan === pin.id
-
-            return (
-              <div
-                key={pin.id}
-                style={{
-                  background: 'var(--clr-surface)',
-                  borderRadius: 'var(--radius)',
-                  padding: '1.5rem',
-                  border: '1px solid var(--clr-border)',
-                }}
-              >
-                {/* Pin Header */}
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'flex-start',
-                  }}
-                >
-                  <div style={{ flex: 1 }}>
-                    <h3 style={{ margin: '0 0 0.5rem', color: 'var(--clr-text)' }}>
-                      {pin.courseName}
-                    </h3>
-                    <div style={{ fontSize: '0.9rem', color: 'var(--clr-muted)' }}>
-                      Bag: {bag?.name || 'Unknown'}
-                      {holes && <span> • {holes.length} holes downloaded</span>}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    {pin.courseId && !holes && (
-                      <button
-                        onClick={() => handleDownloadMap(pin)}
-                        disabled={courseLoading}
-                        style={{
-                          padding: '0.5rem 1rem',
-                          background: 'var(--clr-accent)',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: 'var(--radius)',
-                          cursor: courseLoading ? 'wait' : 'pointer',
-                          fontSize: '0.85rem',
-                        }}
-                      >
-                        ⬇ Download Map
-                      </button>
-                    )}
-                    {pin.courseId && (
-                      <>
-                        <a
-                          href={`https://www.google.com/maps/search/?api=1&query=disc+golf+${encodeURIComponent(
-                            pin.courseName
-                          )}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            padding: '0.5rem',
-                            background: 'var(--clr-surface2)',
-                            color: 'var(--clr-text)',
-                            borderRadius: 'var(--radius)',
-                            textDecoration: 'none',
-                            fontSize: '0.85rem',
-                          }}
-                        >
-                          🧭
-                        </a>
-                        <a
-                          href={`https://www.openstreetmap.org/${pin.courseId.replace(
-                            'osm:',
-                            ''
-                          )}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            padding: '0.5rem',
-                            background: 'var(--clr-surface2)',
-                            color: 'var(--clr-text)',
-                            borderRadius: 'var(--radius)',
-                            textDecoration: 'none',
-                            fontSize: '0.85rem',
-                          }}
-                        >
-                          🗺
-                        </a>
-                      </>
-                    )}
-                    <button
-                      onClick={() => handleDelete(pin.id)}
-                      style={{
-                        padding: '0.5rem',
-                        background: 'var(--clr-danger)',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: 'var(--radius)',
-                        cursor: 'pointer',
-                        fontSize: '0.85rem',
-                      }}
-                    >
-                      🗑
-                    </button>
-                  </div>
-                </div>
-
-                {/* Holes */}
-                {holes && (
-                  <div style={{ marginTop: '1rem' }}>
-                    <button
-                      onClick={() => setExpandedPinId(isExpanded ? null : pin.id)}
-                      style={{
-                        width: '100%',
-                        padding: '0.5rem',
-                        background: 'var(--clr-surface2)',
-                        color: 'var(--clr-text)',
-                        border: 'none',
-                        borderRadius: 'var(--radius)',
-                        cursor: 'pointer',
-                        fontSize: '0.9rem',
-                      }}
-                    >
-                      {isExpanded ? '▼' : '▶'} Holes ({holes.length})
-                    </button>
-                    {isExpanded && (
-                      <div
-                        style={{
-                          marginTop: '0.5rem',
-                          maxHeight: '200px',
-                          overflowY: 'auto',
-                          padding: '0.5rem',
-                          background: 'var(--clr-bg)',
-                          borderRadius: 'var(--radius)',
-                        }}
-                      >
-                        {holes.map(hole => (
-                          <div
-                            key={hole.ref}
-                            style={{
-                              padding: '0.5rem',
-                              borderBottom: '1px solid var(--clr-border)',
-                              fontSize: '0.9rem',
-                              color: 'var(--clr-text)',
-                            }}
-                          >
-                            Hole {hole.ref}
-                            {hole.name && <span> - {hole.name}</span>}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Game Plan */}
-                {holes && (
-                  <div style={{ marginTop: '1rem' }}>
-                    <button
-                      onClick={() => setShowGamePlan(showPlan ? null : pin.id)}
-                      style={{
-                        width: '100%',
-                        padding: '0.75rem',
-                        background: 'var(--clr-accent)',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: 'var(--radius)',
-                        cursor: 'pointer',
-                        fontWeight: 600,
-                      }}
-                    >
-                      {showPlan ? '▼' : '▶'} Game Plan
-                    </button>
-                    {showPlan && (
-                      <div
-                        style={{
-                          marginTop: '1rem',
-                          display: 'grid',
-                          gap: '0.75rem',
-                          gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
-                        }}
-                      >
-                        {holes.map(hole => {
-                          const assignedId = getAssignedDiscId(pin.id, hole.ref)
-                          const bagDiscs = getDiscsForPin(pin)
-                          return (
-                            <div
-                              key={hole.ref}
-                              style={{
-                                padding: '1rem',
-                                background: 'var(--clr-surface2)',
-                                borderRadius: 'var(--radius)',
-                              }}
-                            >
-                              <div
-                                style={{
-                                  marginBottom: '0.5rem',
-                                  fontWeight: 600,
-                                  color: 'var(--clr-text)',
-                                }}
-                              >
-                                Hole {hole.ref}
-                              </div>
-                              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                <select
-                                  value={assignedId}
-                                  onChange={e => handleHoleAssignment(pin, hole.ref, e.target.value)}
-                                  style={{
-                                    flex: 1,
-                                    padding: '0.5rem',
-                                    background: 'var(--clr-bg)',
-                                    border: '1px solid var(--clr-border)',
-                                    borderRadius: 'var(--radius)',
-                                    color: 'var(--clr-text)',
-                                    fontSize: '0.9rem',
-                                  }}
-                                >
-                                  <option value="">Select disc...</option>
-                                  {bagDiscs.map(disc => (
-                                    <option key={disc.id} value={disc.id}>
-                                      {disc.name}
-                                    </option>
-                                  ))}
-                                </select>
-                                {assignedId && (
-                                  <button
-                                    onClick={() => clearHoleAssignment(pin.id, hole.ref)}
-                                    style={{
-                                      padding: '0.5rem',
-                                      background: 'var(--clr-danger)',
-                                      color: 'white',
-                                      border: 'none',
-                                      borderRadius: 'var(--radius)',
-                                      cursor: 'pointer',
-                                      fontSize: '0.85rem',
-                                    }}
-                                  >
-                                    ✕
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
+  const visible=[...groups.entries()].filter(([,links])=>
+    links.some(pin=>(!filterBagId||pin.bagId===filterBagId)&&
+      `${pin.courseName} ${allBags.find(b=>b.id===pin.bagId)?.name??''}`.toLocaleLowerCase().includes(courseFilter.trim().toLocaleLowerCase())))
+    .sort(([,a],[,b])=>a[0].courseName.localeCompare(b[0].courseName))
+  return <div className="courses-page">
+    <CuratedCourses />
+    <div className="planner-heading">
+      <div><h2>{groups.size} {groups.size===1?'course':'courses'} pinned</h2>
+        <p className="bag-hint">Choose your course, compare bag configurations, then open your private game plan.</p></div>
+      <button className="btn btn-primary" onClick={()=>{
+        setShowForm(true);setQuery('');setSelected(null);setBagId(filterBagId||allBags[0]?.id||'');resetCourseSearch()
+      }}>+ Pin Course</button>
     </div>
-  )
+    <div className="course-list-filters">
+    <label>Find a planned course
+      <input type="search" value={courseFilter} onChange={event=>{
+        if(plannerPinId&&!confirmPlannerNavigation())return
+        setCourseFilter(event.target.value);setPlannerPinId(null)
+      }} placeholder="Course or bag name"/>
+    </label>
+    <label>Bag configuration
+      <select aria-label="Filter courses by bag" value={filterBagId} onChange={event=>{
+        if(confirmPlannerNavigation()){setFilterBagId(event.target.value);setPlannerPinId(null)}
+      }}><option value="">All bags</option>{allBags.map(bag=><option key={bag.id} value={bag.id}>{bag.name}</option>)}</select>
+    </label></div>
+    {summaryError&&<p role="alert">{summaryError} <button className="btn" onClick={()=>void loadSummaries()}>Retry bag readiness</button></p>}
+    {(pinsError||error)&&<p role="alert">{pinsError||error} <button className="btn" onClick={()=>void perform(loadPins)}>Retry course links</button></p>}
+    {pinsLoading&&<p role="status">Loading course links...</p>}
+    {showForm&&<form className="course-search-form" aria-label="Pin a Course" onSubmit={event=>{
+      event.preventDefault()
+      void perform(async()=>{
+        if(selected?.expiresAt&&selected.expiresAt<=Date.now())throw new Error('Search results expired. Search again before saving.')
+        if(!confirmPlannerNavigation())return
+        const id=await createPin(selected?.name??query.trim(),selected?.id??null,bagId)
+        setFilterBagId(bagId);setPlannerPinId(id);setShowForm(false)
+      })
+    }}>
+      <h3>Pin a Course</h3>
+      <label>Course Name (search PDGA or type custom)
+        <input autoFocus required value={query} maxLength={100} placeholder="Start typing course name..." onChange={event=>{
+          setQuery(event.target.value);setSelected(null);resetCourseSearch()
+        }}/>
+      </label>
+      <button type="button" className="btn" disabled={courseLoading||query.trim().length<2}
+        onClick={()=>void searchCourses(query)}>Search PDGA</button>
+      <p className="bag-hint">Search when the course name is ready. Typing does not send requests to PDGA.</p>
+      {courseLoading&&<p role="status">Searching PDGA...</p>}
+      {courseError&&<p role="alert">{courseError} Cached searches remain available. You can also save a custom course.</p>}
+      {!courseLoading&&!courseError&&!!searchedQuery&&searchedQuery===query.trim()&&!selected&&!courseSuggestions.length&&
+        <p className="bag-hint">No matching Norwegian courses found. You can still add a custom course.</p>}
+      {!selected&&courseSuggestions.map(course=><div key={course.id} className="planner-toolbar">
+        <button type="button" className="btn" onClick={()=>{setSelected(course);setQuery(course.name)}}>
+          {course.name} · {course.city||'Norway'} · {course.expected_holes??'?'} listed holes
+        </button>
+        {course.source_url&&<a href={course.source_url} target="_blank" rel="noopener noreferrer" aria-label={`${course.name} on PDGA`}>PDGA</a>}
+      </div>)}
+      <label htmlFor="course-bag">Link to Bag</label><select id="course-bag" required value={bagId} onChange={event=>setBagId(event.target.value)}>
+        <option value="">Select a bag</option>{allBags.map(bag=><option key={bag.id} value={bag.id}>{bag.name}</option>)}
+      </select>
+      <div className="planner-toolbar">
+        <button className="btn btn-primary" disabled={busy||!query.trim()||!bagId}>Save Pin</button>
+        <button type="button" className="btn" onClick={()=>setShowForm(false)} disabled={busy}>Cancel</button>
+      </div>
+    </form>}
+    {!pinsLoading&&!visible.length&&<p className="bag-hint">{courseFilter.trim()?'No planned courses match your search.':pins.length?'No courses linked to this bag yet.':'No courses pinned yet.'}</p>}
+    <div className="course-list-head" aria-hidden="true"><span>Course</span><span>Bag configuration</span><span>Game plan / packing</span><span>Actions</span></div>
+    <div className="course-links">{visible.map(([courseKey,links])=>{
+      const eligible=links.filter(pin=>!filterBagId||pin.bagId===filterBagId)
+      const pin=eligible.find(pin=>pin.id===plannerPinId)??eligible.find(pin=>pin.id===chosenPins[courseKey])??eligible[0]
+      const bag=allBags.find(b=>b.id===pin.bagId)
+      const details=pin.courseId?courseCache[pin.courseId]:undefined
+      const summary=summaries.find(s=>s.course_pin_id===pin.id)
+      const unlinkedBags=allBags.filter(b=>!links.some(p=>p.bagId===b.id))
+      const linkedBagCount=new Set(links.map(p=>p.bagId)).size
+      return <section key={courseKey} className="course-link" aria-label={`Course ${pin.courseName}`}>
+        <div className="course-list-row">
+          <div><h3><button className="course-name-link" aria-expanded={plannerPinId===pin.id} onClick={()=>{
+            if(confirmPlannerNavigation())setPlannerPinId(pin.id)
+          }}>{pin.courseName}</button></h3>
+            <p className="bag-hint">{linkedBagCount} linked {linkedBagCount===1?'bag':'bags'}
+              {details?.sourceUrl&&<> · <a href={details.sourceUrl} target="_blank" rel="noopener noreferrer">PDGA</a></>}</p></div>
+          <label><span className="sr-only">Bag for {pin.courseName}</span>
+            <select aria-label={`Bag for ${pin.courseName}`} value={pin.id} onChange={event=>{
+              if(!confirmPlannerNavigation())return
+              setChosenPins(previous=>({...previous,[courseKey]:event.target.value}))
+              if(plannerPinId&&links.some(p=>p.id===plannerPinId))setPlannerPinId(event.target.value)
+            }}>{eligible.map(p=><option key={p.id} value={p.id}>{allBags.find(b=>b.id===p.bagId)?.name??'Unknown bag'}</option>)}</select>
+          </label>
+          <div className="course-plan-summary">{summary?<>
+            <strong>{summary.layout_name}</strong>
+            <span className="bag-hint">{summary.planned_count} holes planned</span>
+            <span>{summary.missing_disc_count>0?`${summary.missing_disc_count} planned discs to pack`:
+              summary.required_disc_count>0?'All planned discs in bag':'No discs selected yet'}</span>
+          </>:<span className="bag-hint">No saved game plan</span>}</div>
+          <div className="course-row-actions">
+          <button className="btn" aria-expanded={plannerPinId===pin.id} onClick={()=>{
+            if(confirmPlannerNavigation())setPlannerPinId(plannerPinId===pin.id?null:pin.id)
+          }}>{plannerPinId===pin.id?'Close private planner':'Open private planner'}</button>
+          {bag&&onOpenBag&&<button className="btn" onClick={()=>onOpenBag(bag.id)}>Open linked bag</button>}
+          <details className="course-row-menu"><summary>More<span className="sr-only"> actions for {pin.courseName}</span></summary>
+          <button className="btn" disabled={!unlinkedBags.length} onClick={()=>{setLinkPin(linkPin===pin.id?null:pin.id);setLinkBag('')}}>Link another bag</button>
+          <button className="btn" aria-label={`Unlink ${pin.courseName}`} disabled={busy} onClick={()=>{
+            if(confirmPlannerNavigation()&&confirm(`Unlink ${pin.courseName} from ${bag?.name??'this bag'}? Its game plan will be deleted. The private layout remains.`))
+              void perform(async()=>{await deletePin(pin.id);if(plannerPinId===pin.id)setPlannerPinId(null)})
+          }}>Unlink course</button>
+          {pin.courseId?.startsWith('pdga:')&&!details&&<button className="btn" disabled={courseLoading}
+            onClick={()=>void loadCourseDetails(pin)}>Load course details</button>}
+          </details></div>
+        </div>
+        {pin.courseId?.startsWith('pdga:')&&!details&&courseDetailsErrors[pin.courseId]&&
+          <p role="status">{courseDetailsErrors[pin.courseId]} Use More → Load course details to retry.</p>}
+        {linkPin===pin.id&&<form className="planner-toolbar" onSubmit={event=>{
+          event.preventDefault()
+          void perform(async()=>{
+            if(!confirmPlannerNavigation())return
+            const id=await createPin(pin.courseName,pin.courseId??`custom:${pin.id}`,linkBag)
+            setFilterBagId(linkBag);setPlannerPinId(id);setLinkPin(null)
+          })
+        }}>
+          <label>Another bag configuration<select required value={linkBag} onChange={event=>setLinkBag(event.target.value)}>
+            <option value="">Choose a bag</option>{unlinkedBags.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}
+          </select></label>
+          <button className="btn" disabled={busy||!linkBag}>Link bag to course</button>
+        </form>}
+        {plannerPinId===pin.id&&<CoursePlanner key={pin.id} pin={pin} bag={bag} discs={allDiscs} onOpenBag={onOpenBag}/>}
+      </section>
+    })}</div>
+    <footer className="course-disclaimer bag-hint">Course data may vary. Check the course before playing.{' '}
+      <a href="https://www.pdga.com/" target="_blank" rel="noopener noreferrer">Player, event, and course data provided by PDGA.</a>
+    </footer>
+  </div>
 }

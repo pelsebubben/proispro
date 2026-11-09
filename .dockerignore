@@ -1,0 +1,14 @@
+.git
+.github
+.env*
+node_modules
+dist
+playwright-report
+test-results
+staging-results
+staging-report
+.squad
+.copilot
+.agents
+architecture-report
+.architecture-tools

@@ -36,7 +36,7 @@ export function AnalyticsPage() {
   const untaggedCount = useMemo(() => discRoles.filter(d => d.role === 'untagged').length, [discRoles])
 
   const typeData = useMemo(() => {
-    const counts = { putter: 0, midrange: 0, fairway: 0, distance: 0 }
+    const counts = { putter: 0, midrange: 0, fairway: 0, distance: 0, utility: 0 }
     discs.forEach(d => {
       if (d.type in counts) counts[d.type as keyof typeof counts]++
     })
@@ -45,6 +45,7 @@ export function AnalyticsPage() {
       { name: 'Mid', value: counts.midrange, color: 'oklch(65% 0.15 145)' },
       { name: 'Fairway', value: counts.fairway, color: 'oklch(65% 0.18 55)' },
       { name: 'Driver', value: counts.distance, color: 'oklch(65% 0.2 25)' },
+      { name: 'Utility', value: counts.utility, color: 'var(--utility)' },
     ].filter(d => d.value > 0)
   }, [discs])
 

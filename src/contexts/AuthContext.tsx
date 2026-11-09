@@ -1,49 +1,94 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { User } from '@supabase/supabase-js'
-import { supabase } from '../lib/supabase'
+import { runtime } from '../lib/runtime'
+import { clearPhotoCache } from '../lib/data'
+
+interface AppUser { id: string; email?: string; name?: string }
 
 interface AuthContextValue {
-  user: User | null
+  user: AppUser | null
+  error: string | null
   isLoading: boolean
-  signIn: (provider: 'google' | 'github') => Promise<void>
+  signIn: () => Promise<void>
+  devSignIn: (user: string, passcode?: string) => Promise<void>
   signOut: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [user, setUser] = useState<AppUser | null>(() => runtime.mockData
+    ? { id: 'mock-preview-user', email: 'preview@griplock.local', name: 'Mock preview' }
+    : null)
+  const [error, setError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(!runtime.mockData)
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user)
+    if (runtime.mockData) return
+    if (!runtime.identityReady) {
       setIsLoading(false)
+      return
+    }
+    let active = true
+    const load = runtime.devAuth
+      ? import('../lib/devAuth').then(auth => auth.devUser())
+      : import('../lib/entra').then(auth => auth.entraUser())
+    load.then(value => {
+      if (active) setUser(value)
+    }).catch(err => {
+      if (active) setError(err instanceof Error ? err.message : 'Sign-in failed')
+    }).finally(() => {
+      if (active) setIsLoading(false)
     })
-
-    // Subscribe to auth changes (handles OAuth redirect return)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-    })
-
-    return () => subscription.unsubscribe()
+    return () => { active = false }
   }, [])
 
-  const signIn = async (provider: 'google' | 'github') => {
-    await supabase.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo: window.location.origin },
-    })
+  useEffect(() => {
+    const expire = () => {
+      setUser(null)
+      setError('Your session expired. Please sign in again.')
+    }
+    window.addEventListener('griplock-session-expired', expire)
+    return () => window.removeEventListener('griplock-session-expired', expire)
+  }, [])
+
+  const signIn = async () => {
+    setError(null)
+    try {
+      if (!runtime.identityReady) throw new Error('Customer identity is not configured')
+      await (await import('../lib/entra')).entraSignIn()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign-in failed')
+    }
+  }
+
+  const devSignIn = async (name: string, passcode?: string) => {
+    setError(null)
+    try {
+      if (!runtime.devAuth) throw new Error('Local sign-in is not available')
+      setUser(await (await import('../lib/devAuth')).devSignIn(name, passcode))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign-in failed')
+    }
   }
 
   const signOut = async () => {
-    await supabase.auth.signOut()
-    setUser(null)
+    setError(null)
+    try {
+      if (runtime.mockData) {
+        window.location.assign('/')
+        return
+      }
+      if (runtime.devAuth) (await import('../lib/devAuth')).devSignOut()
+      else await (await import('../lib/entra')).entraSignOut()
+      clearPhotoCache()
+      setUser(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign-out failed')
+    }
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, isLoading, error, signIn, devSignIn, signOut }}>
       {children}
     </AuthContext.Provider>
   )

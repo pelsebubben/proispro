@@ -1,61 +1,216 @@
-# 🥏 ProIsPro – Disc Inventory
+# Griplock
 
-A personal disc golf bag tracker with **cloud sync** via Supabase, GitHub OAuth authentication, and offline-first fallback to localStorage.
-
-Hosted on **GitHub Pages** at **proispro.com**.
-
-## Features
-
-- 📦 **Add / Edit / Remove** discs from your bag
-- 🔍 **Search & filter** by type (Putter · Midrange · Fairway · Distance)
-- 🗂 **Sort** by name, type, weight, or date added
-- ☁️ **Cloud sync** — discs saved to Supabase PostgreSQL, accessible from any device
-- 🔐 **GitHub OAuth login** — secure, passwordless authentication
-- 💾 **Offline-first** — app works in localStorage mode if cloud is unavailable
-- 📤 **Export** your bag to a JSON file to share with friends
-- 📥 **Import** a friend's bag JSON and merge it with yours
-- 📱 **Fully responsive** – works great on your phone at the course
+A personal disc golf inventory and bag tracker for the owner and friends.
 
 ## Stack
 
-| Layer | Technology |
-|-------|------------|
-| **Frontend** | Alpine.js (CDN) + vanilla CSS with OKLCH color system |
-| **Backend** | Supabase PostgreSQL with Row-Level Security (RLS) |
-| **Auth** | Supabase Auth – GitHub OAuth provider |
-| **Hosting** | GitHub Pages (static, no build step) |
+For maintenance, start with the [current architecture and drawings](docs/architecture/README.md).
+An independent PR/main documentation workflow checks reviewed sources and
+generates commit-linked architecture artifacts without gating production.
 
-## Getting Started
+- React, TypeScript and Vite frontend.
+- Plain Node HTTP API, served with the frontend in Azure Container Apps.
+- Azure PostgreSQL, application-owned users and forced per-user row-level security.
+- Entra External ID customer login; shared passcode login on dev only.
+- One dev database/application and one production database/application.
 
-### 1. Local Development (No Cloud)
+Inventory, bags/history, collections, wishlist, course
+pins and hole assignments all use `/api/v1`. Disc search uses a bundled DiscIt
+snapshot, so typing never waits on an external service. Norwegian course search
+and historical event-layout holes come from PDGA through a shared, on-demand
+24-hour PostgreSQL cache.
 
-Simply open `index.html` in your browser. The app works in **localStorage mode** — all data is stored locally in your browser.
+For Sale is retired: its UI, listing/token APIs and public sale links are removed.
+Existing sale records remain in PostgreSQL, but are no longer exposed by the app.
 
-### 2. With Supabase Backend (Cloud Sync)
+## Adding discs
 
-See `[docs/supabase-setup.md](docs/supabase-setup.md)` for full setup instructions.
+Search by mold, manufacturer or special edition (for example, Origin or Midnight
+Prowl II). The mold and optional Edition / Run are saved separately and are both
+searchable in inventory. Missing catalogue entries can be added manually.
+Arrow keys and Enter select a result; Escape, Tab or clicking another field
+dismiss the list. [Catalogue sources and refresh instructions](docs/disc-catalog.md)
+describe the bundled data and its deliberately limited special-edition coverage.
+Add/Edit Disc has a Save button beside the title as well as at the bottom, so
+you can save a catalogue selection or quick edit without scrolling through the form.
 
-## Architecture Overview
+The Type selector and inventory filters include Utility. A personal JPEG, PNG
+or WebP photo can be added, replaced or removed in Add/Edit Disc. Choosing a
+file opens a circular crop preview: align the disc's rim with the circle, drag to move, zoom with the slider, mouse wheel,
+pinch or arrow keys, then Use photo. Adjust crop reopens it later. Personal photos
+use a circular mask and the same padding as stock illustrations in every view,
+including existing photos. The bounding square is still stored as JPEG; this
+hides the background outside the circle, rather than automatically detecting
+the disc edge or producing a transparent image file. Files up to
+10 MB are cropped and resized in the browser before upload. The server validates
+and re-encodes them to metadata-free JPEGs, at most 1024 pixels and 256 KiB.
+Photos are private to their owner and stored in PostgreSQL, not a new cloud
+service. Cancelling the form does not upload or save changes. Metadata and
+photos save together; inventory responses contain photo references, not images.
 
-**Frontend:** `index.html` loads Alpine.js and Supabase client via CDN. No build step. ~250 lines of reactive JavaScript.
+## Inventory views
 
-**Backend:** Supabase PostgreSQL database with Row-Level Security policies ensuring users can only access their own discs.
+The Cards/List toggle is remembered on each device. Cards is the default and
+shows a small photo in the top-right corner of every disc. List is a compact,
+Moxfield-style view grouped by type (Putter, Midrange, Fairway Driver, Distance
+Driver, Utility, No type), each with its number of inventory entries and sorted
+by name unless you pick another sort. Hovering, focusing or tapping a row shows
+that disc's own photo in the preview beside the list (above it on phones); the
+pencil button opens Edit Disc.
+Discs without a photo show a generated stock illustration, not a manufacturer
+photograph. [Catalogue sources](docs/disc-catalog.md) explains why.
 
-**Auth:** GitHub OAuth via Supabase Auth. Users log in with GitHub → receive JWT → all database queries validated by RLS.
+## Bag configurations
 
-**Offline fallback:** If Supabase is unavailable, app silently falls back to localStorage. User can still view/edit discs locally; changes sync when cloud is available.
+Create Bag opens an in-page name form, not a browser prompt. Select a saved bag
+from the configuration selector. Its disc list uses the same type groups,
+sorting, search and photo preview as Inventory List. Switch to All inventory
+and check discs to include them; uncheck to remove them from this configuration.
+Changes save immediately, with a saving indicator and visible failures.
+The same inventory entry can be included in multiple configurations. Membership
+does not allocate inventory quantities or move discs out of other configurations.
+Rename, flight chart, recent history and an in-page deletion confirmation are
+available beside the configuration name. Deleting a configuration removes its
+course links and history, never its inventory discs.
 
-## Fields Tracked per Disc
+## Norway courses
 
-| Field | Example |
-|-------|---------|
-| Name | Destroyer |
-| Manufacturer | Innova |
-| Type | Distance Driver |
-| Plastic | Star |
-| Weight | 175 g |
-| Color | Red |
-| Condition | Good |
-| Flight numbers | 12 / 5 / -1 / 3 |
-| Notes | Free-text notes |
-| Added | 2026-04-20 |
+PDGA is the only external course provider. Requested searches, courses and event
+layouts use a bounded **24-hour PostgreSQL cache**, shared across replicas with
+strict expiry and rate-limit cooldown. There is no bulk catalogue replication.
+The retired OSM directory and scheduled sync are removed.
+
+**Bags → Courses & plans** is a compact shortcut beside the disc list controls.
+It opens Courses filtered to the selected bag, without loading provider data on
+the Bags tab. Course management and the private planner live in Courses.
+
+Choose a historical PDGA event layout to see its hole labels, par, distance,
+tee/target and notes when supplied. Event name/date remain visible because that
+setup may differ from the current course. Add a primary disc, alternatives and
+private strategy per hole, or enter an independently authored manual layout.
+Plans warn about selected discs outside the linked bag, never changing membership.
+Provider facts stay in the temporary cache; private provider layouts retain IDs
+only. Disc choices stay specific to each link. Community publishing and map/photo
+uploads remain deferred.
+
+See [course behaviour and retention](docs/course-catalogue.md) and the
+[protected provider configuration guide](docs/pdga-api.md). Provider credentials
+and developing routes remain server-only and are never committed.
+See the [approved first-version scope](docs/prd-course-bag-configurations.md).
+
+## Local development
+
+Install Node 24 LTS (see `.nvmrc`) and PostgreSQL (or use the included Docker Compose configuration).
+
+### Frontend mock preview
+
+For fast GUI work without sign-in, API calls or a database, start the Vite
+frontend with `npm run dev` and open `http://127.0.0.1:5173/?mock=1`. This uses
+sample inventory and in-memory mock responses for the app's data requests.
+Changes are discarded when the page is refreshed. The **MOCK PREVIEW · NOT
+SAVED** badge identifies the mode; remove `?mock=1` to return to the normal
+frontend. This preview is for UI work, not backend, authentication or database
+testing. Mock mode is available only in the Vite development server; it is not
+enabled in production builds. Run `npm run test:mock-preview` to exercise this
+offline preview in a browser.
+
+```powershell
+npm ci
+$env:PGPASSWORD = '<local PostgreSQL admin password>'
+$env:PGAPP_PASSWORD = '<32+ character local runtime password>'
+docker compose up -d postgres
+npm run build
+npm run dev:server
+```
+
+Open `http://127.0.0.1:8080` and sign in as `alice` or `bob`. The startup script
+applies checksum-guarded SQL migrations, then switches to a non-owner runtime
+role. For hot reload in a second terminal:
+
+```powershell
+$env:GRIPLOCK_DEV_API = 'http://127.0.0.1:8080'
+npm run dev
+```
+
+Without the API proxy/runtime configuration, the static preview intentionally
+disables sign-in. There is no localStorage data fallback.
+
+### Copilot sandbox with Azure dev data
+
+For UI work against the existing Azure dev database, use Node 24 and:
+
+```powershell
+npm ci
+npm run dev:azure
+```
+
+This serves this checkout's UI at `http://127.0.0.1:5173` with hot reload and
+proxies API/auth requests over verified HTTPS to **app-griplock-dev**. The API,
+not the local shell/browser, connects privately to **griplock_dev** as
+**griplock_dev_app**. No `az login`, database password, migration or public
+PostgreSQL access is needed. Startup checks the remote dev/passcode login mode
+and database readiness; it refuses redirects and a busy local port.
+
+In the Copilot app, enable **Settings > proispro > Sandbox new sessions**, then
+start a new local session. Verify that session actually reports an active
+sandbox; the setting requests sandboxing and does not retrofit existing sessions.
+Keep this checkout available read/write and allow loopback browser/HMR traffic
+and outbound HTTPS to the dev API. Dependency restoration also needs the npm
+registry; use Node 24 installed before starting the session. Do not grant the
+session access to Azure CLI credentials, database secrets or unrelated folders.
+Review the app's Git/GitHub credential and plugin/MCP policies separately:
+enabling the shell sandbox does not establish that every tool is isolated.
+If the host cannot enforce the requested sandbox, stop rather than treating an
+ordinary local terminal as sandboxed. Keep the dev process in the session's
+attached terminal; do not bypass restrictions with an unsandboxed/detached helper.
+
+The repository's **Azure dev UI** run action starts the same command and opens
+its URL in the canvas. Review/accept the repository configuration when prompted.
+Enter the existing dev passcode only in the browser password field and use a
+dedicated test username. Never put passcodes or bearer tokens in chat, commands,
+tracked files or screenshots. Signing into Azure CLI is not application login.
+
+**This is isolated source code, not isolated cloud data.** Saves affect the shared
+dev database, and its API version follows deployments, not the local branch.
+Use disposable dev records; never run API/integration tests against this endpoint,
+change production resources, disable TLS, or open the private database firewall.
+Stop with Ctrl+C and sign out/close the browser when finished.
+
+## Checks and deployment
+
+```powershell
+npm run check
+npm run docs:check
+npm run test:unit
+npm run test:api
+npm run build
+npx playwright test
+```
+
+API tests require a disposable PostgreSQL database and `PGHOST`, `PGPORT`,
+`PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGAPP_PASSWORD` (and `PGSSLMODE=disable` for
+local PostgreSQL). Never point them at dev or production application data.
+
+Pull requests run CI without access to Azure deployment credentials. To deploy to
+shared dev, dispatch `dev.yml` from `main`. Dependabot PRs run CI only.
+Successful main CI triggers the production release.
+Azure dev/prod are the only supported deployments; standalone GitHub Pages
+publishing is retired because it cannot serve the same-origin application API.
+See [the delivery runbook](docs/github-pipelines.md) and
+[customer/local login configuration](docs/customer-login.md).
+
+## Data model
+
+`server/migrations/` is the only active schema source. Version 2 expands the
+original `owned_discs` table and adds bags, bag history, collections/membership,
+wishlist items, sale listings/tokens, course pins and hole assignments. Version 3
+adds a free-text `edition` to `owned_discs` and a private `disc_photos` table. The
+API normalizes an uploaded photo to a metadata-free JPEG of at most 1024px and
+256 KiB, stores it in PostgreSQL, and serves it only to the signed-in owner through
+`GET /api/v1/discs/:id/photo`. Deleting a disc also deletes its photo.
+Runtime roles never own tables or bypass RLS. Child relationships use owner-scoped
+foreign keys; bag membership/history updates are transactional.
+
+This deployment starts with a fresh Azure dataset. No old records, identities
+or objects are imported. The retired provider's remote resources remain
+untouched; historical architecture notes are not active setup instructions.

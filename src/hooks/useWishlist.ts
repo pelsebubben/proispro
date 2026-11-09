@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
+import { createRow, deleteRows, listRows, updateRow } from '../lib/data'
 import { useAuth } from '../contexts/AuthContext'
 
 export interface WishlistItem {
@@ -21,11 +21,7 @@ export function useWishlist() {
 
   const loadWishlist = useCallback(async () => {
     if (!user) return
-    const { data } = await supabase
-      .from('wishlist_items')
-      .select('*')
-      .order('priority', { ascending: false })
-      .order('created_at', { ascending: false })
+    const data = await listRows<WishlistItem>('wishlist_items')
     setItems(
       (data || []).map(w => ({
         id: w.id,
@@ -43,12 +39,12 @@ export function useWishlist() {
   }, [user])
 
   useEffect(() => {
-    loadWishlist()
+    void loadWishlist().catch(console.error)
   }, [loadWishlist])
 
   const addItem = async (item: Omit<WishlistItem, 'id' | 'created_at' | 'acquired'>) => {
     if (!user) return
-    await supabase.from('wishlist_items').insert({
+    await createRow('wishlist_items', {
       disc_name: item.disc_name,
       manufacturer: item.manufacturer,
       plastic_pref: item.plastic_pref,
@@ -62,17 +58,18 @@ export function useWishlist() {
   }
 
   const updateItem = async (id: string, updates: Partial<WishlistItem>) => {
-    await supabase.from('wishlist_items').update(updates).eq('id', id)
+    const { id: _id, created_at: _created, ...fields } = updates
+    await updateRow('wishlist_items', id, fields)
     await loadWishlist()
   }
 
   const deleteItem = async (id: string) => {
-    await supabase.from('wishlist_items').delete().eq('id', id)
+    await deleteRows('wishlist_items', id)
     await loadWishlist()
   }
 
   const toggleAcquired = async (id: string, acquired: boolean) => {
-    await supabase.from('wishlist_items').update({ acquired }).eq('id', id)
+    await updateRow('wishlist_items', id, { acquired })
     await loadWishlist()
   }
 

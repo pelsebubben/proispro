@@ -1,4 +1,11 @@
 // Disc utilities: type conversions, filtering, sorting, grouping, helpers
+export const DISC_TYPES = [
+  { value: 'putter', label: 'Putter' },
+  { value: 'midrange', label: 'Midrange' },
+  { value: 'fairway', label: 'Fairway Driver' },
+  { value: 'distance', label: 'Distance Driver' },
+  { value: 'utility', label: 'Utility' },
+]
 
 export type SortOption =
   | 'name-asc' | 'name-desc'
@@ -14,8 +21,9 @@ export type SortOption =
 export interface ClientDisc {
   id: string
   name: string
+  edition: string
   manufacturer: string
-  type: string // 'putter' | 'midrange' | 'fairway' | 'distance' | ''
+  type: string // 'putter' | 'midrange' | 'fairway' | 'distance' | 'utility' | ''
   plastic: string
   weight: string // stored as string for form handling, '' if not set
   color: string
@@ -30,6 +38,8 @@ export interface ClientDisc {
   added: number // timestamp ms
   quantity: number
 }
+
+export type DiscDraft = Omit<ClientDisc, 'id'> & { id?: string; photo?: string | null }
 
 export interface ClientBag {
   id: string
@@ -59,6 +69,7 @@ export interface DiscGroup {
 export interface DbDiscInsert {
   id: string
   name: string
+  edition: string
   manufacturer: string | null
   disc_type: string | null
   plastic: string | null
@@ -71,6 +82,8 @@ export interface DbDiscInsert {
   fade: number | null
   notes: string | null
   quantity: number
+  tags: string[]
+  user_photo_url: string | null
   user_id?: string
 }
 
@@ -84,6 +97,7 @@ export function fromDbDisc(d: Record<string, unknown>): ClientDisc {
   return {
     id: String(d.id || ''),
     name: String(d.name || ''),
+    edition: String(d.edition || ''),
     manufacturer: String(d.manufacturer || ''),
     type: String(d.disc_type || ''), // disc_type → type
     plastic: String(d.plastic || ''),
@@ -96,7 +110,8 @@ export function fromDbDisc(d: Record<string, unknown>): ClientDisc {
     fade: fade != null ? fade : '',
     notes: String(d.notes || ''),
     tags: Array.isArray(d.tags) ? d.tags : [],
-    photo_url: d.user_photo_url ? String(d.user_photo_url) : null,
+    photo_url: d.photo_version ? `/api/v1/discs/${d.id}/photo?v=${d.photo_version}`
+      : d.user_photo_url ? String(d.user_photo_url) : null,
     added: d.added_at ? new Date(String(d.added_at)).getTime() : Date.now(),
     quantity: d.quantity != null ? Math.max(1, Number(d.quantity)) : 1,
   }
@@ -107,7 +122,8 @@ export function toDbDisc(disc: ClientDisc): DbDiscInsert {
   return {
     id: disc.id,
     name: disc.name,
-    manufacturer: disc.manufacturer || null,
+    edition: disc.edition,
+    manufacturer: disc.manufacturer || '',
     disc_type: disc.type || null, // type → disc_type
     plastic: disc.plastic || null,
     weight: disc.weight !== '' && disc.weight != null ? parseFloat(disc.weight) : null,
@@ -119,6 +135,8 @@ export function toDbDisc(disc: ClientDisc): DbDiscInsert {
     fade: disc.fade !== '' && disc.fade != null ? Number(disc.fade) : null,
     notes: disc.notes || null,
     quantity: disc.quantity != null ? Math.max(1, Number(disc.quantity)) : 1,
+    tags: disc.tags,
+    user_photo_url: disc.photo_url?.startsWith('/api/v1/discs/') ? null : disc.photo_url,
   }
 }
 
@@ -208,6 +226,7 @@ export function filterAndSort(
     filtered = filtered.filter(
       d =>
         d.name.toLowerCase().includes(search) ||
+        d.edition.toLowerCase().includes(search) ||
         d.manufacturer.toLowerCase().includes(search) ||
         d.plastic.toLowerCase().includes(search) ||
         d.notes.toLowerCase().includes(search) ||
@@ -263,6 +282,7 @@ export function filterAndSort(
     midrange: 1,
     fairway: 2,
     distance: 3,
+    utility: 4,
   }
   const conditionOrder: Record<string, number> = {
     new: 0,
@@ -350,4 +370,20 @@ export function filterAndSort(
       discs,
     }))
     .sort((a, b) => a.label.localeCompare(b.label))
+}
+
+export interface TypeGroup {
+  type: string // a DISC_TYPES value, or '' for discs without a recognised type
+  label: string
+  discs: ClientDisc[]
+}
+
+// Putters first, then up the bag; each group keeps the order the discs came in.
+export function groupByType(discs: ClientDisc[]): TypeGroup[] {
+  const groups: TypeGroup[] = [...DISC_TYPES, { value: '', label: 'No type' }]
+    .map(({ value, label }) => ({ type: value, label, discs: [] }))
+  for (const disc of discs) {
+    (groups.find(group => group.type === disc.type) ?? groups[groups.length - 1]).discs.push(disc)
+  }
+  return groups.filter(group => group.discs.length > 0)
 }

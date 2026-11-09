@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { createRow, deleteRows, listRows, updateRow, readCourseCatalogue } from '../lib/data'
 import { useAuth } from '../contexts/AuthContext'
 
 export interface ClientPin {
@@ -18,50 +18,59 @@ export interface HoleAssignment {
   disc_name: string
 }
 
-export interface OSMCourse {
-  osmId: number
-  osmType: string
+export interface CatalogueCourse {
+  id: string
+  source: 'pdga'
+  source_url: string | null
+  expiresAt?: number
   name: string
-  holes: string
+  expected_holes: number | null
+  mapped_holes: number
   city: string
   lat: number | null
   lon: number | null
 }
 
-export interface ParsedHole {
-  ref: string
-  name: string
-  lat: number | null
-  lon: number | null
+interface CourseDetails {
+  sourceUrl: string | null
+  courseName?: string
+  expiresAt?: number
 }
 
-interface CourseMapData {
-  lat: number
-  lon: number
-  holes: ParsedHole[]
-  mapData?: any
-}
-
-const OSM_MIRRORS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://overpass.openstreetmap.ru/api/interpreter',
-]
-
-export function useCoursePins() {
+export function useCoursePins(resolveDetails=false) {
   const { user } = useAuth()
   const [pins, setPins] = useState<ClientPin[]>([])
+  const [pinsLoading, setPinsLoading] = useState(true)
+  const [pinsError, setPinsError] = useState('')
   const [holeAssignments, setHoleAssignments] = useState<HoleAssignment[]>([])
-  const [pdgaSuggestions, setPdgaSuggestions] = useState<OSMCourse[]>([])
+  const [courseSuggestions, setCourseSuggestions] = useState<CatalogueCourse[]>([])
+  const [courseError, setCourseError] = useState<string | null>(null)
   const [courseLoading, setCourseLoading] = useState(false)
-  const [courseCache, setCourseCache] = useState<Record<string, CourseMapData>>({})
+  const [searchedQuery, setSearchedQuery] = useState('')
+  const [courseCache, setCourseCache] = useState<Record<string, CourseDetails>>({})
+  const [courseDetailsErrors, setCourseDetailsErrors] = useState<Record<string,string>>({})
+  const searchSequence = useRef(0)
+  useEffect(() => () => {
+    searchSequence.current++
+  }, [])
+  useEffect(() => {
+    const expiries = [...Object.values(courseCache).map(c => c.expiresAt),
+      ...courseSuggestions.map(c => c.expiresAt)].filter((time): time is number => time !== undefined)
+    if (!expiries.length) return
+    const timer = setTimeout(() => {
+      setCourseCache(previous => Object.fromEntries(Object.entries(previous).filter(([, value]) =>
+        !value.expiresAt || value.expiresAt > Date.now())))
+      setCourseSuggestions(previous => previous.filter(c => !c.expiresAt || c.expiresAt > Date.now()))
+    }, Math.max(0, Math.min(...expiries) - Date.now()))
+    return () => clearTimeout(timer)
+  }, [courseCache, courseSuggestions])
 
   const loadPins = useCallback(async () => {
     if (!user) return
-    const { data } = await supabase
-      .from('course_pins')
-      .select('*')
-      .order('created_at', { ascending: false })
+    setPinsLoading(true)
+    setPinsError('')
+    try {
+    const data = await listRows<{ id: string; course_name: string; course_id: string | null; bag_id: string; created_at: string }>('course_pins')
     setPins(
       (data || []).map(p => ({
         id: p.id,
@@ -71,13 +80,15 @@ export function useCoursePins() {
         createdAt: new Date(p.created_at).getTime(),
       }))
     )
+    } catch(error) {
+      setPinsError(error instanceof Error?error.message:'Could not load course links.')
+      throw error
+    } finally {setPinsLoading(false)}
   }, [user])
 
   const loadHoleAssignments = useCallback(async () => {
     if (!user) return
-    const { data } = await supabase
-      .from('hole_assignments')
-      .select('*')
+    const data = await listRows<HoleAssignment>('hole_assignments')
     setHoleAssignments(
       (data || []).map(h => ({
         id: h.id,
@@ -90,35 +101,33 @@ export function useCoursePins() {
   }, [user])
 
   useEffect(() => {
-    loadPins()
-    loadHoleAssignments()
+    void loadPins().catch(console.error)
+    void loadHoleAssignments().catch(console.error)
   }, [loadPins, loadHoleAssignments])
 
   const createPin = async (courseName: string, courseId: string | null, bagId: string) => {
-    if (!user) return
-    const { data, error } = await supabase
-      .from('course_pins')
-      .insert({ course_name: courseName, course_id: courseId, bag_id: bagId })
-      .select()
-      .single()
-    if (!error && data) {
-      await loadPins()
-    }
+    if (!user) throw new Error('Sign in before pinning a course.')
+    const existing = pins.find(pin => pin.bagId === bagId &&
+      (courseId ? pin.courseId === courseId || `custom:${pin.id}` === courseId :
+        !pin.courseId && pin.courseName.trim().toLocaleLowerCase() === courseName.trim().toLocaleLowerCase()))
+    if (existing) return existing.id
+    const pin = await createRow<{id:string}>('course_pins', { course_name: courseId?.startsWith('pdga:') ? 'PDGA course' : courseName, course_id: courseId, bag_id: bagId })
+    await loadPins()
+    return pin.id
   }
 
   const updatePin = async (pinId: string, updates: Partial<ClientPin>) => {
-    const dbUpdates: Record<string, any> = {}
+    const dbUpdates: Record<string, string | null> = {}
     if (updates.courseName !== undefined) dbUpdates.course_name = updates.courseName
     if (updates.courseId !== undefined) dbUpdates.course_id = updates.courseId
     if (updates.bagId !== undefined) dbUpdates.bag_id = updates.bagId
 
-    await supabase.from('course_pins').update(dbUpdates).eq('id', pinId)
+    await updateRow('course_pins', pinId, dbUpdates)
     await loadPins()
   }
 
   const deletePin = async (pinId: string) => {
-    await supabase.from('hole_assignments').delete().eq('course_pin_id', pinId)
-    await supabase.from('course_pins').delete().eq('id', pinId)
+    await deleteRows('course_pins', pinId)
     await loadPins()
     await loadHoleAssignments()
   }
@@ -134,17 +143,13 @@ export function useCoursePins() {
       h => h.course_pin_id === pinId && h.hole_ref === holeRef
     )
     if (existing) {
-      await supabase
-        .from('hole_assignments')
-        .update({ disc_id: discId, disc_name: discName })
-        .eq('id', existing.id)
+      await updateRow('hole_assignments', existing.id, { disc_id: discId, disc_name: discName })
     } else {
-      await supabase.from('hole_assignments').insert({
+      await createRow('hole_assignments', {
         course_pin_id: pinId,
         hole_ref: holeRef,
         disc_id: discId,
         disc_name: discName,
-        user_id: user.id,
       })
     }
     await loadHoleAssignments()
@@ -155,128 +160,76 @@ export function useCoursePins() {
       h => h.course_pin_id === pinId && h.hole_ref === holeRef
     )
     if (existing) {
-      await supabase.from('hole_assignments').delete().eq('id', existing.id)
+      await deleteRows('hole_assignments', existing.id)
       await loadHoleAssignments()
     }
   }
 
   const searchCourses = async (query: string) => {
-    if (!query || query.length < 2) {
-      setPdgaSuggestions([])
-      return
-    }
+    const sequence = ++searchSequence.current
+    if (!query || query.trim().length < 2) { setCourseSuggestions([]); setSearchedQuery(''); setCourseLoading(false); return }
     setCourseLoading(true)
+    setCourseError(null)
     try {
-      const escaped = query.replace(/[\\'"]/g, '')
-      const oql = `[out:json][timeout:10];(node["leisure"="disc_golf_course"]["name"~"${escaped}",i];way["leisure"="disc_golf_course"]["name"~"${escaped}",i];relation["leisure"="disc_golf_course"]["name"~"${escaped}",i];);out center 10;`
-
-      let result = null
-      for (const mirror of OSM_MIRRORS) {
-        try {
-          const res = await fetch(mirror, {
-            method: 'POST',
-            body: oql,
-            headers: { 'Content-Type': 'text/plain' },
-          })
-          if (res.status === 429 || res.status === 504) continue
-          if (res.ok) {
-            result = await res.json()
-            break
-          }
-        } catch {
-          continue
-        }
+      const result = await readCourseCatalogue<{ courses: CatalogueCourse[] }>(
+        `courses?q=${encodeURIComponent(query.trim())}`)
+      if (sequence === searchSequence.current) {
+        setCourseSuggestions(result.courses)
+        setSearchedQuery(query.trim())
       }
-
-      if (result && result.elements) {
-        const courses: OSMCourse[] = result.elements.map((el: any) => ({
-          osmId: el.id,
-          osmType: el.type,
-          name: el.tags?.name || '',
-          holes: el.tags?.holes || '',
-          city: el.tags?.['addr:city'] || '',
-          lat: el.lat ?? el.center?.lat ?? null,
-          lon: el.lon ?? el.center?.lon ?? null,
-        }))
-        setPdgaSuggestions(courses)
-      } else {
-        setPdgaSuggestions([])
+    } catch (error) {
+      if (sequence === searchSequence.current) {
+        setCourseSuggestions([])
+        setSearchedQuery('')
+        setCourseError(error instanceof Error ? error.message : 'Course search failed. Please try again.')
       }
-    } catch {
-      setPdgaSuggestions([])
     } finally {
-      setCourseLoading(false)
+      if (sequence === searchSequence.current) setCourseLoading(false)
     }
   }
 
-  let searchTimeout: NodeJS.Timeout | null = null
-  const searchCoursesDebounced = (query: string) => {
-    if (searchTimeout) clearTimeout(searchTimeout)
-    searchTimeout = setTimeout(() => searchCourses(query), 400)
+  const resetCourseSearch = () => {
+    searchSequence.current++
+    setCourseSuggestions([])
+    setSearchedQuery('')
+    setCourseError(null)
+    setCourseLoading(false)
   }
 
-  const downloadCourseMap = async (pin: ClientPin, lat: number, lon: number) => {
-    if (!pin.id) return
-    setCourseLoading(true)
+  const loadCourseDetails = useCallback(async (pin: ClientPin) => {
+    if (!pin.courseId) return
+    const courseId = pin.courseId
+    setCourseDetailsErrors(previous=>({...previous,[courseId]:''}))
     try {
-      const oql = `[out:json][timeout:25];(node(around:2500,${lat},${lon})["disc_golf"];way(around:2500,${lat},${lon})["disc_golf"];relation(around:2500,${lat},${lon})["disc_golf"];);out center tags;`
-
-      let result = null
-      for (const mirror of OSM_MIRRORS) {
-        try {
-          const res = await fetch(mirror, {
-            method: 'POST',
-            body: oql,
-            headers: { 'Content-Type': 'text/plain' },
-          })
-          if (res.status === 429 || res.status === 504) continue
-          if (res.ok) {
-            result = await res.json()
-            break
-          }
-        } catch {
-          continue
-        }
-      }
-
-      if (!result || !result.elements) return
-
-      const holeTypes = ['hole', 'tee', 'basket']
-      let holes: ParsedHole[] = []
-      for (const holeType of holeTypes) {
-        const filtered = result.elements.filter(
-          (el: any) => el.tags?.disc_golf === holeType
-        )
-        if (filtered.length > 0) {
-          holes = filtered.map((el: any, idx: number) => ({
-            ref: el.tags?.ref || String(idx + 1),
-            name: el.tags?.name || '',
-            lat: el.lat ?? el.center?.lat ?? null,
-            lon: el.lon ?? el.center?.lon ?? null,
-          }))
-          break
-        }
-      }
-
-      holes.sort((a, b) => {
-        const aNum = parseInt(a.ref, 10)
-        const bNum = parseInt(b.ref, 10)
-        if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum
-        return a.ref.localeCompare(b.ref)
-      })
-
+      const result = await readCourseCatalogue<{
+        course: { name: string; source_url?: string }
+        expiresAt?: number
+      }>(`courses/${pin.courseId}/holes`)
       setCourseCache(prev => ({
         ...prev,
-        [pin.id]: { lat, lon, holes, mapData: result },
+        [courseId]: { sourceUrl: result.course.source_url ?? null,
+          courseName: result.course.name, expiresAt: result.expiresAt },
       }))
-    } finally {
-      setCourseLoading(false)
+    } catch (error) {
+      setCourseDetailsErrors(previous=>({...previous,[courseId]:
+        error instanceof Error ? error.message : 'Could not load course details. Please try again.'}))
     }
-  }
+  }, [])
 
-  const getHolesForPin = (pin: ClientPin): ParsedHole[] | null => {
-    return courseCache[pin.id]?.holes || null
-  }
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      for (const pin of pins) {
+        if (cancelled) break
+        if (resolveDetails&&pin.courseId?.startsWith('pdga:')) {
+          const sameCourse = pins.filter(p => p.courseId === pin.courseId)
+          if (sameCourse[0].id !== pin.id) continue
+          await loadCourseDetails(pin)
+        }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [pins, loadCourseDetails,resolveDetails])
 
   const computeDiscUsageStats = (assignments: HoleAssignment[]) => {
     const stats = new Map<string, { count: number; courseCount: Set<string> }>()
@@ -297,7 +250,10 @@ export function useCoursePins() {
   }
 
   return {
-    pins,
+    pinsLoading,
+    pinsError,
+    pins: pins.map(pin => pin.courseId?.startsWith('pdga:') ?
+      { ...pin, courseName: courseCache[pin.courseId]?.courseName ?? 'PDGA course' } : pin),
     loadPins,
     createPin,
     updatePin,
@@ -307,13 +263,15 @@ export function useCoursePins() {
     assignDiscToHole,
     clearHoleAssignment,
     searchCourses,
-    searchCoursesDebounced,
-    downloadCourseMap,
+    resetCourseSearch,
+    loadCourseDetails,
     courseSearch: searchCourses,
     courseLoading,
-    pdgaSuggestions,
+    courseSuggestions,
+    searchedQuery,
+    courseError,
     courseCache,
-    getHolesForPin,
+    courseDetailsErrors,
     computeDiscUsageStats,
   }
 }

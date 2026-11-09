@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "courses": [
+    {
+      "id": "poc:holmenkollen",
+      "name": "Holmenkollen",
+      "source": "Owner-selected shortlist",
+      "sourceUrl": null,
+      "details": null
+    },
+    {
+      "id": "poc:ekeberg",
+      "name": "Ekeberg",
+      "source": "PDGA",
+      "sourceUrl": "https://www.pdga.com/node/27416",
+      "details": null
+    },
+    {
+      "id": "poc:karidalen",
+      "name": "Karidalen",
+      "source": "Owner-selected shortlist",
+      "sourceUrl": null,
+      "details": null
+    }
+  ]
+}

@@ -1,0 +1,218 @@
+import { expect, test, type Page } from '@playwright/test'
+
+async function isolateNetwork(page: Page, signedIn = false) {
+  const unexpected: string[] = []
+  if (signedIn) {
+    await page.addInitScript(() => {
+      const claims = btoa(JSON.stringify({ preferred_username: 'fixture-player' }))
+      sessionStorage.setItem('griplock.devAccessToken', `h.${claims}.s`)
+    })
+  }
+  await page.route('**/*', async route => {
+    const url = new URL(route.request().url())
+    if (url.origin !== 'http://127.0.0.1:4173') {
+      unexpected.push(`${route.request().method()} ${url.origin}${url.pathname}`)
+      return route.abort('blockedbyclient')
+    }
+    if (url.pathname === '/runtime-config.js') {
+      return route.fulfill({ contentType: 'text/javascript', body: `window.__GRIPLOCK_RUNTIME__ = ${JSON.stringify({
+        environment: 'local-dev', dataBackend: 'api', identityReady: true, devAuth: true,
+      })}` })
+    }
+    if (url.pathname === '/api/v1/session') return route.fulfill({ json: { userId: '11111111-1111-4111-8111-111111111111' } })
+    if (url.pathname.startsWith('/api/v1/')) {
+      expect(route.request().headers().authorization).toMatch(/^Bearer /)
+      const resource = url.pathname.split('/').at(-1)!
+      return route.fulfill({ json: { [resource]: resource === 'discs' ? [
+        { id: '11111111-1111-4111-8111-111111111112', name: 'Fixture Buzzz', manufacturer: 'Discraft', disc_type: 'midrange',
+          weight: 175, speed: 5, glide: 4, turn: -1, fade: 1, quantity: 1, added_at: '2026-01-01T00:00:00Z' },
+        { id: '11111111-1111-4111-8111-111111111113', name: 'Fixture Destroyer', manufacturer: 'Innova', disc_type: 'distance',
+          weight: 172, speed: 12, glide: 5, turn: -1, fade: 3, quantity: 1, added_at: '2026-01-02T00:00:00Z' },
+      ] : [] } })
+    }
+    return route.continue()
+  })
+  return unexpected
+}
+
+test('signed-out player sees local login without external requests', async ({ page }) => {
+  const unexpected = await isolateNetwork(page)
+  await page.goto('/')
+  await expect(page).toHaveTitle('Griplock — Disc Golf Bag Tracker')
+  await expect(page.getByRole('heading', { name: 'Griplock' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Sign in locally' })).toBeVisible()
+  expect(await page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth)).toBe(true)
+  expect(unexpected).toEqual([])
+})
+
+test('retired For Sale tab is absent and old app addresses return to inventory', async ({ page }) => {
+  const unexpected = await isolateNetwork(page, true)
+  await page.goto('/for-sale')
+  await expect(page).toHaveURL(/127\.0\.0\.1:4173\/$/)
+  await expect(page.getByRole('navigation').getByRole('button', { name: /For Sale/ })).toHaveCount(0)
+  await expect(page.getByText('Fixture Buzzz', { exact: true })).toBeVisible()
+  expect(unexpected).toEqual([])
+})
+
+test('player can load, filter and clear an API-backed inventory search', async ({ page }) => {
+  const unexpected = await isolateNetwork(page, true)
+  await page.goto('/')
+  await expect(page.getByText('Griplock', { exact: true })).toBeVisible()
+  await expect(page.getByText('Fixture Buzzz', { exact: true })).toBeVisible()
+  await expect(page.getByText('Fixture Destroyer', { exact: true })).toBeVisible()
+  const search = page.getByPlaceholder('Search discs...', { exact: false })
+  await search.fill('buzzz')
+  await expect(page.getByText('Fixture Buzzz', { exact: true })).toBeVisible()
+  await expect(page.getByText('Fixture Destroyer', { exact: true })).toHaveCount(0)
+  await search.fill('')
+  await expect(page.getByText('Fixture Destroyer', { exact: true })).toBeVisible()
+  for (const name of [/Bags/, /Courses/, /Collections/, /Wishlist/, /Analytics/]) {
+    await page.getByRole('navigation').getByRole('button', { name }).click()
+    await expect(page.getByRole('alert')).toHaveCount(0)
+  }
+  expect(unexpected).toEqual([])
+})
+
+test('refresh keeps the current tab and Back walks tabs instead of leaving the app', async ({ page }) => {
+  const unexpected = await isolateNetwork(page, true)
+  const nav = page.getByRole('navigation')
+  const active = () => nav.locator('[aria-current="page"]')
+  await page.goto('/unknown-view')
+  await expect(page).toHaveURL(/127\.0\.0\.1:4173\/$/)
+  await expect(active()).toHaveText(/Inventory/)
+  await nav.getByRole('button', { name: /Bags/ }).click()
+  await nav.getByRole('button', { name: /Courses/ }).click()
+  await expect(page).toHaveURL(/\/courses$/)
+  await page.reload()
+  await expect(active()).toHaveText(/Courses/)
+  await page.goBack()
+  await expect(page).toHaveURL(/\/bags$/)
+  await expect(active()).toHaveText(/Bags/)
+  await page.goBack()
+  await expect(active()).toHaveText(/Inventory/)
+  await expect(page.getByText('Fixture Buzzz', { exact: true })).toBeVisible()
+  await page.goForward()
+  await expect(active()).toHaveText(/Bags/)
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  expect(unexpected).toEqual([])
+})
+
+test('analytics renders both charts and bag tooltips with the upgraded React and Recharts', async ({ page }) => {
+  const unexpected = await isolateNetwork(page, true)
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.route('**/api/v1/bags?*', route => route.fulfill({ json: { bags: [{
+    id: '11111111-1111-4111-8111-111111111114', name: 'Fixture bag',
+    disc_ids: ['11111111-1111-4111-8111-111111111112', '11111111-1111-4111-8111-111111111113'],
+  }] } }))
+  await page.goto('/analytics')
+  await expect(page.getByRole('heading', { name: 'Inventory Overview' })).toBeVisible()
+  await expect(page.locator('.recharts-pie-sector')).toHaveCount(2)
+  await expect(page.locator('.recharts-pie-label-text').filter({ hasText: 'Mid: 1' })).toBeVisible()
+  await expect(page.locator('.recharts-pie-label-text').filter({ hasText: 'Driver: 1' })).toBeVisible()
+  const bars = page.locator('.recharts-bar-rectangle')
+  await expect(bars).toHaveCount(1)
+  await expect(page.locator('.recharts-cartesian-axis-tick-value').filter({ hasText: 'Fixture bag' })).toBeVisible()
+  await bars.first().hover()
+  const tooltip = page.locator('.recharts-tooltip-wrapper').filter({ hasText: 'Fixture bag' })
+  await expect(tooltip).toBeVisible()
+  await expect(tooltip.locator('.recharts-tooltip-item-value')).toHaveText('2')
+  expect(errors).toEqual([])
+  expect(unexpected).toEqual([])
+})
+
+test('failed API loads are visible instead of looking like an empty collection', async ({ page }) => {
+  await isolateNetwork(page, true)
+  await page.route('**/api/v1/bags?*', route => route.fulfill({ status: 503, json: { error: 'service_unavailable' } }))
+  await page.goto('/')
+  await expect(page.getByRole('alert')).toContainText('503')
+})
+
+test('editing notes immediately preserves every other saved disc field', async ({ page }) => {
+  await isolateNetwork(page, true)
+  await page.route('https://discit-api.fly.dev/disc', route => route.fulfill({ json: [] }))
+  const saved = {
+    id: '11111111-1111-4111-8111-111111111112', name: 'Immediate edit',
+    edition: '',
+    manufacturer: 'Test brand', disc_type: 'midrange', plastic: 'Premium', weight: 174,
+    color: 'Blue', condition: 'used', speed: 5, glide: 4, turn: -1.5, fade: 1,
+    notes: 'Existing notes', quantity: 2, tags: ['favorite'], user_photo_url: null,
+    added_at: '2026-01-01T00:00:00Z',
+  }
+  const { id: _id, added_at: _added, ...originalFields } = saved
+  const writes: object[] = []
+  await page.route('**/api/v1/discs**', route => {
+    if (route.request().method() === 'PATCH') {
+      const fields = route.request().postDataJSON()
+      writes.push(fields)
+      Object.assign(saved, fields)
+      return route.fulfill({ json: saved })
+    }
+    return route.fulfill({ json: { discs: [saved] } })
+  })
+  await page.goto('/')
+  await expect(page.getByText('Immediate edit', { exact: true })).toBeVisible()
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await page.getByRole('button', { name: /Edit/, exact: false }).click()
+    await page.locator('textarea').fill(`Notes changed immediately ${attempt}`)
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Edit Disc' })).toHaveCount(0)
+    await expect.poll(() => writes.length).toBe(attempt + 1)
+    expect(writes[attempt]).toEqual({ ...originalFields, notes: `Notes changed immediately ${attempt}` })
+  }
+  await expect(page.getByRole('alert')).toHaveCount(0)
+})
+
+test('new inventory and bags reach other tabs without reload and picker membership stays current', async ({ page }) => {
+  const unexpected = await isolateNetwork(page, true)
+  const discs: Record<string, unknown>[] = []
+  const bags: { id: string; name: string; disc_ids: string[] }[] = []
+  await page.route('https://discit-api.fly.dev/disc', route => route.fulfill({ json: [] }))
+  await page.route('**/api/v1/discs**', async route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { discs } })
+    const disc = { ...route.request().postDataJSON(), added_at: new Date().toISOString() }
+    discs.push(disc)
+    return route.fulfill({ status: 201, json: disc })
+  })
+  await page.route('**/api/v1/bags**', async route => {
+    const request = route.request()
+    if (request.method() === 'GET') return route.fulfill({ json: { bags } })
+    if (request.method() === 'POST') {
+      const bag = request.postDataJSON()
+      bags.push(bag)
+      return route.fulfill({ status: 201, json: bag })
+    }
+    const bag = bags.find(b => b.id === new URL(request.url()).pathname.split('/').at(-1))!
+    Object.assign(bag, request.postDataJSON())
+    return route.fulfill({ json: bag })
+  })
+  await page.route('**/api/v1/collections?*', route => route.fulfill({ json: {
+    collections: [{ id: '11111111-1111-4111-8111-111111111114', name: 'Favorites', description: '' }],
+  } }))
+  await page.goto('/')
+  await page.getByRole('button', { name: '+ Add Disc', exact: true }).click()
+  await page.locator('input[role="combobox"]').fill('Fresh disc')
+  await page.locator('select').filter({ has: page.locator('option[value="midrange"]') }).selectOption('midrange')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.getByText('Fresh disc', { exact: true })).toBeVisible()
+  const nav = page.getByRole('navigation')
+  await nav.getByRole('button', { name: /Bags/ }).click()
+  await page.getByRole('button', { name: '+ Create Bag' }).click()
+  await page.getByRole('textbox', { name: 'Bag name', exact: true }).fill('Fresh bag')
+  await page.getByRole('button', { name: 'Create bag', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Fresh bag', exact: true })).toBeVisible()
+  const membership = page.getByRole('checkbox', { name: /Fresh disc/ })
+  await membership.click()
+  await expect(membership).toBeChecked()
+  await membership.click()
+  await expect(membership).not.toBeChecked()
+  await nav.getByRole('button', { name: /Collections/ }).click()
+  await page.getByRole('button', { name: '+ Add / Remove', exact: true }).click()
+  await expect(page.getByText('Fresh disc', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Done', exact: true }).click()
+  await nav.getByRole('button', { name: /Courses/ }).click()
+  await page.getByRole('button', { name: '+ Pin Course', exact: true }).click()
+  await expect(page.getByLabel('Link to Bag', { exact: true }).locator('option', { hasText: 'Fresh bag' })).toHaveCount(1)
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  expect(unexpected).toEqual([])
+})

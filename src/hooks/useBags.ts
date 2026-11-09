@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
+import { createRow, deleteRows, listRows, subscribeToChanges, updateRow } from '../lib/data'
 import { useAuth } from '../contexts/AuthContext'
 import { ClientBag, ClientDisc } from '../utils/disc'
 
-interface BagHistoryEntry {
+export interface BagHistoryEntry {
   id: string
   bag_id: string
   disc_id: string
@@ -27,66 +27,56 @@ export function formatHistoryTime(ts: string): string {
 export function useBags() {
   const { user } = useAuth()
   const [bags, setBags] = useState<ClientBag[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   const loadBags = useCallback(async () => {
-    if (!user) return
-    const { data } = await supabase.from('bags').select('id, name, disc_ids')
-    setBags(
-      (data || []).map(b => ({
+    if (!user) { setBags([]); setIsLoading(false); return }
+    try {
+      const data = await listRows<ClientBag>('bags')
+      setBags(data.map(b => ({
         id: b.id,
         name: b.name || '',
         disc_ids: Array.isArray(b.disc_ids) ? b.disc_ids : [],
-      }))
-    )
+      })))
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Failed to load bags')
+    } finally {
+      setIsLoading(false)
+    }
   }, [user])
 
   useEffect(() => {
-    loadBags()
+    void loadBags().catch(console.error)
+    return subscribeToChanges(['bags', 'discs'], loadBags)
   }, [loadBags])
 
-  const recordHistory = async (
-    bagId: string,
-    discId: string,
-    discName: string,
-    action: 'added' | 'removed'
-  ) => {
-    try {
-      await supabase.from('bag_history').insert({
-        bag_id: bagId,
-        disc_id: discId,
-        disc_name: discName,
-        action,
-        user_id: user?.id,
-      })
-    } catch (err) {
-      // Non-critical, swallow errors
-    }
-  }
-
   const createBag = async (name: string) => {
-    if (!user) return
+    if (!user) throw new Error('Please sign in before creating a bag.')
     const newBag: ClientBag = {
       id: crypto.randomUUID(),
       name,
       disc_ids: [],
     }
-    setBags(prev => [...prev, newBag])
-    await supabase.from('bags').insert({
+    const saved = await createRow<ClientBag>('bags', {
       id: newBag.id,
       name: newBag.name,
       disc_ids: [],
-      user_id: user.id,
     })
+    // A change notification can reload the new bag before this request returns.
+    setBags(prev => [...prev.filter(b => b.id !== saved.id), saved])
+    return saved
   }
 
   const renameBag = async (id: string, name: string) => {
+    await updateRow('bags', id, { name })
     setBags(prev => prev.map(b => (b.id === id ? { ...b, name } : b)))
-    await supabase.from('bags').update({ name }).eq('id', id)
   }
 
   const deleteBag = async (id: string) => {
+    await deleteRows('bags', id)
     setBags(prev => prev.filter(b => b.id !== id))
-    await supabase.from('bags').delete().eq('id', id)
   }
 
   const toggleDiscInBag = async (
@@ -96,38 +86,32 @@ export function useBags() {
   ) => {
     const bag = bags.find(b => b.id === bagId)
     if (!bag) return
-    const disc = discs.find(d => d.id === discId)
-    const discName = disc?.name || 'Unknown'
+    if (!discs.some(d => d.id === discId)) throw new Error('Disc not found')
     const alreadyIn = bag.disc_ids.includes(discId)
     const newIds = alreadyIn
       ? bag.disc_ids.filter(id => id !== discId)
       : [...bag.disc_ids, discId]
+    await updateRow('bags', bagId, { disc_ids: newIds })
     setBags(prev => prev.map(b => (b.id === bagId ? { ...b, disc_ids: newIds } : b)))
-    await supabase.from('bags').update({ disc_ids: newIds }).eq('id', bagId)
-    await recordHistory(bagId, discId, discName, alreadyIn ? 'removed' : 'added')
   }
 
-  const removeDiscFromBag = async (bagId: string, discId: string, discName: string) => {
+  const removeDiscFromBag = async (bagId: string, discId: string, _discName: string) => {
     const bag = bags.find(b => b.id === bagId)
     if (!bag) return
     const newIds = bag.disc_ids.filter(id => id !== discId)
+    await updateRow('bags', bagId, { disc_ids: newIds })
     setBags(prev => prev.map(b => (b.id === bagId ? { ...b, disc_ids: newIds } : b)))
-    await supabase.from('bags').update({ disc_ids: newIds }).eq('id', bagId)
-    await recordHistory(bagId, discId, discName, 'removed')
   }
 
   const loadBagHistory = async (bagId: string): Promise<BagHistoryEntry[]> => {
-    const { data } = await supabase
-      .from('bag_history')
-      .select('*')
-      .eq('bag_id', bagId)
-      .order('changed_at', { ascending: false })
-      .limit(20)
-    return (data || []) as BagHistoryEntry[]
+    return listRows<BagHistoryEntry>('bag_history', { bag_id: bagId })
   }
 
   return {
     bags,
+    isLoading,
+    error,
+    loadBags,
     createBag,
     renameBag,
     deleteBag,

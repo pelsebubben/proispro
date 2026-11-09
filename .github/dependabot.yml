@@ -1,0 +1,33 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 10
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 10
+    groups:
+      application:
+        patterns: ["*"]
+    # Runtime/type majors move together after selecting the next Node LTS line.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 10
+    groups:
+      runtime:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]

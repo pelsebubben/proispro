@@ -1,0 +1,169 @@
+name: Griplock CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BICEP_VERSION: v0.48.1
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application:
+    name: Application checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run test:unit
+      - run: npm run build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: web-dist-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  browser:
+    name: Browser E2E
+    needs: application
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: web-dist-${{ github.sha }}
+          path: dist/
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - name: Preserve synthetic test evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-evidence-${{ github.sha }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: error
+          retention-days: 7
+
+  api:
+    name: PostgreSQL and OCI integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-bookworm
+        env:
+          POSTGRES_PASSWORD: synthetic-ci-admin
+          POSTGRES_DB: griplock_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      NODE_ENV: test
+      PGHOST: '127.0.0.1'
+      PGDATABASE: griplock_test
+      PGUSER: postgres
+      PGPASSWORD: synthetic-ci-admin
+      PGAPP_PASSWORD: synthetic-ci-runtime-password-at-least-32-characters
+      PGSSLMODE: disable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build portable runtime
+        run: docker build --tag griplock:ci .
+      - name: Test the actual runtime image against PostgreSQL
+        run: |
+          docker run --rm --network host \
+            -e NODE_ENV -e PGHOST -e PGDATABASE -e PGUSER \
+            -e PGPASSWORD -e PGAPP_PASSWORD -e PGSSLMODE \
+            griplock:ci node --test tests/api/discs.test.mjs tests/api/courses.test.mjs tests/api/planner.test.mjs
+
+  infrastructure:
+    name: Infrastructure checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate Bicep without Azure credentials
+        run: |
+          az bicep install --version "$BICEP_VERSION"
+          az bicep build --file infra/main.bicep --stdout > /dev/null
+          az bicep build --file infra/bootstrap.bicep --stdout > /dev/null
+          az bicep build --file infra/staging.bicep --stdout > /dev/null
+          az bicep build --file infra/app.bicep --stdout > /dev/null
+      - name: Test PDGA secret provisioning without Azure credentials
+        run: python3 tests/unit/pdga_provision_test.py
+      - name: Install checksum-verified actionlint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/actionlint"
+          cd "$RUNNER_TEMP/actionlint"
+          gh release download v1.7.12 --repo rhysd/actionlint \
+            --pattern actionlint_1.7.12_linux_amd64.tar.gz \
+            --pattern actionlint_1.7.12_checksums.txt
+          grep ' actionlint_1.7.12_linux_amd64.tar.gz$' actionlint_1.7.12_checksums.txt | sha256sum --check --strict
+          tar -xzf actionlint_1.7.12_linux_amd64.tar.gz actionlint
+      - name: Lint delivery workflows
+        # GitHub supports queue: max; actionlint 1.7.12 does not recognize this key yet.
+        run: >-
+          "$RUNNER_TEMP/actionlint/actionlint"
+          -ignore 'unexpected key "queue" for "concurrency" section'
+          .github/workflows/ci.yml
+          .github/workflows/infra.yml
+          .github/workflows/prod.yml
+          .github/workflows/dev.yml
+          .github/workflows/database-power.yml
+          .github/workflows/squad-ci.yml
+          .github/workflows/architecture.yml
+
+  required:
+    name: Required CI
+    if: ${{ always() }}
+    needs: [application, browser, api, infrastructure]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require all checks to pass
+        env:
+          APPLICATION: ${{ needs.application.result }}
+          BROWSER: ${{ needs.browser.result }}
+          INFRASTRUCTURE: ${{ needs.infrastructure.result }}
+          API: ${{ needs.api.result }}
+        run: |
+          test "$APPLICATION" = success
+          test "$BROWSER" = success
+          test "$INFRASTRUCTURE" = success
+          test "$API" = success
