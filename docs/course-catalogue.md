@@ -1,5 +1,22 @@
 # Courses and event layouts
 
+## Curated course proof of concept
+
+The Courses page includes a separate, read-only catalog bundled from
+`src/data/curated-courses.json`. It currently contains the owner-selected
+Holmenkollen, Ekeberg and Karidalen shortlist. The owner has stated that
+permission to store the course data has been obtained; source details and
+identities still need verification before adding them. Only Ekeberg currently
+has a verified PDGA source link. The other entries identify the owner's
+shortlist as their source; unavailable details are deliberately not invented.
+
+Maintainers edit and review the versioned file, then redeploy to publish a
+change. Browsing and searching this section make no database or provider calls.
+It is accessible from the sign-in screen without signing in as well as from
+the Courses page. Loading the site itself still requires its hosting service.
+Bag links and game plans remain database-backed and require sign-in. This slice does
+not yet replace the existing PDGA search and planner workflows below.
+
 PDGA is the application's only external course provider. Search Norway, link a
 course to a bag to open its private planner immediately, then choose a historical PDGA event
 layout or create your own manual layout. Primary discs, alternatives and strategy

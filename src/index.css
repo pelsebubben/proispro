@@ -32,6 +32,13 @@ body {
 .login-card :focus-visible { outline:2px solid var(--clr-accent); outline-offset:3px; }
 
 .course-planner { margin-block:1.5rem; padding-block:1.25rem; border-block:1px solid var(--clr-border); }
+.curated-courses { margin-block-end:2rem; padding-block-end:1.5rem; border-block-end:1px solid var(--clr-border); }
+.curated-courses h2 { margin-block:0 .5rem; }
+.curated-course-search { display:block; max-width:32rem; margin-block:1rem; }
+.curated-course-list { list-style:none; padding:0; margin:0; }
+.curated-course-list li { border-block-start:1px solid var(--clr-border); }
+.curated-course-list summary { cursor:pointer; padding-block:.8rem; font-weight:600; }
+.curated-course-list p { margin-block:.25rem .75rem; }
 .bag-course-shortcut { margin-inline-start:auto; display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
 .course-search-form { padding:1.25rem; margin-block:1rem; border:1px solid var(--clr-border); }
 .course-search-form label { display:flex; flex-direction:column; gap:.5rem; margin-block:1rem; }

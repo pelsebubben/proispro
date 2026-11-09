@@ -3,6 +3,7 @@ import type { ClientDisc, ClientBag } from '../utils/disc'
 import { useCoursePins, type CatalogueCourse, type ClientPin } from '../hooks/useCoursePins'
 import { confirmPlannerNavigation, plannerData, subscribeToChanges } from '../lib/data'
 import { CoursePlanner } from '../components/CoursePlanner'
+import { CuratedCourses } from '../components/CuratedCourses'
 
 interface CoursesPagesProps {
   allDiscs: ClientDisc[]
@@ -64,6 +65,7 @@ export function CoursesPage({allDiscs,allBags,initialBagId,initialPinId,onOpenBa
       `${pin.courseName} ${allBags.find(b=>b.id===pin.bagId)?.name??''}`.toLocaleLowerCase().includes(courseFilter.trim().toLocaleLowerCase())))
     .sort(([,a],[,b])=>a[0].courseName.localeCompare(b[0].courseName))
   return <div className="courses-page">
+    <CuratedCourses />
     <div className="planner-heading">
       <div><h2>{groups.size} {groups.size===1?'course':'courses'} pinned</h2>
         <p className="bag-hint">Choose your course, compare bag configurations, then open your private game plan.</p></div>

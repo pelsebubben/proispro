@@ -1,11 +1,19 @@
 import { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { runtime } from '../lib/runtime'
+import { CuratedCourses } from '../components/CuratedCourses'
 
 export function LoginPage() {
   const { signIn, devSignIn, error } = useAuth()
   const [devName, setDevName] = useState('alice')
   const [passcode, setPasscode] = useState('')
+  const [showCourses, setShowCourses] = useState(false)
+  if (showCourses) return <main className="login-page">
+    <section className="login-card courses-page">
+      <button className="btn" onClick={() => setShowCourses(false)}>Back to sign in</button>
+      <CuratedCourses />
+    </section>
+  </main>
   return (
     <main className="login-page">
       <section className="login-card" aria-labelledby="login-title">
@@ -51,6 +59,7 @@ export function LoginPage() {
               aria-describedby={runtime.identityReady ? 'login-help' : undefined}
               onClick={() => void signIn()}>Sign in to Griplock</button>
           )}
+          <button type="button" className="btn" onClick={() => setShowCourses(true)}>Browse curated courses</button>
         </div>
         {!runtime.devAuth && runtime.identityReady && (
           <div className="login-questions">
