@@ -1,5 +1,12 @@
 # Architecture review history
 
+## 2026-11-09 - Noninteractive database resize confirmation
+
+The first protected resize exposed Azure CLI's tier-change confirmation prompt.
+Explicitly pass `--yes` for the already-authorized resize operation, and assert
+the exact CLI arguments for both burstable sizing and general-purpose rollback.
+No topology, schedule, permissions or data-retention changes.
+
 ## 2026-11-09 - Off-season database controls
 
 Reviewed selectable D2ads v5/B2s sizing and the opt-in database power workflow.

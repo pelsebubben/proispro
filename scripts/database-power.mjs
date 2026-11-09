@@ -63,7 +63,7 @@ export async function databasePower(operation, env, {
   if (operation === 'resize') {
     const sku = profiles[profile]
     if (server.sku.name !== sku.name || server.sku.tier !== sku.tier) {
-      azure(['update', ...target, '--tier', sku.tier, '--sku-name', sku.name])
+      azure(['update', ...target, '--tier', sku.tier, '--sku-name', sku.name, '--yes'])
       server = await stable()
       if (server.state !== 'Ready' || server.sku.name !== sku.name || server.sku.tier !== sku.tier) {
         throw new Error(`Database resize did not reach ${sku.tier}/${sku.name} in Ready state`)
