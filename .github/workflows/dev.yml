@@ -22,8 +22,9 @@ jobs:
     name: Deploy main to shared dev
     if: ${{ vars.DEV_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
     concurrency:
-      group: griplock-dev
-      cancel-in-progress: true
+      group: griplock-staging-release
+      cancel-in-progress: false
+      queue: max
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment:
@@ -68,6 +69,7 @@ jobs:
       - name: Apply branch schema to dev database
         run: |
           set -euo pipefail
+          DATABASE_SERVER=pg-griplock-gmfarjpxlkg2e node scripts/database-power.mjs start
           az extension add --name containerapp --upgrade --only-show-errors
           az containerapp job update --resource-group "$RESOURCE_GROUP" --name "$DEV_MIGRATION" --image "$IMAGE"
           bash scripts/run-staging-job.sh "$DEV_MIGRATION"

@@ -1,5 +1,19 @@
 # Architecture review history
 
+## 2026-11-09 - Off-season database controls
+
+Reviewed selectable D2ads v5/B2s sizing and the opt-in database power workflow.
+The default remains unchanged until explicitly configured. The scheduler evaluates
+the current Europe/Oslo hour (including DST) after acquiring the release lock;
+manual start/stop/resize use the protected prod OIDC identity without DB passwords.
+Prod, dev, foundation and power operations now share a non-cancelling FIFO queue.
+Both release paths wake the database before migrations, retaining initial
+provisioning when no server exists. Updated delivery citations and lock semantics.
+The private runtime/data/identity topology and SQL schemas are unchanged.
+Stopping the shared server intentionally makes both environments unavailable;
+no request-triggered wake-up is introduced. Burstable allocation remains subject
+to regional capacity; failures are visible and never escalate to a larger SKU.
+
 ## 2026-10-27 - Local UI against the shared Azure dev API
 
 Reviewed `scripts/dev-azure.mjs`, the `dev:azure` package script and the Copilot

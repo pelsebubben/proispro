@@ -39,7 +39,7 @@ active runtime. The bundled disc catalogue requires no live search provider.
 | Private planner | Layouts, active/per-layout plans, concurrency versions, packing summaries | `server/planner.mjs` |
 | Course provider | PDGA login/search/logout, exact identities, layouts/maps, bounded SQL cache | `server/courses.mjs`, `server/pdga-*.mjs` |
 | Persistence | Connections, transaction-local owner, append-only schema migrations | `server/database.mjs`, `server/migrate.mjs`, `server/migrations/` |
-| Delivery | CI, image publication, private test/migration jobs, rollout verification | `.github/workflows/{ci,architecture,prod,dev,infra}.yml`, `infra/`, `scripts/` |
+| Delivery | CI, image publication, private test/migration jobs, rollout verification, database power | `.github/workflows/{ci,architecture,prod,dev,infra,database-power}.yml`, `infra/`, `scripts/` |
 
 Pages call shared hooks/access helpers, never PostgreSQL or PDGA credentials.
 Do not introduce a second API client or direct provider calls inside UI controls.
@@ -109,6 +109,12 @@ separation, not independent infrastructure or failure isolation.
 
 `infra/staging.bicep` configures separate apps/PostgreSQL subnets, private DNS,
 database public-access denial, 7-day backups, no HA, Log Analytics and finite jobs.
+Compute defaults to the existing D2ads v5; the `burstable` profile selects B2s
+(2 vCPU/4 GiB) without changing storage, backups, networking or database names.
+The opt-in database power workflow reconciles a daily local-time window every
+30 minutes. Stopping the shared server makes both live and dev APIs unavailable;
+requests do not wake it. Storage/backup charges remain. See the
+[off-season controls](../github-pipelines.md#off-season-database-controls).
 `infra/app.bicep` configures external HTTPS ingress, probes and image-pull
 identity. ACR and its pull identity/RBAC are administrator-bootstrapped.
 The provisioned locked storage account has no active application photo/upload
@@ -128,9 +134,12 @@ generation, not that rollout or real customer login succeeded.
 PRs do not trigger shared-dev deployment or obtain its Azure OIDC access. Shared
 dev accepts only manual dispatches from `main` with `DEV_ENABLED=true`, guarded
 before checkout and Azure authentication. That workflow does not wait for Required
-CI; production does. Prod and foundation changes share a non-cancelling lock;
-shared dev has its own cancelling lock. A production rollout can race a manual
-dev deployment: do not assume the dev URL still serves the dispatched commit.
+CI; production does. Prod, foundation, shared dev and database power operations
+share a non-cancelling FIFO concurrency queue, so scheduled shutdowns cannot race
+migrations or browser verification or replace pending releases.
+Both release paths start a stopped database before using it. Outside the active
+window, the next power reconciliation stops it again after the release lock clears.
+The next dev or production deployment can still replace the shared dev revision.
 Consult the health SHA and [delivery runbook](../github-pipelines.md).
 
 ## Review findings and scoped follow-ups
